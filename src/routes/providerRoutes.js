@@ -1,8 +1,8 @@
 const express = require('express');
 const router = express.Router();
 const { body } = require('express-validator');
-const { uploadDocument, uploadMultipleDocuments } = require('../middleware/uploadMiddleware');
-const { protect, providerOnly, verifiedProvider, optionalAuth } = require('../middleware/authMiddleware');
+const { uploadSingleDocument } = require('../middleware/uploadMiddleware');
+const { protect, providerOnly, optionalAuth } = require('../middleware/authMiddleware');
 const { validate } = require('../middleware/validate');
 const {
   getProviderProfile,
@@ -34,8 +34,27 @@ const ratingRules = [
   body('review').optional().isLength({ max: 500 }).withMessage('Review cannot exceed 500 characters'),
 ];
 
-// Private routes (authenticated providers only)
-router.use(protect, providerOnly);
+// ===== PUBLIC ROUTES (no auth required) =====
+// Get all providers
+router.get('/', optionalAuth, getProviders);
+
+// Search providers
+router.get('/search', optionalAuth, searchProviders);
+
+// Get providers by type
+router.get('/by-type/:type', optionalAuth, getProvidersByType);
+
+// Get single provider details
+router.get('/:id', optionalAuth, getProviderById);
+
+// ===== PRIVATE ROUTES (auth required) =====
+router.use(protect);
+
+// Rate provider (any authenticated user)
+router.post('/:id/rate', ratingRules, validate, rateProvider);
+
+// ===== PROVIDER-ONLY ROUTES =====
+router.use(providerOnly);
 
 // Profile management
 router.route('/profile')
@@ -45,36 +64,13 @@ router.route('/profile')
 // Personal information submission
 router.post('/personal-info', personalInfoRules, validate, submitPersonalInfo);
 
-// Document upload
-router.post('/upload-document', uploadDocument, uploadDocumentController);
+// Document upload - FIXED
+router.post('/upload-document', uploadSingleDocument, uploadDocumentController);
 
 // Verification status
 router.get('/verification', getVerificationStatus);
 
 // Availability management
 router.put('/availability', availabilityRules, validate, updateAvailability);
-
-// Public routes (no authentication required)
-router.use(optionalAuth);
-
-// Get all providers
-router.get('/', getProviders);
-
-// Search providers
-router.get('/search', searchProviders);
-
-// Get providers by type
-router.get('/by-type/:type', getProvidersByType);
-
-// Get single provider details
-router.get('/:id', getProviderById);
-
-// Rate provider (requires authentication)
-router.post('/:id/rate', 
-  protect,
-  ratingRules,
-  validate,
-  rateProvider
-);
 
 module.exports = router;

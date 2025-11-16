@@ -15,11 +15,9 @@ const jwtOptions = {
 passport.use(
   new JwtStrategy(jwtOptions, async (payload, done) => {
     try {
-      // Try to find user
       let user = await User.findById(payload.id);
       
       if (!user) {
-        // Try to find provider if not a user
         user = await Provider.findById(payload.id);
       }
       
@@ -35,150 +33,187 @@ passport.use(
 );
 
 // Google Strategy
-passport.use(
-  new GoogleStrategy(
-    {
-      clientID: process.env.GOOGLE_CLIENT_ID,
-      clientSecret: process.env.GOOGLE_CLIENT_SECRET,
-      callbackURL: process.env.GOOGLE_CALLBACK_URL,
-      passReqToCallback: true,
-    },
-    async (req, accessToken, refreshToken, profile, done) => {
-      try {
-        const { type } = req.query; // 'user' or 'provider'
-        const email = profile.emails[0].value;
-        const profilePhoto = profile.photos[0]?.value;
-        
-        if (type === 'provider') {
-          let provider = await Provider.findOne({
-            $or: [{ googleId: profile.id }, { email }],
-          });
+if (process.env.GOOGLE_CLIENT_ID && process.env.GOOGLE_CLIENT_SECRET) {
+  passport.use(
+    new GoogleStrategy(
+      {
+        clientID: process.env.GOOGLE_CLIENT_ID,
+        clientSecret: process.env.GOOGLE_CLIENT_SECRET,
+        callbackURL: `${process.env.BACKEND_URL || 'http://localhost:5000'}/api/auth/google/callback`,
+        passReqToCallback: true,
+        proxy: true, // Important for Heroku deployment
+      },
+      async (req, accessToken, refreshToken, profile, done) => {
+        try {
+          // Get type from query params or state
+          const type = req.query.state || req.query.type || 'user';
+          const email = profile.emails?.[0]?.value;
           
-          if (!provider) {
-            provider = await Provider.create({
-              googleId: profile.id,
-              email,
-              fullName: profile.displayName,
-              phoneNumber: '',
-              profilePhoto,
-              isVerified: true,
-              providerType: 'pending', // Will be set during onboarding
-            });
-          } else {
-            // Update last login
-            provider.lastLoginDate = new Date();
-            await provider.save();
+          if (!email) {
+            return done(new Error('Email not provided by Google'), null);
           }
           
-          return done(null, provider, { type: 'provider' });
-        } else {
-          let user = await User.findOne({
-            $or: [{ googleId: profile.id }, { email }],
-          });
+          const profilePhoto = profile.photos?.[0]?.value;
           
-          if (!user) {
-            user = await User.create({
-              googleId: profile.id,
-              email,
-              fullName: profile.displayName,
-              phoneNumber: '',
-              profilePhoto,
-              isVerified: true,
+          if (type === 'provider') {
+            let provider = await Provider.findOne({
+              $or: [{ googleId: profile.id }, { email }],
             });
+            
+            if (!provider) {
+              provider = await Provider.create({
+                googleId: profile.id,
+                email,
+                fullName: profile.displayName,
+                phoneNumber: '',
+                profilePhoto,
+                isVerified: true,
+                providerType: 'pending',
+                lastLoginDate: new Date(),
+              });
+            } else {
+              if (!provider.googleId) {
+                provider.googleId = profile.id;
+              }
+              provider.lastLoginDate = new Date();
+              await provider.save();
+            }
+            
+            return done(null, provider, { type: 'provider' });
           } else {
-            // Update last login
-            user.lastLoginDate = new Date();
-            await user.save();
+            let user = await User.findOne({
+              $or: [{ googleId: profile.id }, { email }],
+            });
+            
+            if (!user) {
+              user = await User.create({
+                googleId: profile.id,
+                email,
+                fullName: profile.displayName,
+                phoneNumber: '',
+                profilePhoto,
+                isVerified: true,
+                lastLoginDate: new Date(),
+              });
+            } else {
+              if (!user.googleId) {
+                user.googleId = profile.id;
+              }
+              user.lastLoginDate = new Date();
+              await user.save();
+            }
+            
+            return done(null, user, { type: 'user' });
           }
-          
-          return done(null, user, { type: 'user' });
+        } catch (error) {
+          console.error('Google OAuth error:', error);
+          return done(error, null);
         }
-      } catch (error) {
-        return done(error, null);
       }
-    }
-  )
-);
+    )
+  );
+} else {
+  console.warn('⚠️  Google OAuth not configured - missing GOOGLE_CLIENT_ID or GOOGLE_CLIENT_SECRET'.yellow);
+}
 
 // Facebook Strategy
-passport.use(
-  new FacebookStrategy(
-    {
-      clientID: process.env.FACEBOOK_APP_ID,
-      clientSecret: process.env.FACEBOOK_APP_SECRET,
-      callbackURL: process.env.FACEBOOK_CALLBACK_URL,
-      profileFields: ['id', 'emails', 'name', 'picture'],
-      passReqToCallback: true,
-    },
-    async (req, accessToken, refreshToken, profile, done) => {
-      try {
-        const { type } = req.query;
-        const email = profile.emails?.[0]?.value;
-        const profilePhoto = profile.photos?.[0]?.value;
-        
-        if (!email) {
-          return done(new Error('Email not provided by Facebook'), null);
-        }
-        
-        if (type === 'provider') {
-          let provider = await Provider.findOne({
-            $or: [{ facebookId: profile.id }, { email }],
-          });
+if (process.env.FACEBOOK_APP_ID && process.env.FACEBOOK_APP_SECRET) {
+  passport.use(
+    new FacebookStrategy(
+      {
+        clientID: process.env.FACEBOOK_APP_ID,
+        clientSecret: process.env.FACEBOOK_APP_SECRET,
+        callbackURL: `${process.env.BACKEND_URL || 'http://localhost:5000'}/api/auth/facebook/callback`,
+        profileFields: ['id', 'emails', 'name', 'picture.type(large)'],
+        passReqToCallback: true,
+        proxy: true, // Important for Heroku deployment
+      },
+      async (req, accessToken, refreshToken, profile, done) => {
+        try {
+          // Get type from query params or state
+          const type = req.query.state || req.query.type || 'user';
+          const email = profile.emails?.[0]?.value;
           
-          if (!provider) {
-            provider = await Provider.create({
-              facebookId: profile.id,
-              email,
-              fullName: `${profile.name.givenName} ${profile.name.familyName}`,
-              phoneNumber: '',
-              profilePhoto,
-              isVerified: true,
-              providerType: 'pending',
-            });
-          } else {
-            provider.lastLoginDate = new Date();
-            await provider.save();
+          if (!email) {
+            return done(new Error('Email not provided by Facebook'), null);
           }
           
-          return done(null, provider, { type: 'provider' });
-        } else {
-          let user = await User.findOne({
-            $or: [{ facebookId: profile.id }, { email }],
-          });
+          const profilePhoto = profile.photos?.[0]?.value;
+          const fullName = `${profile.name?.givenName || ''} ${profile.name?.familyName || ''}`.trim() || profile.displayName;
           
-          if (!user) {
-            user = await User.create({
-              facebookId: profile.id,
-              email,
-              fullName: `${profile.name.givenName} ${profile.name.familyName}`,
-              phoneNumber: '',
-              profilePhoto,
-              isVerified: true,
+          if (type === 'provider') {
+            let provider = await Provider.findOne({
+              $or: [{ facebookId: profile.id }, { email }],
             });
+            
+            if (!provider) {
+              provider = await Provider.create({
+                facebookId: profile.id,
+                email,
+                fullName,
+                phoneNumber: '',
+                profilePhoto,
+                isVerified: true,
+                providerType: 'pending',
+                lastLoginDate: new Date(),
+              });
+            } else {
+              if (!provider.facebookId) {
+                provider.facebookId = profile.id;
+              }
+              provider.lastLoginDate = new Date();
+              await provider.save();
+            }
+            
+            return done(null, provider, { type: 'provider' });
           } else {
-            user.lastLoginDate = new Date();
-            await user.save();
+            let user = await User.findOne({
+              $or: [{ facebookId: profile.id }, { email }],
+            });
+            
+            if (!user) {
+              user = await User.create({
+                facebookId: profile.id,
+                email,
+                fullName,
+                phoneNumber: '',
+                profilePhoto,
+                isVerified: true,
+                lastLoginDate: new Date(),
+              });
+            } else {
+              if (!user.facebookId) {
+                user.facebookId = profile.id;
+              }
+              user.lastLoginDate = new Date();
+              await user.save();
+            }
+            
+            return done(null, user, { type: 'user' });
           }
-          
-          return done(null, user, { type: 'user' });
+        } catch (error) {
+          console.error('Facebook OAuth error:', error);
+          return done(error, null);
         }
-      } catch (error) {
-        return done(error, null);
       }
-    }
-  )
-);
+    )
+  );
+} else {
+  console.warn('⚠️  Facebook OAuth not configured - missing FACEBOOK_APP_ID or FACEBOOK_APP_SECRET'.yellow);
+}
 
-// Serialize/Deserialize user (not used with JWT, but required by Passport)
+// Serialize/Deserialize (required by Passport even though we use JWT)
 passport.serializeUser((user, done) => {
-  done(null, user.id);
+  done(null, { id: user.id, type: user.constructor.modelName });
 });
 
-passport.deserializeUser(async (id, done) => {
+passport.deserializeUser(async (data, done) => {
   try {
-    let user = await User.findById(id);
-    if (!user) {
-      user = await Provider.findById(id);
+    let user;
+    if (data.type === 'Provider') {
+      user = await Provider.findById(data.id);
+    } else {
+      user = await User.findById(data.id);
     }
     done(null, user);
   } catch (error) {

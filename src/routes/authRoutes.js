@@ -1,7 +1,7 @@
 const express = require('express');
 const router = express.Router();
 const passport = require('passport');
-const { body, validationResult } = require('express-validator');
+const { body } = require('express-validator');
 const {
   registerUser,
   loginUser,
@@ -39,32 +39,45 @@ router.post('/login', loginRules, validate, loginUser);
 router.post('/provider/register', userRegistrationRules, validate, registerProvider);
 router.post('/provider/login', loginRules, validate, loginProvider);
 
-// OAuth routes
-// Google OAuth
+// ===== GOOGLE OAUTH ROUTES =====
 router.get('/google', (req, res, next) => {
   const { type = 'user' } = req.query;
+  
   passport.authenticate('google', {
     scope: ['profile', 'email'],
-    state: type
+    state: type, // Pass type through state parameter
+    session: false,
   })(req, res, next);
 });
 
 router.get('/google/callback',
-  passport.authenticate('google', { session: false, failureRedirect: '/auth/error' }),
+  (req, res, next) => {
+    passport.authenticate('google', { 
+      session: false,
+      failureRedirect: `${process.env.CLIENT_URL || 'http://localhost:3000'}/auth/error`,
+    })(req, res, next);
+  },
   googleAuth
 );
 
-// Facebook OAuth
+// ===== FACEBOOK OAUTH ROUTES =====
 router.get('/facebook', (req, res, next) => {
   const { type = 'user' } = req.query;
+  
   passport.authenticate('facebook', {
-    scope: ['email'],
-    state: type
+    scope: ['email', 'public_profile'],
+    state: type, // Pass type through state parameter
+    session: false,
   })(req, res, next);
 });
 
 router.get('/facebook/callback',
-  passport.authenticate('facebook', { session: false, failureRedirect: '/auth/error' }),
+  (req, res, next) => {
+    passport.authenticate('facebook', { 
+      session: false,
+      failureRedirect: `${process.env.CLIENT_URL || 'http://localhost:3000'}/auth/error`,
+    })(req, res, next);
+  },
   facebookAuth
 );
 
@@ -95,11 +108,18 @@ router.post('/verify-email',
   verifyEmail
 );
 
-// OAuth error handler
+// OAuth success/error pages
+router.get('/success', (req, res) => {
+  res.json({
+    success: true,
+    message: 'Authentication successful',
+  });
+});
+
 router.get('/error', (req, res) => {
   res.status(401).json({
     success: false,
-    message: 'Authentication failed'
+    message: 'Authentication failed. Please try again.',
   });
 });
 

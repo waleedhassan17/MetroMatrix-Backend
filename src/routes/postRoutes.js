@@ -17,8 +17,7 @@ const {
   getMyPosts,
 } = require('../controllers/postController');
 
-// ===== VALIDATION RULES - DEFINE ALL FIRST =====
-
+// Validation rules
 const createPostRules = [
   body('content')
     .notEmpty().withMessage('Post content is required')
@@ -47,19 +46,15 @@ const reportRules = [
   body('description').optional().isLength({ max: 500 }).withMessage('Description cannot exceed 500 characters'),
 ];
 
-// ===== ROUTES =====
-
-// Public routes (optional auth)
+// ===== PUBLIC ROUTES =====
 router.get('/', optionalAuth, getPosts);
-router.get('/search', optionalAuth, getPosts); // Same as getPosts with search query
-
-// Single post
+router.get('/search', optionalAuth, getPosts);
 router.get('/:id', optionalAuth, getPost);
 
-// Private routes (authentication required)
+// ===== AUTHENTICATED ROUTES =====
 router.use(protect);
 
-// Create post
+// Create post with images - FIXED
 router.post('/', uploadPostImages, createPostRules, validate, createPost);
 
 // Update post
@@ -71,11 +66,9 @@ router.delete('/:id', deletePost);
 // Like/unlike post
 router.post('/:id/like', toggleLikePost);
 
-// Add comment
+// Comments
 router.post('/:id/comment', commentRules, validate, addComment);
-
-// Delete comment
-router.delete('/comment/:id', deleteComment);
+router.delete('/comments/:id', deleteComment);
 
 // Report post
 router.post('/:id/report', reportRules, validate, reportPost);
