@@ -90,6 +90,9 @@ app.use('/api/auth/', authLimiter);
 app.use(passport.initialize());
 require('./config/passport');
 
+const uploadRoutes = require('./routes/uploadRoutes');
+app.use('/uploads', uploadRoutes);
+
 // Static files (for uploaded images)
 app.use('/uploads', express.static(path.join(__dirname, '../uploads')));
 
