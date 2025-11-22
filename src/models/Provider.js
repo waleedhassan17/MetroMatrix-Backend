@@ -171,11 +171,28 @@ const providerSchema = new mongoose.Schema(
       enum: ['pending', 'approved', 'rejected'],
       default: 'pending',
     },
+    emailVerified: {
+  type: Boolean,
+  default: false,
+},
+emailVerificationToken: String,
+emailVerificationExpire: Date,
+emailVerificationSentAt: Date,
+emailVerificationAttempts: {
+  type: Number,
+  default: 0,
+},
+// Prevent login until email verified
+canLogin: {
+  type: Boolean,
+  default: false,
+},
     rejectionReason: String,
     verifiedBy: {
       type: mongoose.Schema.Types.ObjectId,
       ref: 'Admin',
     },
+    
 
     // Availability
     availability: {

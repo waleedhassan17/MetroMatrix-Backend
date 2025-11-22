@@ -13,7 +13,10 @@ const {
   forgotPassword,
   resetPassword,
   verifyEmail,
-  logout
+  logout,
+  sendVerificationEmail,
+  verifyEmailToken,
+  checkEmailVerificationStatus,
 } = require('../controllers/authController');
 const { protect } = require('../middleware/authMiddleware');
 const { validate } = require('../middleware/validate');
@@ -107,6 +110,11 @@ router.post('/verify-email',
   validate,
   verifyEmail
 );
+
+// Additional email verification routes
+router.post('/send-verification-email', sendVerificationEmail);
+router.post('/verify-email-token', verifyEmailToken);
+router.post('/check-verification-status', checkEmailVerificationStatus);
 
 // OAuth success/error pages
 router.get('/success', (req, res) => {

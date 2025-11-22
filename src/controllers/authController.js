@@ -5,6 +5,7 @@ const User = require('../models/User');
 const Provider = require('../models/Provider');
 const { generateTokens } = require('../utils/generateToken');
 const { sendEmail, emailTemplates } = require('../services/emailService');
+const EmailVerificationService = require('../services/emailVerificationService');
 
 // @desc    Register user
 // @route   POST /api/auth/register
@@ -113,27 +114,30 @@ const registerProvider = asyncHandler(async (req, res) => {
     fullName,
     phoneNumber,
     email,
-    password
+    password,
+    canLogin: false, // Cannot login until email verified
   });
   
   if (provider) {
-    const tokens = generateTokens(provider._id);
-    
-    provider.refreshToken = tokens.refreshToken;
-    provider.lastLoginDate = Date.now();
-    await provider.save();
+    // Send verification email automatically
+    try {
+      await EmailVerificationService.sendProviderVerificationEmail(email);
+    } catch (error) {
+      console.error('Error sending verification email:', error);
+    }
     
     res.status(201).json({
       success: true,
+      message: 'Provider registered successfully. Please verify your email to continue.',
       provider: {
         id: provider._id,
         fullName: provider.fullName,
         email: provider.email,
         phoneNumber: provider.phoneNumber,
-        profileComplete: provider.profileComplete,
-        verificationStatus: provider.verificationStatus
+        emailVerified: false,
+        canLogin: false,
       },
-      ...tokens
+      requiresEmailVerification: true,
     });
   } else {
     res.status(400);
@@ -149,7 +153,24 @@ const loginProvider = asyncHandler(async (req, res) => {
   
   const provider = await Provider.findOne({ email }).select('+password');
   
+  if (!provider) {
+    res.status(401);
+    throw new Error('Invalid email or password');
+  }
+
+  // Check email verification
+  if (!provider.emailVerified || !provider.canLogin) {
+    res.status(403);
+    throw new Error('Please verify your email before logging in');
+  }
+  
   if (provider && (await provider.matchPassword(password))) {
+    // Check admin approval
+    if (provider.verificationStatus !== 'approved') {
+      res.status(403);
+      throw new Error('Your account is pending admin approval');
+    }
+
     const tokens = generateTokens(provider._id);
     
     provider.refreshToken = tokens.refreshToken;
@@ -402,6 +423,83 @@ const verifyEmail = asyncHandler(async (req, res) => {
   });
 });
 
+// @desc    Send verification email
+// @route   POST /api/auth/send-verification-email
+// @access  Public
+const sendVerificationEmail = asyncHandler(async (req, res) => {
+  const { email, userType = 'user' } = req.body;
+
+  if (!email) {
+    res.status(400);
+    throw new Error('Email is required');
+  }
+
+  try {
+    let result;
+    if (userType === 'provider') {
+      result = await EmailVerificationService.sendProviderVerificationEmail(email);
+    } else {
+      result = await EmailVerificationService.sendUserVerificationEmail(email);
+    }
+
+    res.json({
+      success: true,
+      ...result,
+    });
+  } catch (error) {
+    res.status(400);
+    throw new Error(error.message);
+  }
+});
+
+// @desc    Verify email with token
+// @route   POST /api/auth/verify-email-token
+// @access  Public
+const verifyEmailToken = asyncHandler(async (req, res) => {
+  const { token, userType = 'user' } = req.body;
+
+  if (!token) {
+    res.status(400);
+    throw new Error('Verification token is required');
+  }
+
+  try {
+    const result = await EmailVerificationService.verifyEmail(token, userType);
+    
+    res.json({
+      success: true,
+      ...result,
+    });
+  } catch (error) {
+    res.status(400);
+    throw new Error(error.message);
+  }
+});
+
+// @desc    Check email verification status
+// @route   POST /api/auth/check-verification-status
+// @access  Public
+const checkEmailVerificationStatus = asyncHandler(async (req, res) => {
+  const { email, userType = 'user' } = req.body;
+
+  if (!email) {
+    res.status(400);
+    throw new Error('Email is required');
+  }
+
+  try {
+    const result = await EmailVerificationService.checkVerificationStatus(email, userType);
+    
+    res.json({
+      success: true,
+      ...result,
+    });
+  } catch (error) {
+    res.status(400);
+    throw new Error(error.message);
+  }
+});
+
 // @desc    Logout
 // @route   POST /api/auth/logout
 // @access  Private
@@ -428,5 +526,8 @@ module.exports = {
   forgotPassword,
   resetPassword,
   verifyEmail,
+  sendVerificationEmail,
+  verifyEmailToken,
+  checkEmailVerificationStatus,
   logout,
 };

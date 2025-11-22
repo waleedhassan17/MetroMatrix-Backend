@@ -2,6 +2,7 @@ const jwt = require('jsonwebtoken');
 const asyncHandler = require('express-async-handler');
 const User = require('../models/User');
 const Provider = require('../models/Provider');
+const Admin = require('../models/Admin');
 
 // Protect routes
 const protect = asyncHandler(async (req, res, next) => {
@@ -18,17 +19,28 @@ const protect = asyncHandler(async (req, res, next) => {
       // Verify token
       const decoded = jwt.verify(token, process.env.JWT_SECRET);
 
-      // Get user from the token
+      // Try User first
       let user = await User.findById(decoded.id).select('-password');
       
       if (!user) {
-        // Try to find provider if not a user
+        // Try Provider
         user = await Provider.findById(decoded.id).select('-password');
         if (user) {
           req.isProvider = true;
+          req.isAdmin = false;
         }
       } else {
         req.isProvider = false;
+        req.isAdmin = false;
+      }
+
+      if (!user) {
+        // Try Admin
+        user = await Admin.findById(decoded.id).select('-password');
+        if (user) {
+          req.isAdmin = true;
+          req.isProvider = false;
+        }
       }
 
       if (!user) {
@@ -58,7 +70,7 @@ const protect = asyncHandler(async (req, res, next) => {
 
 // User only middleware
 const userOnly = (req, res, next) => {
-  if (req.isProvider) {
+  if (req.isProvider || req.isAdmin) {
     res.status(403);
     throw new Error('This route is for users only');
   }
@@ -70,6 +82,15 @@ const providerOnly = (req, res, next) => {
   if (!req.isProvider) {
     res.status(403);
     throw new Error('This route is for providers only');
+  }
+  next();
+};
+
+// Admin only middleware
+const adminOnly = (req, res, next) => {
+  if (!req.isAdmin) {
+    res.status(403);
+    throw new Error('This route is for admins only');
   }
   next();
 };
@@ -101,15 +122,28 @@ const optionalAuth = asyncHandler(async (req, res, next) => {
       token = req.headers.authorization.split(' ')[1];
       const decoded = jwt.verify(token, process.env.JWT_SECRET);
       
+      // Try User first
       let user = await User.findById(decoded.id).select('-password');
       
       if (!user) {
+        // Try Provider
         user = await Provider.findById(decoded.id).select('-password');
         if (user) {
           req.isProvider = true;
+          req.isAdmin = false;
         }
       } else {
         req.isProvider = false;
+        req.isAdmin = false;
+      }
+
+      if (!user) {
+        // Try Admin
+        user = await Admin.findById(decoded.id).select('-password');
+        if (user) {
+          req.isAdmin = true;
+          req.isProvider = false;
+        }
       }
       
       if (user && user.isActive) {
@@ -128,6 +162,7 @@ module.exports = {
   protect,
   userOnly,
   providerOnly,
+  adminOnly,
   verifiedProvider,
   optionalAuth
 };

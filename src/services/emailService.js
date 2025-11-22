@@ -15,7 +15,7 @@ const createTransporter = () => {
     });
   } else {
     // Development transporter (use Ethereal for testing)
-    return nodemailer.createTransporter({
+    return nodemailer.createTransport({
       host: 'smtp.ethereal.email',
       port: 587,
       auth: {
@@ -71,38 +71,46 @@ const emailTemplates = {
     `,
   }),
 
-  verifyEmail: (user, token) => ({
+  verifyEmail: (user, verificationUrl) => ({
     subject: 'Verify Your Email - MetroMatrix',
     html: `
       <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto;">
         <h1 style="color: #6366f1;">Verify Your Email</h1>
         <p>Hi ${user.fullName},</p>
-        <p>Please click the button below to verify your email address:</p>
-        <a href="${process.env.CLIENT_URL}/verify-email?token=${token}" 
-           style="background-color: #10b981; color: white; padding: 10px 20px; text-decoration: none; border-radius: 5px; display: inline-block;">
-          Verify Email
-        </a>
-        <p>This link will expire in 24 hours.</p>
-        <p style="margin-top: 20px;">If you didn't create an account, please ignore this email.</p>
-        <p>Best regards,<br>The MetroMatrix Team</p>
+        <p>Thank you for registering with MetroMatrix! Please verify your email address to complete your registration.</p>
+        <p style="margin: 30px 0;">
+          <a href="${verificationUrl}" 
+             style="background-color: #6366f1; color: white; padding: 12px 30px; text-decoration: none; border-radius: 5px; display: inline-block;">
+            Verify Email Address
+          </a>
+        </p>
+        <p>Or copy and paste this link into your browser:</p>
+        <p style="color: #666; word-break: break-all;">${verificationUrl}</p>
+        <p style="margin-top: 30px; color: #666;">This link will expire in 24 hours.</p>
+        <p>If you didn't create an account, please ignore this email.</p>
+        <p style="margin-top: 30px;">Best regards,<br>The MetroMatrix Team</p>
       </div>
     `,
   }),
 
-  resetPassword: (user, token) => ({
+  resetPassword: (user, resetUrl) => ({
     subject: 'Password Reset Request - MetroMatrix',
     html: `
       <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto;">
         <h1 style="color: #6366f1;">Password Reset</h1>
         <p>Hi ${user.fullName},</p>
         <p>You requested a password reset. Click the button below to reset your password:</p>
-        <a href="${process.env.CLIENT_URL}/reset-password?token=${token}" 
-           style="background-color: #ef4444; color: white; padding: 10px 20px; text-decoration: none; border-radius: 5px; display: inline-block;">
-          Reset Password
-        </a>
-        <p>This link will expire in 10 minutes.</p>
-        <p style="margin-top: 20px;">If you didn't request this, please ignore this email.</p>
-        <p>Best regards,<br>The MetroMatrix Team</p>
+        <p style="margin: 30px 0;">
+          <a href="${resetUrl}" 
+             style="background-color: #ef4444; color: white; padding: 12px 30px; text-decoration: none; border-radius: 5px; display: inline-block;">
+            Reset Password
+          </a>
+        </p>
+        <p>Or copy and paste this link into your browser:</p>
+        <p style="color: #666; word-break: break-all;">${resetUrl}</p>
+        <p style="margin-top: 30px; color: #666;">This link will expire in 10 minutes.</p>
+        <p>If you didn't request this, please ignore this email and your password will remain unchanged.</p>
+        <p style="margin-top: 30px;">Best regards,<br>The MetroMatrix Team</p>
       </div>
     `,
   }),

@@ -21,6 +21,18 @@ const testCloudinaryConnection = async () => {
   }
 };
 
+// Add error handling to upload functions
+const handleUploadError = (error, reject) => {
+  console.error('Cloudinary upload error:', error);
+  if (error.message.includes('Invalid image file')) {
+    reject(new Error('Please upload a valid image file'));
+  } else if (error.message.includes('File size')) {
+    reject(new Error('File size exceeds the maximum limit'));
+  } else {
+    reject(new Error('File upload failed. Please try again'));
+  }
+};
+
 // Create storage engines for different file types
 const createStorage = (folder, resourceType = 'auto') => {
   return new CloudinaryStorage({
@@ -159,4 +171,5 @@ module.exports = {
   deleteFiles,
   uploadBase64Image,
   testCloudinaryConnection,
+  handleUploadError,
 };
