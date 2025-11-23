@@ -17,6 +17,9 @@ const {
   sendVerificationEmail,
   verifyEmailToken,
   checkEmailVerificationStatus,
+  resetVerificationLimit,      // NEW
+  manualVerifyEmail,           // NEW
+  getVerificationStatus,       // NEW
 } = require('../controllers/authController');
 const { protect } = require('../middleware/authMiddleware');
 const { validate } = require('../middleware/validate');
@@ -104,17 +107,39 @@ router.post('/reset-password',
   resetPassword
 );
 
-// Email verification
+// Email verification (original routes)
 router.post('/verify-email',
   body('token').notEmpty().withMessage('Verification token is required'),
   validate,
   verifyEmail
 );
 
-// Additional email verification routes
 router.post('/send-verification-email', sendVerificationEmail);
 router.post('/verify-email-token', verifyEmailToken);
 router.post('/check-verification-status', checkEmailVerificationStatus);
+
+// ============================================
+// 🔧 NEW DEBUGGING ROUTES (Add these!)
+// ============================================
+
+// Reset rate limiting for verification emails
+router.post('/reset-verification-limit', resetVerificationLimit);
+
+// Manually verify email (bypass email flow)
+router.post('/manual-verify', manualVerifyEmail);
+
+// Get verification status by email (GET route)
+router.get('/verification-status/:email', getVerificationStatus);
+
+// ============================================
+// NOTE: In production, protect these routes:
+// ============================================
+// if (process.env.NODE_ENV === 'development') {
+//   router.post('/reset-verification-limit', resetVerificationLimit);
+//   router.post('/manual-verify', manualVerifyEmail);
+// }
+// OR add admin protection:
+// router.post('/manual-verify', protect, authorize('admin'), manualVerifyEmail);
 
 // OAuth success/error pages
 router.get('/success', (req, res) => {
@@ -131,4 +156,4 @@ router.get('/error', (req, res) => {
   });
 });
 
-module.exports = router; 
+module.exports = router;

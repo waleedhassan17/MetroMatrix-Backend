@@ -468,6 +468,7 @@ const verifyEmailToken = asyncHandler(async (req, res) => {
     
     res.json({
       success: true,
+      message: 'Email verified successfully! You can now log in.',
       ...result,
     });
   } catch (error) {
@@ -481,6 +482,109 @@ const verifyEmailToken = asyncHandler(async (req, res) => {
 // @access  Public
 const checkEmailVerificationStatus = asyncHandler(async (req, res) => {
   const { email, userType = 'user' } = req.body;
+
+  if (!email) {
+    res.status(400);
+    throw new Error('Email is required');
+  }
+
+  try {
+    const result = await EmailVerificationService.checkVerificationStatus(email, userType);
+    
+    res.json({
+      success: true,
+      ...result,
+    });
+  } catch (error) {
+    res.status(400);
+    throw new Error(error.message);
+  }
+});
+
+// ============================================
+// 🔧 NEW DEBUGGING HELPERS (Add these!)
+// ============================================
+
+// @desc    Reset email verification rate limit
+// @route   POST /api/auth/reset-verification-limit
+// @access  Public (should be protected in production)
+const resetVerificationLimit = asyncHandler(async (req, res) => {
+  const { email, userType = 'user' } = req.body;
+
+  if (!email) {
+    res.status(400);
+    throw new Error('Email is required');
+  }
+
+  const Model = userType === 'provider' ? Provider : User;
+  const user = await Model.findOne({ email });
+
+  if (!user) {
+    res.status(404);
+    throw new Error(`${userType === 'provider' ? 'Provider' : 'User'} not found`);
+  }
+
+  // Reset rate limiting fields
+  user.emailVerificationAttempts = 0;
+  user.emailVerificationSentAt = undefined;
+  await user.save();
+
+  res.json({
+    success: true,
+    message: 'Verification rate limit reset successfully',
+    email: user.email,
+  });
+});
+
+// @desc    Manual email verification (bypass email)
+// @route   POST /api/auth/manual-verify
+// @access  Public (should be protected in production)
+const manualVerifyEmail = asyncHandler(async (req, res) => {
+  const { email, userType = 'user' } = req.body;
+
+  if (!email) {
+    res.status(400);
+    throw new Error('Email is required');
+  }
+
+  const Model = userType === 'provider' ? Provider : User;
+  const user = await Model.findOne({ email });
+
+  if (!user) {
+    res.status(404);
+    throw new Error(`${userType === 'provider' ? 'Provider' : 'User'} not found`);
+  }
+
+  // Manually verify the email
+  user.emailVerified = true;
+  user.isVerified = true;
+  user.emailVerificationToken = undefined;
+  user.emailVerificationExpire = undefined;
+  user.emailVerificationAttempts = 0;
+
+  if (userType === 'provider') {
+    user.canLogin = true;
+  }
+
+  await user.save();
+
+  res.json({
+    success: true,
+    message: 'Email verified manually',
+    data: {
+      email: user.email,
+      emailVerified: user.emailVerified,
+      canLogin: userType === 'provider' ? user.canLogin : true,
+    },
+  });
+});
+
+// @desc    Get verification status by email (GET route)
+// @route   GET /api/auth/verification-status/:email
+// @access  Public
+const getVerificationStatus = asyncHandler(async (req, res) => {
+  const { email } = req.params;
+  const { userType = 'user' } = req.query;
 
   if (!email) {
     res.status(400);
@@ -529,5 +633,8 @@ module.exports = {
   sendVerificationEmail,
   verifyEmailToken,
   checkEmailVerificationStatus,
+  resetVerificationLimit,      // NEW
+  manualVerifyEmail,           // NEW
+  getVerificationStatus,       // NEW
   logout,
 };
