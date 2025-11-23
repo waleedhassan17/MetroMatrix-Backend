@@ -452,7 +452,8 @@ const sendVerificationEmail = asyncHandler(async (req, res) => {
   }
 });
 
-// @desc    Verify email with token
+// ✅ UPDATED: Verify email with token AND return auth tokens for auto-login
+// @desc    Verify email with token and return authenticated session
 // @route   POST /api/auth/verify-email-token
 // @access  Public
 const verifyEmailToken = asyncHandler(async (req, res) => {
@@ -464,12 +465,66 @@ const verifyEmailToken = asyncHandler(async (req, res) => {
   }
 
   try {
-    const result = await EmailVerificationService.verifyEmail(token, userType);
+    // Hash the token
+    const hashedToken = crypto.createHash('sha256').update(token).digest('hex');
     
+    // Find user/provider with valid token
+    const Model = userType === 'provider' ? Provider : User;
+    const user = await Model.findOne({
+      emailVerificationToken: hashedToken,
+      emailVerificationExpire: { $gt: Date.now() },
+    });
+
+    if (!user) {
+      res.status(400);
+      throw new Error('Invalid or expired verification token');
+    }
+
+    // Mark email as verified
+    user.emailVerified = true;
+    user.isVerified = true;
+    user.emailVerificationToken = undefined;
+    user.emailVerificationExpire = undefined;
+    user.emailVerificationAttempts = 0;
+    
+    if (userType === 'provider') {
+      user.canLogin = true;
+    }
+
+    // ✅ IMPORTANT: Generate auth tokens (auto-login after verification)
+    const tokens = generateTokens(user._id);
+    user.refreshToken = tokens.refreshToken;
+    user.lastLoginDate = Date.now();
+    
+    await user.save();
+
+    // Return user/provider data with tokens
+    const userData = userType === 'provider' ? {
+      id: user._id,
+      fullName: user.fullName,
+      email: user.email,
+      phoneNumber: user.phoneNumber,
+      providerType: user.providerType,
+      profileComplete: user.profileComplete,
+      verificationStatus: user.verificationStatus,
+      emailVerified: user.emailVerified,
+      canLogin: user.canLogin,
+    } : {
+      id: user._id,
+      fullName: user.fullName,
+      email: user.email,
+      phoneNumber: user.phoneNumber,
+      profileComplete: user.profileComplete,
+      emailVerified: user.emailVerified,
+    };
+
     res.json({
       success: true,
-      message: 'Email verified successfully! You can now log in.',
-      ...result,
+      message: 'Email verified successfully! You are now logged in.',
+      isVerified: true,
+      emailVerified: true,
+      [userType === 'provider' ? 'provider' : 'user']: userData,
+      ...tokens, // Return accessToken and refreshToken
     });
   } catch (error) {
     res.status(400);
@@ -502,7 +557,7 @@ const checkEmailVerificationStatus = asyncHandler(async (req, res) => {
 });
 
 // ============================================
-// 🔧 NEW DEBUGGING HELPERS (Add these!)
+// 🔧 DEBUGGING HELPERS
 // ============================================
 
 // @desc    Reset email verification rate limit
@@ -631,10 +686,10 @@ module.exports = {
   resetPassword,
   verifyEmail,
   sendVerificationEmail,
-  verifyEmailToken,
+  verifyEmailToken,           // ✅ UPDATED - Now returns auth tokens
   checkEmailVerificationStatus,
-  resetVerificationLimit,      // NEW
-  manualVerifyEmail,           // NEW
-  getVerificationStatus,       // NEW
+  resetVerificationLimit,
+  manualVerifyEmail,
+  getVerificationStatus,
   logout,
 };
