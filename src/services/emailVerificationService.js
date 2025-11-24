@@ -17,6 +17,17 @@ class EmailVerificationService {
   }
 
   /**
+   * Get the base URL for verification links
+   * In production, this should be your Heroku backend URL
+   * The backend will handle the verification and redirect to mobile app
+   */
+  static getVerificationBaseUrl() {
+    // Use the API URL for verification (backend handles the web page)
+    // This ensures the link is always accessible from email
+    return process.env.API_URL || process.env.CLIENT_URL || 'http://localhost:5000';
+  }
+
+  /**
    * Send verification email for User
    * @param {String} email - User email
    * @returns {Object} success response
@@ -49,14 +60,18 @@ class EmailVerificationService {
     user.emailVerificationAttempts = (user.emailVerificationAttempts || 0) + 1;
     await user.save();
 
-    // Create verification URL
-    const verificationUrl = `${process.env.CLIENT_URL}/verify-email?token=${token}&type=user`;
+    // Create verification URL - points to backend web page
+    const baseUrl = this.getVerificationBaseUrl();
+    const verificationUrl = `${baseUrl}/verify-email?token=${token}&type=user`;
     
+    console.log('📧 Sending verification email to:', email);
+    console.log('🔗 Verification URL:', verificationUrl);
+
     try {
       await sendEmail({
         email: user.email,
         subject: 'Verify Your Email - MetroMatrix',
-        html: this.getVerificationEmailTemplate(user.fullName, verificationUrl),
+        html: this.getVerificationEmailTemplate(user.fullName, verificationUrl, 'user'),
       });
 
       return {
@@ -65,6 +80,7 @@ class EmailVerificationService {
         expiresIn: '24 hours',
       };
     } catch (error) {
+      console.error('❌ Email send error:', error);
       // Rollback on email failure
       user.emailVerificationToken = undefined;
       user.emailVerificationExpire = undefined;
@@ -105,13 +121,18 @@ class EmailVerificationService {
     provider.emailVerificationAttempts = (provider.emailVerificationAttempts || 0) + 1;
     await provider.save();
 
-    const verificationUrl = `${process.env.CLIENT_URL}/verify-email?token=${token}&type=provider`;
-    
+    // Create verification URL - points to backend web page
+    const baseUrl = this.getVerificationBaseUrl();
+    const verificationUrl = `${baseUrl}/verify-email?token=${token}&type=provider`;
+
+    console.log('📧 Sending provider verification email to:', email);
+    console.log('🔗 Verification URL:', verificationUrl);
+
     try {
       await sendEmail({
         email: provider.email,
         subject: 'Verify Your Email - MetroMatrix Provider',
-        html: this.getVerificationEmailTemplate(provider.fullName, verificationUrl),
+        html: this.getVerificationEmailTemplate(provider.fullName, verificationUrl, 'provider'),
       });
 
       return {
@@ -120,6 +141,7 @@ class EmailVerificationService {
         expiresIn: '24 hours',
       };
     } catch (error) {
+      console.error('❌ Email send error:', error);
       provider.emailVerificationToken = undefined;
       provider.emailVerificationExpire = undefined;
       await provider.save();
@@ -128,7 +150,7 @@ class EmailVerificationService {
   }
 
   /**
-   * Verify email with token
+   * Verify email with token (called from API, not web page)
    * @param {String} token - Verification token
    * @param {String} userType - 'user' or 'provider'
    * @returns {Object} success response
@@ -195,63 +217,99 @@ class EmailVerificationService {
    * Get email template for verification
    * @param {String} fullName - User's full name
    * @param {String} verificationUrl - Verification URL
+   * @param {String} userType - 'user' or 'provider'
    * @returns {String} HTML email template
    */
-  static getVerificationEmailTemplate(fullName, verificationUrl) {
+  static getVerificationEmailTemplate(fullName, verificationUrl, userType = 'user') {
+    const isProvider = userType === 'provider';
+    const accentColor = isProvider ? '#8b5cf6' : '#6366f1';
+    const badgeText = isProvider ? 'Provider Account' : 'User Account';
+    const badgeBg = isProvider ? '#f3e8ff' : '#e0e7ff';
+    const badgeColor = isProvider ? '#7c3aed' : '#4f46e5';
+
     return `
-      <!DOCTYPE html>
-      <html>
-      <head>
-        <meta charset="UTF-8">
-        <meta name="viewport" content="width=device-width, initial-scale=1.0">
-        <title>Verify Your Email</title>
-      </head>
-      <body style="margin: 0; padding: 0; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;">
-        <div style="max-width: 600px; margin: 0 auto; padding: 20px;">
-          <div style="background-color: #6366f1; padding: 30px; text-align: center; border-radius: 10px 10px 0 0;">
-            <h1 style="color: white; margin: 0; font-size: 28px;">MetroMatrix</h1>
-          </div>
-          
-          <div style="background-color: #ffffff; padding: 40px; border: 1px solid #e5e7eb; border-top: none; border-radius: 0 0 10px 10px;">
-            <h2 style="color: #1f2937; margin-top: 0;">Verify Your Email Address</h2>
-            
-            <p style="color: #4b5563; line-height: 1.6;">Hi ${fullName},</p>
-            
-            <p style="color: #4b5563; line-height: 1.6;">
-              Thank you for registering with MetroMatrix! To complete your registration and access all features, 
-              please verify your email address by clicking the button below:
-            </p>
-            
-            <div style="text-align: center; margin: 35px 0;">
-              <a href="${verificationUrl}" 
-                 style="background-color: #6366f1; color: white; padding: 14px 40px; text-decoration: none; border-radius: 8px; display: inline-block; font-weight: 600; font-size: 16px;">
-                Verify Email Address
-              </a>
-            </div>
-            
-            <p style="color: #6b7280; font-size: 14px; line-height: 1.6;">
-              Or copy and paste this link into your browser:
-            </p>
-            <p style="color: #6366f1; word-break: break-all; font-size: 13px; background-color: #f3f4f6; padding: 12px; border-radius: 6px;">
-              ${verificationUrl}
-            </p>
-            
-            <div style="margin-top: 30px; padding-top: 20px; border-top: 1px solid #e5e7eb;">
-              <p style="color: #6b7280; font-size: 13px; margin: 0;">
-                ⏰ This verification link will expire in 24 hours.
-              </p>
-              <p style="color: #6b7280; font-size: 13px; margin: 10px 0 0 0;">
-                If you didn't create an account with MetroMatrix, please ignore this email.
-              </p>
-            </div>
-          </div>
-          
-          <div style="text-align: center; margin-top: 20px; color: #9ca3af; font-size: 12px;">
-            <p>© 2024 MetroMatrix. All rights reserved.</p>
-          </div>
-        </div>
-      </body>
-      </html>
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Verify Your Email - MetroMatrix</title>
+</head>
+<body style="margin: 0; padding: 0; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif; background-color: #f3f4f6;">
+  <div style="max-width: 600px; margin: 0 auto; padding: 40px 20px;">
+    
+    <!-- Header -->
+    <div style="background: linear-gradient(135deg, ${accentColor} 0%, #a855f7 100%); padding: 40px 30px; text-align: center; border-radius: 16px 16px 0 0;">
+      <h1 style="color: white; margin: 0; font-size: 32px; font-weight: 700; letter-spacing: -0.5px;">MetroMatrix</h1>
+      <p style="color: rgba(255,255,255,0.9); margin: 8px 0 0 0; font-size: 14px;">Your Community Service Platform</p>
+    </div>
+    
+    <!-- Content -->
+    <div style="background-color: #ffffff; padding: 40px 30px; border-radius: 0 0 16px 16px; box-shadow: 0 4px 6px rgba(0,0,0,0.05);">
+      
+      <!-- Badge -->
+      <div style="text-align: center; margin-bottom: 24px;">
+        <span style="display: inline-block; background: ${badgeBg}; color: ${badgeColor}; padding: 6px 16px; border-radius: 20px; font-size: 12px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.5px;">
+          ${isProvider ? '🏥' : '👤'} ${badgeText}
+        </span>
+      </div>
+      
+      <h2 style="color: #1f2937; margin: 0 0 16px 0; font-size: 24px; font-weight: 700; text-align: center;">
+        Verify Your Email Address
+      </h2>
+      
+      <p style="color: #4b5563; line-height: 1.7; margin: 0 0 8px 0; font-size: 16px;">
+        Hi <strong>${fullName}</strong>,
+      </p>
+      
+      <p style="color: #4b5563; line-height: 1.7; margin: 0 0 32px 0; font-size: 16px;">
+        Thank you for registering with MetroMatrix! To complete your registration and access all features, please verify your email address by clicking the button below:
+      </p>
+      
+      <!-- CTA Button -->
+      <div style="text-align: center; margin: 32px 0;">
+        <a href="${verificationUrl}" 
+           style="display: inline-block; background: linear-gradient(135deg, ${accentColor} 0%, #a855f7 100%); color: white; padding: 16px 48px; text-decoration: none; border-radius: 12px; font-weight: 600; font-size: 16px; box-shadow: 0 4px 14px rgba(99, 102, 241, 0.4);">
+          ✓ Verify Email Address
+        </a>
+      </div>
+      
+      <!-- Alternative Link -->
+      <div style="background: #f9fafb; border: 1px solid #e5e7eb; border-radius: 8px; padding: 16px; margin: 24px 0;">
+        <p style="color: #6b7280; font-size: 13px; margin: 0 0 8px 0;">
+          Or copy and paste this link into your browser:
+        </p>
+        <p style="color: ${accentColor}; word-break: break-all; font-size: 12px; margin: 0; font-family: monospace; background: #fff; padding: 10px; border-radius: 4px; border: 1px solid #e5e7eb;">
+          ${verificationUrl}
+        </p>
+      </div>
+      
+      <!-- Info Box -->
+      <div style="background: #fef3c7; border: 1px solid #fcd34d; border-radius: 8px; padding: 16px; margin: 24px 0;">
+        <p style="color: #92400e; font-size: 14px; margin: 0;">
+          ⏰ <strong>Important:</strong> This verification link will expire in 24 hours.
+        </p>
+      </div>
+      
+      <p style="color: #9ca3af; font-size: 14px; margin: 24px 0 0 0;">
+        If you didn't create an account with MetroMatrix, please ignore this email or contact our support team.
+      </p>
+      
+    </div>
+    
+    <!-- Footer -->
+    <div style="text-align: center; margin-top: 32px; padding: 0 20px;">
+      <p style="color: #9ca3af; font-size: 12px; margin: 0 0 8px 0;">
+        © ${new Date().getFullYear()} MetroMatrix. All rights reserved.
+      </p>
+      <p style="color: #9ca3af; font-size: 12px; margin: 0;">
+        This email was sent to verify your account registration.
+      </p>
+    </div>
+    
+  </div>
+</body>
+</html>
     `;
   }
 }

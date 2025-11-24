@@ -7,6 +7,7 @@ const rateLimit = require('express-rate-limit');
 const mongoSanitize = require('express-mongo-sanitize');
 const passport = require('passport');
 const path = require('path');
+const crypto = require('crypto');
 
 // Import middleware
 const { errorHandler, notFound } = require('./middleware/errorMiddleware');
@@ -17,6 +18,11 @@ const userRoutes = require('./routes/userRoutes');
 const providerRoutes = require('./routes/providerRoutes');
 const postRoutes = require('./routes/postRoutes');
 const adminRoutes = require('./routes/adminRoutes');
+
+// Import models and utils for verification page
+const User = require('./models/User');
+const Provider = require('./models/Provider');
+const { generateTokens } = require('./utils/generateToken');
 
 // Initialize express
 const app = express();
@@ -55,6 +61,7 @@ app.use(cors(corsOptions));
 app.use(
   helmet({
     crossOriginResourcePolicy: { policy: 'cross-origin' },
+    contentSecurityPolicy: false, // Disable for verification page
   })
 );
 
@@ -80,7 +87,7 @@ app.use('/api/', limiter);
 // Auth rate limiting (stricter)
 const authLimiter = rateLimit({
   windowMs: 15 * 60 * 1000, // 15 minutes
-  max: 5, // limit each IP to 5 requests per windowMs
+  max: 10, // limit each IP to 10 requests per windowMs
   skipSuccessfulRequests: true,
   message: 'Too many authentication attempts, please try again later.',
 });
@@ -105,6 +112,387 @@ app.get('/health', (req, res) => {
     uptime: process.uptime(),
   });
 });
+
+// ===== EMAIL VERIFICATION WEB PAGE (FOR MOBILE APP) =====
+app.get('/verify-email', async (req, res) => {
+  const { token, type = 'user' } = req.query;
+  
+  if (!token) {
+    return res.send(getVerificationHTML('error', 'No verification token provided.', null, null, type));
+  }
+
+  try {
+    const hashedToken = crypto.createHash('sha256').update(token).digest('hex');
+    const Model = type === 'provider' ? Provider : User;
+    
+    const user = await Model.findOne({
+      emailVerificationToken: hashedToken,
+      emailVerificationExpire: { $gt: Date.now() },
+    });
+
+    if (!user) {
+      return res.send(getVerificationHTML('expired', 'Invalid or expired verification link. Please request a new verification email from the app.', null, null, type));
+    }
+
+    // Verify the email
+    user.emailVerified = true;
+    user.isVerified = true;
+    user.emailVerificationToken = undefined;
+    user.emailVerificationExpire = undefined;
+    user.emailVerificationAttempts = 0;
+    
+    if (type === 'provider') {
+      user.canLogin = true;
+    }
+
+    // Generate auth tokens for auto-login
+    const tokens = generateTokens(user._id);
+    user.refreshToken = tokens.refreshToken;
+    user.lastLoginDate = Date.now();
+    
+    await user.save();
+
+    // Create deep link URL for mobile app
+    const deepLinkParams = new URLSearchParams({
+      verified: 'true',
+      accessToken: tokens.accessToken,
+      refreshToken: tokens.refreshToken,
+      userType: type,
+      userId: user._id.toString(),
+      email: user.email,
+      fullName: user.fullName,
+    });
+
+    // Deep link scheme for your app
+    const deepLinkUrl = `metromatrix://verify-success?${deepLinkParams}`;
+    
+    return res.send(getVerificationHTML('success', 'Your email has been verified successfully!', deepLinkUrl, tokens.accessToken, type));
+    
+  } catch (error) {
+    console.error('Verification error:', error);
+    return res.send(getVerificationHTML('error', 'Something went wrong. Please try again or contact support.', null, null, type));
+  }
+});
+
+// HTML template helper function for verification page
+function getVerificationHTML(status, message, deepLinkUrl = null, accessToken = null, userType = 'user') {
+  const isSuccess = status === 'success';
+  const isExpired = status === 'expired';
+  
+  let iconContent, iconBg, titleColor, title;
+  
+  if (isSuccess) {
+    iconContent = '✓';
+    iconBg = '#d1fae5';
+    titleColor = '#059669';
+    title = 'Email Verified!';
+  } else if (isExpired) {
+    iconContent = '⏰';
+    iconBg = '#fef3c7';
+    titleColor = '#d97706';
+    title = 'Link Expired';
+  } else {
+    iconContent = '✕';
+    iconBg = '#fee2e2';
+    titleColor = '#dc2626';
+    title = 'Verification Failed';
+  }
+  
+  return `
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>${title} - MetroMatrix</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    body {
+      font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+      min-height: 100vh;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      background: linear-gradient(135deg, #6366f1 0%, #8b5cf6 50%, #a855f7 100%);
+      padding: 20px;
+    }
+    .container {
+      background: white;
+      border-radius: 24px;
+      padding: 48px 40px;
+      text-align: center;
+      max-width: 420px;
+      width: 100%;
+      box-shadow: 0 25px 80px rgba(0,0,0,0.35);
+    }
+    .logo {
+      font-size: 28px;
+      font-weight: 700;
+      color: #6366f1;
+      margin-bottom: 32px;
+      letter-spacing: -0.5px;
+    }
+    .icon {
+      width: 88px;
+      height: 88px;
+      border-radius: 50%;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      margin: 0 auto 28px;
+      font-size: 44px;
+      background: ${iconBg};
+    }
+    h1 {
+      color: ${titleColor};
+      font-size: 26px;
+      font-weight: 700;
+      margin-bottom: 12px;
+    }
+    p {
+      color: #6b7280;
+      font-size: 15px;
+      line-height: 1.7;
+      margin-bottom: 28px;
+    }
+    .btn {
+      display: inline-block;
+      padding: 16px 36px;
+      border-radius: 12px;
+      font-size: 16px;
+      font-weight: 600;
+      text-decoration: none;
+      transition: all 0.3s ease;
+      cursor: pointer;
+      border: none;
+    }
+    .btn:hover {
+      transform: translateY(-3px);
+      box-shadow: 0 8px 25px rgba(99, 102, 241, 0.4);
+    }
+    .btn-primary {
+      background: linear-gradient(135deg, #6366f1 0%, #8b5cf6 100%);
+      color: white;
+    }
+    .btn-secondary {
+      background: #f3f4f6;
+      color: #374151;
+      margin-top: 12px;
+    }
+    .btn-secondary:hover {
+      background: #e5e7eb;
+      box-shadow: 0 4px 12px rgba(0,0,0,0.1);
+    }
+    .divider {
+      display: flex;
+      align-items: center;
+      margin: 28px 0;
+      color: #9ca3af;
+      font-size: 13px;
+    }
+    .divider::before, .divider::after {
+      content: '';
+      flex: 1;
+      height: 1px;
+      background: #e5e7eb;
+    }
+    .divider span {
+      padding: 0 16px;
+    }
+    .token-section {
+      background: #f9fafb;
+      border: 1px solid #e5e7eb;
+      border-radius: 12px;
+      padding: 20px;
+      margin-top: 8px;
+    }
+    .token-label {
+      font-size: 13px;
+      color: #6b7280;
+      margin-bottom: 10px;
+      text-align: left;
+    }
+    .token-box {
+      background: #1f2937;
+      border-radius: 8px;
+      padding: 14px;
+      word-break: break-all;
+      font-family: 'SF Mono', 'Monaco', 'Inconsolata', monospace;
+      font-size: 11px;
+      color: #10b981;
+      max-height: 70px;
+      overflow-y: auto;
+      text-align: left;
+      line-height: 1.5;
+    }
+    .copy-btn {
+      background: #6366f1;
+      color: white;
+      border: none;
+      padding: 10px 20px;
+      border-radius: 8px;
+      cursor: pointer;
+      font-size: 14px;
+      font-weight: 500;
+      margin-top: 14px;
+      transition: all 0.2s;
+      width: 100%;
+    }
+    .copy-btn:hover { 
+      background: #4f46e5; 
+    }
+    .copy-btn.copied {
+      background: #059669;
+    }
+    .note {
+      font-size: 13px;
+      color: #9ca3af;
+      margin-top: 24px;
+      padding-top: 20px;
+      border-top: 1px solid #e5e7eb;
+    }
+    .user-type-badge {
+      display: inline-block;
+      background: ${userType === 'provider' ? '#dbeafe' : '#fce7f3'};
+      color: ${userType === 'provider' ? '#1d4ed8' : '#be185d'};
+      padding: 6px 14px;
+      border-radius: 20px;
+      font-size: 12px;
+      font-weight: 600;
+      margin-bottom: 20px;
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
+    }
+    .spinner {
+      display: inline-block;
+      width: 16px;
+      height: 16px;
+      border: 2px solid rgba(255,255,255,0.3);
+      border-radius: 50%;
+      border-top-color: white;
+      animation: spin 1s linear infinite;
+      margin-right: 8px;
+      vertical-align: middle;
+    }
+    @keyframes spin {
+      to { transform: rotate(360deg); }
+    }
+    .redirect-notice {
+      background: #eff6ff;
+      border: 1px solid #bfdbfe;
+      border-radius: 8px;
+      padding: 12px;
+      margin-bottom: 20px;
+      font-size: 13px;
+      color: #1e40af;
+    }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <div class="logo">MetroMatrix</div>
+    
+    <div class="user-type-badge">${userType === 'provider' ? '🏥 Provider Account' : '👤 User Account'}</div>
+    
+    <div class="icon">
+      ${iconContent}
+    </div>
+    
+    <h1>${title}</h1>
+    <p>${message}</p>
+    
+    ${isSuccess && deepLinkUrl ? `
+      <div class="redirect-notice" id="redirectNotice">
+        <span class="spinner"></span>
+        Redirecting to app...
+      </div>
+      
+      <a href="${deepLinkUrl}" class="btn btn-primary" id="openAppBtn">
+        Open MetroMatrix App
+      </a>
+      
+      <div class="divider"><span>or copy token manually</span></div>
+      
+      <div class="token-section">
+        <div class="token-label">Your authentication token:</div>
+        <div class="token-box" id="tokenBox">${accessToken}</div>
+        <button class="copy-btn" id="copyBtn" onclick="copyToken()">
+          📋 Copy Token
+        </button>
+      </div>
+      
+      <p class="note">
+        If the app doesn't open automatically, copy the token above and paste it in the app's verification screen.
+      </p>
+    ` : isExpired ? `
+      <p style="font-size: 14px; color: #6b7280; margin-bottom: 20px;">
+        Please open the MetroMatrix app and request a new verification email.
+      </p>
+      <a href="metromatrix://resend-verification?type=${userType}" class="btn btn-primary">
+        Open App
+      </a>
+    ` : `
+      <a href="mailto:sp23-bcs-104@cuilahore.edu.pk?subject=MetroMatrix Verification Issue" class="btn btn-secondary">
+        Contact Support
+      </a>
+    `}
+  </div>
+  
+  ${isSuccess ? `
+  <script>
+    // Copy token function
+    function copyToken() {
+      const token = document.getElementById('tokenBox').innerText;
+      const copyBtn = document.getElementById('copyBtn');
+      
+      navigator.clipboard.writeText(token).then(() => {
+        copyBtn.innerText = '✓ Copied!';
+        copyBtn.classList.add('copied');
+        setTimeout(() => {
+          copyBtn.innerText = '📋 Copy Token';
+          copyBtn.classList.remove('copied');
+        }, 3000);
+      }).catch(() => {
+        // Fallback for older browsers
+        const textArea = document.createElement('textarea');
+        textArea.value = token;
+        document.body.appendChild(textArea);
+        textArea.select();
+        document.execCommand('copy');
+        document.body.removeChild(textArea);
+        copyBtn.innerText = '✓ Copied!';
+        copyBtn.classList.add('copied');
+        setTimeout(() => {
+          copyBtn.innerText = '📋 Copy Token';
+          copyBtn.classList.remove('copied');
+        }, 3000);
+      });
+    }
+    
+    // Try to auto-redirect to app after 2 seconds
+    setTimeout(() => {
+      const redirectNotice = document.getElementById('redirectNotice');
+      window.location.href = "${deepLinkUrl}";
+      
+      // If still on page after 3 seconds, user probably doesn't have app
+      setTimeout(() => {
+        if (redirectNotice) {
+          redirectNotice.innerHTML = 'App not detected. Please copy the token above.';
+          redirectNotice.style.background = '#fef3c7';
+          redirectNotice.style.borderColor = '#fcd34d';
+          redirectNotice.style.color = '#92400e';
+        }
+      }, 3000);
+    }, 2000);
+  </script>
+  ` : ''}
+</body>
+</html>
+  `;
+}
 
 // ===== PRIVACY POLICY ENDPOINT (FOR FACEBOOK OAUTH) =====
 app.get('/privacy-policy', (req, res) => {
@@ -315,7 +703,7 @@ app.get('/privacy-policy', (req, res) => {
   `);
 });
 
-// Terms of Service endpoint (optional but recommended)
+// Terms of Service endpoint
 app.get('/terms-of-service', (req, res) => {
   res.send(`
 <!DOCTYPE html>
@@ -458,6 +846,15 @@ app.get('/', (req, res) => {
     version: '1.0.0',
     documentation: '/api-docs',
     timestamp: new Date().toISOString(),
+    endpoints: {
+      health: '/health',
+      auth: '/api/auth',
+      users: '/api/users',
+      providers: '/api/providers',
+      posts: '/api/posts',
+      admin: '/api/admin',
+      verifyEmail: '/verify-email?token=xxx&type=user',
+    },
   });
 });
 
