@@ -22,6 +22,7 @@ const adminRoutes = require('./routes/adminRoutes');
 // Import models and utils for verification page
 const User = require('./models/User');
 const Provider = require('./models/Provider');
+const PendingSignup = require('./models/PendingSignup');
 const { generateTokens } = require('./utils/generateToken');
 
 // Initialize express
@@ -114,6 +115,7 @@ app.get('/health', (req, res) => {
 });
 
 // ===== EMAIL VERIFICATION WEB PAGE (FOR MOBILE APP) =====
+// ✅ UPDATED: Handles signup verification - creates User/Provider AFTER email verification
 app.get('/verify-email', async (req, res) => {
   const { token, type = 'user' } = req.query;
   
@@ -123,8 +125,101 @@ app.get('/verify-email', async (req, res) => {
 
   try {
     const hashedToken = crypto.createHash('sha256').update(token).digest('hex');
-    const Model = type === 'provider' ? Provider : User;
     
+    // First, check if this is a PendingSignup (new signup verification)
+    const pending = await PendingSignup.findOne({
+      verificationToken: hashedToken,
+      verificationTokenExpire: { $gt: Date.now() },
+      userType: type,
+    }).select('+password');
+
+    if (pending) {
+      // This is a new signup verification - create the user/provider
+      console.log(`✅ Verifying new ${type} signup: ${pending.email}`);
+      
+      let user;
+      let successMessage = '';
+      let deepLinkParams;
+      
+      try {
+        if (type === 'provider') {
+          // ✅ PROVIDER FLOW: Create and enable login with auth tokens
+          user = await Provider.create({
+            fullName: pending.fullName,
+            phoneNumber: pending.phoneNumber,
+            email: pending.email,
+            password: pending.password,
+            emailVerified: true,
+            isVerified: true,
+            canLogin: true, // ✅ Can login after email verification
+            verificationStatus: 'pending', // Pending admin approval
+          });
+          
+          // ✅ Generate auth tokens for provider (can login with limited access)
+          const tokens = generateTokens(user._id);
+          user.refreshToken = tokens.refreshToken;
+          user.lastLoginDate = Date.now();
+          await user.save();
+          
+          successMessage = 'Your email has been verified successfully! You can now login. Your account is pending admin approval for full provider features.';
+          
+          deepLinkParams = new URLSearchParams({
+            verified: 'true',
+            accessToken: tokens.accessToken,
+            refreshToken: tokens.refreshToken,
+            userType: 'provider',
+            userId: user._id.toString(),
+            email: user.email,
+            fullName: user.fullName,
+            canLogin: 'true',
+            verificationStatus: 'pending',
+          });
+        } else {
+          // ✅ USER FLOW: Create and enable full access immediately
+          user = await User.create({
+            fullName: pending.fullName,
+            phoneNumber: pending.phoneNumber,
+            email: pending.email,
+            password: pending.password,
+            emailVerified: true,
+            isVerified: true,
+          });
+          
+          // Generate auth tokens for user (immediate login)
+          const tokens = generateTokens(user._id);
+          user.refreshToken = tokens.refreshToken;
+          user.lastLoginDate = Date.now();
+          await user.save();
+          
+          successMessage = 'Your email has been verified successfully! Welcome to MetroMatrix.';
+          
+          deepLinkParams = new URLSearchParams({
+            verified: 'true',
+            accessToken: tokens.accessToken,
+            refreshToken: tokens.refreshToken,
+            userType: 'user',
+            userId: user._id.toString(),
+            email: user.email,
+            fullName: user.fullName,
+          });
+        }
+        
+        // Delete pending signup record
+        await PendingSignup.deleteOne({ _id: pending._id });
+        
+        const deepLinkUrl = `metromatrix://verify-success?${deepLinkParams}`;
+        return res.send(getVerificationHTML('success', successMessage, deepLinkUrl, null, type));
+        
+      } catch (createError) {
+        console.error(`Error creating ${type} from pending signup:`, createError);
+        // Clean up pending record on failure
+        await PendingSignup.deleteOne({ _id: pending._id });
+        return res.send(getVerificationHTML('error', 'Failed to complete signup. Please try again.', null, null, type));
+      }
+    }
+    
+    // Otherwise, check if this is an existing user's email verification (shouldn't happen with new flow)
+    const Model = type === 'provider' ? Provider : User;
     const user = await Model.findOne({
       emailVerificationToken: hashedToken,
       emailVerificationExpire: { $gt: Date.now() },
@@ -134,7 +229,7 @@ app.get('/verify-email', async (req, res) => {
       return res.send(getVerificationHTML('expired', 'Invalid or expired verification link. Please request a new verification email from the app.', null, null, type));
     }
 
-    // Verify the email
+    // This is an existing user's email verification
     user.emailVerified = true;
     user.isVerified = true;
     user.emailVerificationToken = undefined;
@@ -145,14 +240,11 @@ app.get('/verify-email', async (req, res) => {
       user.canLogin = true;
     }
 
-    // Generate auth tokens for auto-login
     const tokens = generateTokens(user._id);
     user.refreshToken = tokens.refreshToken;
     user.lastLoginDate = Date.now();
-    
     await user.save();
 
-    // Create deep link URL for mobile app
     const deepLinkParams = new URLSearchParams({
       verified: 'true',
       accessToken: tokens.accessToken,
@@ -163,9 +255,7 @@ app.get('/verify-email', async (req, res) => {
       fullName: user.fullName,
     });
 
-    // Deep link scheme for your app
     const deepLinkUrl = `metromatrix://verify-success?${deepLinkParams}`;
-    
     return res.send(getVerificationHTML('success', 'Your email has been verified successfully!', deepLinkUrl, tokens.accessToken, type));
     
   } catch (error) {
