@@ -76,21 +76,30 @@ https://metromatrix-api-2e35f5f074df.herokuapp.com
   - Check provider verification status
   - Body: `email`
 
-### Password Management
+### Password Management (OTP-Based)
 - **POST** `/api/auth/forgot-password`
-  - Request password reset
-  - Body: `email`
-  - Response: Reset email sent with web page link
+  - Request password reset OTP
+  - Body: `email`, `userType` (optional)
+  - Response: `{ success, message, email, expiresIn: 600 }`
+  - Note: OTP sent to email, expires in 10 minutes
+
+- **POST** `/api/auth/verify-reset-otp`
+  - ✅ NEW: Verify OTP code
+  - Body: `email`, `otp`, `userType` (optional)
+  - Response: `{ success, message, resetToken, email, expiresIn: 300 }`
+  - Note: Returns reset token valid for 5 minutes
+
+- **POST** `/api/auth/resend-reset-otp`
+  - ✅ NEW: Resend OTP code (with rate limiting)
+  - Body: `email`, `userType` (optional)
+  - Response: `{ success, message, email, expiresIn: 600 }`
+  - Note: Max 3 resends per 10 minutes, 2-min delay between resends
 
 - **POST** `/api/auth/reset-password`
-  - Reset password with token
-  - Body: `token`, `password`
-  - Response: Success message with user details
-
-- **GET** `/api/auth/reset-password`
-  - ✅ NEW: Validate password reset token (via API)
-  - Query: `token`, `type` (user|provider)
-  - Response: Token validity and user info
+  - Reset password with reset token
+  - Body: `resetToken`, `password`
+  - Response: `{ success, message, userType, email, user object }`
+  - Note: Uses reset token from OTP verification, not direct token
 
 ### Token & Session Management
 - **POST** `/api/auth/refresh`
