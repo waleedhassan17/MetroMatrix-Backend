@@ -1031,6 +1031,420 @@ app.get('/terms-of-service', (req, res) => {
   `);
 });
 
+// ===== PASSWORD RESET JSON API (FOR FRONTEND REQUESTS) =====
+// ✅ NEW: Reset password via API and return JSON response
+app.get('/api/reset-password', async (req, res) => {
+  const { token, type = 'user' } = req.query;
+  
+  if (!token) {
+    return res.status(400).json({
+      success: false,
+      message: 'Password reset token is required',
+      statusCode: 400,
+    });
+  }
+
+  try {
+    const hashedToken = crypto.createHash('sha256').update(token).digest('hex');
+    
+    // Check if token is valid for either user or provider
+    const Model = type === 'provider' ? Provider : User;
+    const user = await Model.findOne({
+      resetPasswordToken: hashedToken,
+      resetPasswordExpire: { $gt: Date.now() },
+    });
+
+    if (!user) {
+      return res.status(400).json({
+        success: false,
+        message: 'Invalid or expired reset token',
+        statusCode: 400,
+      });
+    }
+
+    // Return token validation response
+    return res.json({
+      success: true,
+      message: 'Password reset token is valid',
+      tokenValid: true,
+      userType: type,
+      email: user.email,
+      fullName: user.fullName,
+    });
+  } catch (error) {
+    console.error('Password reset token validation error:', error);
+    return res.status(500).json({
+      success: false,
+      message: 'Error validating reset token',
+      statusCode: 500,
+    });
+  }
+});
+
+// ===== PASSWORD RESET WEB PAGE (FOR MOBILE APP) =====
+// ✅ NEW: Password reset page with auto-redirect
+app.get('/reset-password', async (req, res) => {
+  const { token, type = 'user' } = req.query;
+  
+  if (!token) {
+    return res.send(getPasswordResetHTML('error', 'No reset token provided.', null, type));
+  }
+
+  try {
+    const hashedToken = crypto.createHash('sha256').update(token).digest('hex');
+    
+    // Verify token
+    const Model = type === 'provider' ? Provider : User;
+    const user = await Model.findOne({
+      resetPasswordToken: hashedToken,
+      resetPasswordExpire: { $gt: Date.now() },
+    });
+
+    if (!user) {
+      return res.send(getPasswordResetHTML('expired', 'This reset link has expired. Please request a new password reset email.', null, type));
+    }
+
+    console.log(`✅ Password reset link valid for ${type}: ${user.email}`);
+    
+    const deepLinkParams = new URLSearchParams({
+      resetToken: token,
+      userType: type,
+      email: user.email,
+    });
+
+    const deepLinkUrl = `metromatrix://reset-password?${deepLinkParams}`;
+    
+    return res.send(getPasswordResetHTML('valid', `You can now reset your password. Redirecting to MetroMatrix app...`, deepLinkUrl, type, token));
+    
+  } catch (error) {
+    console.error('Password reset page error:', error);
+    return res.send(getPasswordResetHTML('error', 'Something went wrong. Please try again or contact support.', null, type));
+  }
+});
+
+// HTML template helper function for password reset page
+function getPasswordResetHTML(status, message, deepLinkUrl = null, userType = 'user', resetToken = null) {
+  const isValid = status === 'valid';
+  const isExpired = status === 'expired';
+  
+  let iconContent, iconBg, titleColor, title;
+  
+  if (isValid) {
+    iconContent = '🔐';
+    iconBg = '#e0e7ff';
+    titleColor = '#4f46e5';
+    title = 'Reset Your Password';
+  } else if (isExpired) {
+    iconContent = '⏰';
+    iconBg = '#fef3c7';
+    titleColor = '#d97706';
+    title = 'Link Expired';
+  } else {
+    iconContent = '✕';
+    iconBg = '#fee2e2';
+    titleColor = '#dc2626';
+    title = 'Reset Failed';
+  }
+  
+  return `
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>${title} - MetroMatrix</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    body {
+      font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+      min-height: 100vh;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      background: linear-gradient(135deg, #6366f1 0%, #8b5cf6 50%, #a855f7 100%);
+      padding: 20px;
+    }
+    .container {
+      background: white;
+      border-radius: 24px;
+      padding: 48px 40px;
+      text-align: center;
+      max-width: 420px;
+      width: 100%;
+      box-shadow: 0 25px 80px rgba(0,0,0,0.35);
+    }
+    .logo {
+      font-size: 28px;
+      font-weight: 700;
+      color: #6366f1;
+      margin-bottom: 32px;
+      letter-spacing: -0.5px;
+    }
+    .icon {
+      width: 88px;
+      height: 88px;
+      border-radius: 50%;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      margin: 0 auto 28px;
+      font-size: 44px;
+      background: ${iconBg};
+    }
+    h1 {
+      color: ${titleColor};
+      font-size: 26px;
+      font-weight: 700;
+      margin-bottom: 12px;
+    }
+    p {
+      color: #6b7280;
+      font-size: 15px;
+      line-height: 1.7;
+      margin-bottom: 28px;
+    }
+    .btn {
+      display: inline-block;
+      padding: 16px 36px;
+      border-radius: 12px;
+      font-size: 16px;
+      font-weight: 600;
+      text-decoration: none;
+      transition: all 0.3s ease;
+      cursor: pointer;
+      border: none;
+    }
+    .btn:hover {
+      transform: translateY(-3px);
+      box-shadow: 0 8px 25px rgba(99, 102, 241, 0.4);
+    }
+    .btn-primary {
+      background: linear-gradient(135deg, #6366f1 0%, #8b5cf6 100%);
+      color: white;
+    }
+    .btn-secondary {
+      background: #f3f4f6;
+      color: #374151;
+      margin-top: 12px;
+    }
+    .btn-secondary:hover {
+      background: #e5e7eb;
+      box-shadow: 0 4px 12px rgba(0,0,0,0.1);
+    }
+    .token-section {
+      background: #f9fafb;
+      border: 1px solid #e5e7eb;
+      border-radius: 12px;
+      padding: 20px;
+      margin-top: 8px;
+    }
+    .token-label {
+      font-size: 13px;
+      color: #6b7280;
+      margin-bottom: 10px;
+      text-align: left;
+    }
+    .token-box {
+      background: #1f2937;
+      border-radius: 8px;
+      padding: 14px;
+      word-break: break-all;
+      font-family: 'SF Mono', 'Monaco', 'Inconsolata', monospace;
+      font-size: 11px;
+      color: #10b981;
+      max-height: 70px;
+      overflow-y: auto;
+      text-align: left;
+      line-height: 1.5;
+    }
+    .copy-btn {
+      background: #6366f1;
+      color: white;
+      border: none;
+      padding: 10px 20px;
+      border-radius: 8px;
+      cursor: pointer;
+      font-size: 14px;
+      font-weight: 500;
+      margin-top: 14px;
+      transition: all 0.2s;
+      width: 100%;
+    }
+    .copy-btn:hover { 
+      background: #4f46e5; 
+    }
+    .copy-btn.copied {
+      background: #059669;
+    }
+    .note {
+      font-size: 13px;
+      color: #9ca3af;
+      margin-top: 24px;
+      padding-top: 20px;
+      border-top: 1px solid #e5e7eb;
+    }
+    .user-type-badge {
+      display: inline-block;
+      background: ${userType === 'provider' ? '#dbeafe' : '#fce7f3'};
+      color: ${userType === 'provider' ? '#1d4ed8' : '#be185d'};
+      padding: 6px 14px;
+      border-radius: 20px;
+      font-size: 12px;
+      font-weight: 600;
+      margin-bottom: 20px;
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
+    }
+    .spinner {
+      display: inline-block;
+      width: 16px;
+      height: 16px;
+      border: 2px solid rgba(255,255,255,0.3);
+      border-radius: 50%;
+      border-top-color: white;
+      animation: spin 1s linear infinite;
+      margin-right: 8px;
+      vertical-align: middle;
+    }
+    @keyframes spin {
+      to { transform: rotate(360deg); }
+    }
+    .redirect-notice {
+      background: #eff6ff;
+      border: 1px solid #bfdbfe;
+      border-radius: 8px;
+      padding: 12px;
+      margin-bottom: 20px;
+      font-size: 13px;
+      color: #1e40af;
+    }
+    .divider {
+      display: flex;
+      align-items: center;
+      margin: 28px 0;
+      color: #9ca3af;
+      font-size: 13px;
+    }
+    .divider::before, .divider::after {
+      content: '';
+      flex: 1;
+      height: 1px;
+      background: #e5e7eb;
+    }
+    .divider span {
+      padding: 0 16px;
+    }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <div class="logo">MetroMatrix</div>
+    
+    <div class="user-type-badge">${userType === 'provider' ? '🏥 Provider Account' : '👤 User Account'}</div>
+    
+    <div class="icon">
+      ${iconContent}
+    </div>
+    
+    <h1>${title}</h1>
+    <p>${message}</p>
+    
+    ${isValid && deepLinkUrl ? `
+      <div class="redirect-notice" id="redirectNotice">
+        <span class="spinner"></span>
+        Redirecting to app...
+      </div>
+      
+      <a href="${deepLinkUrl}" class="btn btn-primary" id="openAppBtn">
+        Open MetroMatrix App
+      </a>
+      
+      <div class="divider"><span>or copy token manually</span></div>
+      
+      <div class="token-section">
+        <div class="token-label">Your password reset token:</div>
+        <div class="token-box" id="tokenBox">${resetToken}</div>
+        <button class="copy-btn" id="copyBtn" onclick="copyToken()">
+          📋 Copy Token
+        </button>
+      </div>
+      
+      <p class="note">
+        If the app doesn't open automatically, copy the token above and paste it in the app's password reset screen.
+      </p>
+    ` : isExpired ? `
+      <p style="font-size: 14px; color: #6b7280; margin-bottom: 20px;">
+        Please open the MetroMatrix app and request a new password reset email.
+      </p>
+      <a href="metromatrix://forgot-password" class="btn btn-primary">
+        Open App
+      </a>
+    ` : `
+      <a href="mailto:sp23-bcs-104@cuilahore.edu.pk?subject=MetroMatrix Password Reset Issue" class="btn btn-secondary">
+        Contact Support
+      </a>
+    `}
+  </div>
+  
+  ${isValid ? `
+  <script>
+    // Copy token function
+    function copyToken() {
+      const token = document.getElementById('tokenBox').innerText;
+      const copyBtn = document.getElementById('copyBtn');
+      
+      navigator.clipboard.writeText(token).then(() => {
+        copyBtn.innerText = '✓ Copied!';
+        copyBtn.classList.add('copied');
+        setTimeout(() => {
+          copyBtn.innerText = '📋 Copy Token';
+          copyBtn.classList.remove('copied');
+        }, 3000);
+      }).catch(() => {
+        const textArea = document.createElement('textarea');
+        textArea.value = token;
+        document.body.appendChild(textArea);
+        textArea.select();
+        document.execCommand('copy');
+        document.body.removeChild(textArea);
+        copyBtn.innerText = '✓ Copied!';
+        copyBtn.classList.add('copied');
+        setTimeout(() => {
+          copyBtn.innerText = '📋 Copy Token';
+          copyBtn.classList.remove('copied');
+        }, 3000);
+      });
+    }
+    
+    // ✅ Auto-redirect to app IMMEDIATELY (1 second delay for UX)
+    if ("${deepLinkUrl}") {
+      setTimeout(() => {
+        const redirectNotice = document.getElementById('redirectNotice');
+        
+        // Attempt to open app via deep link
+        window.location.href = "${deepLinkUrl}";
+        
+        // If app is not installed, show fallback message after 3 seconds
+        setTimeout(() => {
+          if (redirectNotice && document.hasFocus()) {
+            redirectNotice.innerHTML = '✓ Token validated! You can now close this window and paste the token in the app.';
+            redirectNotice.style.background = '#d1fae5';
+            redirectNotice.style.borderColor = '#6ee7b7';
+            redirectNotice.style.color = '#059669';
+          }
+        }, 3000);
+      }, 1000);
+    }
+  </script>
+  ` : ''}
+</body>
+</html>
+  `;
+}
+
 // API Routes
 app.use('/api/auth', authRoutes);
 app.use('/api/users', userRoutes);

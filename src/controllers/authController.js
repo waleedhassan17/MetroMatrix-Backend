@@ -371,21 +371,76 @@ const forgotPassword = asyncHandler(async (req, res) => {
   const resetToken = user.getResetPasswordToken();
   await user.save();
   
-  // Create reset URL
-  const resetUrl = `${process.env.CLIENT_URL}/reset-password?token=${resetToken}&type=${
+  // Create reset URL (using web page instead of client URL)
+  const resetUrl = `https://metromatrix-api-2e35f5f074df.herokuapp.com/reset-password?token=${resetToken}&type=${
     isProvider ? 'provider' : 'user'
   }`;
   
   try {
+    // Send email with proper template
     await sendEmail({
       email: user.email,
       subject: 'Password Reset Request - MetroMatrix',
-      message: `You requested a password reset. Please click this link to reset your password: ${resetUrl}. This link will expire in 10 minutes.`,
+      html: `
+        <div style="font-family: 'Inter', Arial, sans-serif; max-width: 600px; margin: 0 auto; background: #f9fafb; padding: 20px; border-radius: 8px;">
+          <div style="background: white; padding: 40px; border-radius: 8px; box-shadow: 0 2px 8px rgba(0,0,0,0.1);">
+            <div style="text-align: center; margin-bottom: 30px;">
+              <h1 style="color: #6366f1; font-size: 28px; margin: 0;">MetroMatrix</h1>
+              <p style="color: #6b7280; margin: 8px 0 0 0; font-size: 14px;">Community Service Platform</p>
+            </div>
+            
+            <h2 style="color: #1f2937; font-size: 24px; margin-bottom: 8px;">Reset Your Password</h2>
+            <p style="color: #6b7280; font-size: 15px; line-height: 1.6; margin: 0 0 20px 0;">
+              Hi ${user.fullName},
+            </p>
+            
+            <p style="color: #6b7280; font-size: 15px; line-height: 1.6; margin: 0 0 28px 0;">
+              We received a request to reset your password. Click the button below to securely reset your password. This link will expire in <strong>10 minutes</strong>.
+            </p>
+            
+            <div style="text-align: center; margin: 32px 0;">
+              <a href="${resetUrl}" 
+                 style="background: linear-gradient(135deg, #6366f1 0%, #8b5cf6 100%); color: white; padding: 14px 40px; text-decoration: none; border-radius: 8px; display: inline-block; font-weight: 600; font-size: 16px; transition: transform 0.3s;">
+                Reset Password
+              </a>
+            </div>
+            
+            <p style="color: #6b7280; font-size: 13px; margin: 28px 0 0 0; padding-top: 20px; border-top: 1px solid #e5e7eb;">
+              Or copy and paste this link in your browser:
+            </p>
+            <p style="color: #6366f1; font-size: 12px; word-break: break-all; margin: 8px 0; background: #f0f0f0; padding: 12px; border-radius: 4px;">
+              ${resetUrl}
+            </p>
+            
+            <div style="background: #fef3c7; border: 1px solid #fcd34d; border-radius: 6px; padding: 16px; margin: 20px 0; color: #92400e; font-size: 13px;">
+              <strong>⚠️ Security Notice:</strong> Never share this link with anyone. MetroMatrix team will never ask for your password via email.
+            </div>
+            
+            <p style="color: #6b7280; font-size: 14px; margin: 20px 0 0 0;">
+              If you didn't request this password reset, please ignore this email or <a href="mailto:sp23-bcs-104@cuilahore.edu.pk" style="color: #6366f1; text-decoration: none;">contact support</a> if you have concerns.
+            </p>
+            
+            <p style="color: #6b7280; font-size: 13px; margin: 30px 0 0 0; padding-top: 20px; border-top: 1px solid #e5e7eb;">
+              Best regards,<br/>
+              <strong>The MetroMatrix Team</strong>
+            </p>
+            
+            <div style="text-align: center; margin-top: 30px; padding-top: 20px; border-top: 1px solid #e5e7eb; color: #9ca3af; font-size: 12px;">
+              <p style="margin: 0;">© 2024 MetroMatrix. All rights reserved.</p>
+              <p style="margin: 8px 0 0 0;">
+                <a href="https://metromatrix-api-2e35f5f074df.herokuapp.com/privacy-policy" style="color: #6b7280; text-decoration: none;">Privacy Policy</a> | 
+                <a href="https://metromatrix-api-2e35f5f074df.herokuapp.com/terms-of-service" style="color: #6b7280; text-decoration: none;">Terms of Service</a>
+              </p>
+            </div>
+          </div>
+        </div>
+      `,
     });
     
     res.json({
       success: true,
-      message: 'Password reset email sent',
+      message: 'Password reset email sent successfully',
+      email: user.email,
     });
   } catch (error) {
     user.resetPasswordToken = undefined;
@@ -434,8 +489,10 @@ const resetPassword = asyncHandler(async (req, res) => {
   
   res.json({
     success: true,
-    message: 'Password reset successful',
+    message: 'Password reset successful. You can now login with your new password.',
     userType: isProvider ? 'provider' : 'user',
+    email: user.email,
+    fullName: user.fullName,
   });
 });
 
