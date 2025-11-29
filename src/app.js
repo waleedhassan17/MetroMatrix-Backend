@@ -114,6 +114,110 @@ app.get('/health', (req, res) => {
   });
 });
 
+// ===== EMAIL VERIFICATION JSON API (FOR FRONTEND REQUESTS) =====
+// ✅ NEW: Verify email via API and return JSON response with tokens
+app.get('/api/verify-email', async (req, res) => {
+  const { token, type = 'user' } = req.query;
+  
+  if (!token) {
+    return res.status(400).json({
+      success: false,
+      message: 'Verification token is required',
+      statusCode: 400,
+    });
+  }
+
+  try {
+    const hashedToken = crypto.createHash('sha256').update(token).digest('hex');
+    
+    // Check if this is a PendingSignup verification
+    const pending = await PendingSignup.findOne({
+      verificationToken: hashedToken,
+      verificationTokenExpire: { $gt: Date.now() },
+      userType: type,
+    }).select('+password');
+
+    if (pending) {
+      // Create user/provider from pending signup
+      let user;
+      try {
+        if (type === 'provider') {
+          user = await Provider.create({
+            fullName: pending.fullName,
+            phoneNumber: pending.phoneNumber,
+            email: pending.email,
+            password: pending.password,
+            emailVerified: true,
+            isVerified: true,
+            canLogin: true,
+            verificationStatus: 'pending',
+          });
+        } else {
+          user = await User.create({
+            fullName: pending.fullName,
+            phoneNumber: pending.phoneNumber,
+            email: pending.email,
+            password: pending.password,
+            emailVerified: true,
+            isVerified: true,
+          });
+        }
+        
+        // Generate tokens
+        const tokens = generateTokens(user._id);
+        user.refreshToken = tokens.refreshToken;
+        user.lastLoginDate = Date.now();
+        await user.save();
+        
+        // Delete pending signup
+        await PendingSignup.deleteOne({ _id: pending._id });
+        
+        console.log(`✅ ${type} verified via API: ${user.email}`);
+        
+        // Return JSON response
+        return res.json({
+          success: true,
+          message: `${type.charAt(0).toUpperCase() + type.slice(1)} email verified successfully!`,
+          isVerified: true,
+          emailVerified: true,
+          [type === 'provider' ? 'provider' : 'user']: {
+            id: user._id,
+            fullName: user.fullName,
+            email: user.email,
+            phoneNumber: user.phoneNumber,
+            [type === 'provider' ? 'canLogin' : 'profileComplete']: type === 'provider' ? user.canLogin : user.profileComplete,
+            [type === 'provider' ? 'verificationStatus' : 'emailVerified']: type === 'provider' ? user.verificationStatus : user.emailVerified,
+          },
+          accessToken: tokens.accessToken,
+          refreshToken: tokens.refreshToken,
+        });
+      } catch (createError) {
+        console.error(`Error creating ${type}:`, createError);
+        await PendingSignup.deleteOne({ _id: pending._id });
+        return res.status(500).json({
+          success: false,
+          message: 'Failed to create account. Please try again.',
+          statusCode: 500,
+        });
+      }
+    }
+    
+    // Token not found or expired
+    return res.status(400).json({
+      success: false,
+      message: 'Invalid or expired verification token',
+      statusCode: 400,
+    });
+  } catch (error) {
+    console.error('Verification error:', error);
+    return res.status(500).json({
+      success: false,
+      message: 'Verification failed. Please try again.',
+      statusCode: 500,
+    });
+  }
+});
+
 // ===== EMAIL VERIFICATION WEB PAGE (FOR MOBILE APP) =====
 // ✅ UPDATED: Handles signup verification - creates User/Provider AFTER email verification
 app.get('/verify-email', async (req, res) => {
@@ -208,6 +312,7 @@ app.get('/verify-email', async (req, res) => {
         await PendingSignup.deleteOne({ _id: pending._id });
         
         const deepLinkUrl = `metromatrix://verify-success?${deepLinkParams}`;
+        // ✅ IMPROVED: Return HTML with immediate auto-redirect
         return res.send(getVerificationHTML('success', successMessage, deepLinkUrl, null, type));
         
       } catch (createError) {
@@ -562,21 +667,25 @@ function getVerificationHTML(status, message, deepLinkUrl = null, accessToken = 
       });
     }
     
-    // Try to auto-redirect to app after 2 seconds
-    setTimeout(() => {
-      const redirectNotice = document.getElementById('redirectNotice');
-      window.location.href = "${deepLinkUrl}";
-      
-      // If still on page after 3 seconds, user probably doesn't have app
+    // ✅ IMPROVED: Auto-redirect to app IMMEDIATELY (1 second delay for UX)
+    if ("${deepLinkUrl}") {
       setTimeout(() => {
-        if (redirectNotice) {
-          redirectNotice.innerHTML = 'App not detected. Please copy the token above.';
-          redirectNotice.style.background = '#fef3c7';
-          redirectNotice.style.borderColor = '#fcd34d';
-          redirectNotice.style.color = '#92400e';
-        }
-      }, 3000);
-    }, 2000);
+        const redirectNotice = document.getElementById('redirectNotice');
+        
+        // Attempt to open app via deep link
+        window.location.href = "${deepLinkUrl}";
+        
+        // If app is not installed, show fallback message after 3 seconds
+        setTimeout(() => {
+          if (redirectNotice && document.hasFocus()) {
+            redirectNotice.innerHTML = '✓ Email verified! You can now close this window and login in the app.';
+            redirectNotice.style.background = '#d1fae5';
+            redirectNotice.style.borderColor = '#6ee7b7';
+            redirectNotice.style.color = '#059669';
+          }
+        }, 3000);
+      }, 1000);
+    }
   </script>
   ` : ''}
 </body>
