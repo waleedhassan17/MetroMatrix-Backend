@@ -11,31 +11,49 @@ const handleUploadError = (uploadFunction) => {
           return res.status(400).json({
             success: false,
             error: 'File size too large. Maximum size allowed is 5MB for images and 10MB for documents.',
+            code: 'FILE_SIZE_EXCEEDED',
           });
         }
         if (err.code === 'LIMIT_FILE_COUNT') {
           return res.status(400).json({
             success: false,
             error: 'Too many files. Maximum 5 images allowed per post.',
+            code: 'FILE_COUNT_EXCEEDED',
           });
         }
         if (err.code === 'LIMIT_UNEXPECTED_FILE') {
           return res.status(400).json({
             success: false,
             error: 'Unexpected file field.',
+            code: 'UNEXPECTED_FILE',
           });
         }
         return res.status(400).json({
           success: false,
-          error: err.message,
+          error: err.message || 'File upload failed',
+          code: 'MULTER_ERROR',
         });
       } else if (err) {
         // Other errors (file type, etc.)
+        console.error('Upload error:', err);
         return res.status(400).json({
           success: false,
           error: err.message || 'File upload failed',
+          code: 'UPLOAD_ERROR',
         });
       }
+      
+      // Log successful upload to middleware
+      if (req.file) {
+        console.log('✅ File uploaded via middleware:', {
+          field: req.file.fieldname,
+          filename: req.file.filename,
+          path: req.file.path,
+          mimetype: req.file.mimetype,
+          size: req.file.size,
+        });
+      }
+      
       next();
     });
   };
@@ -69,6 +87,7 @@ module.exports = {
       return res.status(400).json({
         success: false,
         error: 'Please upload a file',
+        code: 'NO_FILE',
       });
     }
     next();

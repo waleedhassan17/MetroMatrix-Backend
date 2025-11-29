@@ -80,12 +80,17 @@ https://metromatrix-api-2e35f5f074df.herokuapp.com
 - **POST** `/api/auth/forgot-password`
   - Request password reset
   - Body: `email`
-  - Response: Reset email sent
+  - Response: Reset email sent with web page link
 
 - **POST** `/api/auth/reset-password`
   - Reset password with token
   - Body: `token`, `password`
-  - Response: Success message
+  - Response: Success message with user details
+
+- **GET** `/api/auth/reset-password`
+  - ✅ NEW: Validate password reset token (via API)
+  - Query: `token`, `type` (user|provider)
+  - Response: Token validity and user info
 
 ### Token & Session Management
 - **POST** `/api/auth/refresh`
@@ -97,6 +102,34 @@ https://metromatrix-api-2e35f5f074df.herokuapp.com
   - Logout user/provider
   - Headers: `Authorization: Bearer <token>`
   - Response: Success message
+
+### 🌐 Web Pages & Special Endpoints
+
+#### Email Verification
+- **GET** `/verify-email`
+  - Email verification web page
+  - Query: `token`, `type` (user|provider)
+  - Response: HTML page with auto-redirect to mobile app + token display + copy button
+  - Features: 1-second auto-redirect, deep linking, manual token copy
+
+- **GET** `/api/verify-email`
+  - Email verification JSON API endpoint
+  - Query: `token`, `type` (user|provider)
+  - Response: `{ success, message, user/provider data, accessToken, refreshToken }`
+  - Use: For programmatic verification without web page
+
+#### Password Reset
+- **GET** `/reset-password`
+  - ✅ NEW: Password reset web page
+  - Query: `token`, `type` (user|provider)
+  - Response: HTML page with auto-redirect to mobile app + token display + copy button
+  - Features: 1-second auto-redirect, deep linking, manual token copy, expiry notice
+
+- **GET** `/api/reset-password`
+  - ✅ NEW: Password reset token validation API
+  - Query: `token`, `type` (user|provider)
+  - Response: `{ success, message, tokenValid, userType, email, fullName }`
+  - Use: Validate reset token before showing password form
 
 ---
 
@@ -344,12 +377,13 @@ https://metromatrix-api-2e35f5f074df.herokuapp.com
 
 | Category | Count | Details |
 |----------|-------|---------|
-| Authentication | 17 | User/Provider signup, login, OAuth, email verification, password reset |
+| Authentication | 21 | User/Provider signup, login, OAuth, email verification, password reset, token validation |
 | Users | 6 | Profile management, preferences, account operations |
 | Providers | 11 | Profile, onboarding, verification, availability, ratings |
 | Posts | 10 | Create, read, update, delete, comments, likes, reports |
 | Admin | 12 | Dashboard, provider approval, user management, moderation |
-| **TOTAL** | **56** | **Complete API** |
+| Web Pages | 4 | Email verification page, API verification, Password reset page, API token validation |
+| **TOTAL** | **64** | **Complete API with Web Pages** |
 
 ---
 
@@ -369,6 +403,17 @@ Password: Waleed@107
 - Providers created AFTER email verification
 - PendingSignup collection for temporary data (auto-deletes in 24 hours)
 - Both get auth tokens immediately
+- **Web page with 1-second auto-redirect to mobile app**
+- **JSON API endpoint for programmatic verification**
+
+### Password Reset Flow ✅ (NEW)
+- **Beautiful email template** with security notices
+- **Web page with auto-redirect** to mobile app
+- **1-second auto-redirect** for smooth UX
+- **Manual token copy option** as fallback
+- Token validation endpoint for frontend verification
+- Support for both users and providers
+- Tokens expire in 10 minutes for security
 
 ### Provider Approval Flow ✅
 - Email verification: `verificationStatus: 'pending'`, `canLogin: true`
@@ -378,16 +423,22 @@ Password: Waleed@107
 ### Security Improvements ✅
 - Email verification required before account creation
 - Rate limiting on email verification
-- Token expiration (24 hours)
+- Token expiration (24 hours for email, 10 minutes for password reset)
 - Separate endpoints for user/provider flows
 - Admin-only routes protected
+- Password reset security notices in emails
+- Token hashing for storage security
 
 ### New Features ✅
 - `/api/auth/user/verify-email` - User email verification
 - `/api/auth/provider/verify-email` - Provider email verification
 - `/api/auth/user/check-verification-status` - User verification check
 - `/api/auth/provider/check-verification-status` - Provider verification check
-- Web verification page: `GET /verify-email?token=xxx&type=user|provider`
+- `GET /verify-email?token=xxx&type=user|provider` - Email verification web page
+- `GET /api/verify-email?token=xxx&type=user|provider` - Email verification API
+- `GET /reset-password?token=xxx&type=user|provider` - Password reset web page ✅ NEW
+- `GET /api/reset-password?token=xxx&type=user|provider` - Password reset token validation ✅ NEW
+- Improved email templates with branding and security info
 
 ---
 
@@ -408,6 +459,24 @@ Password: Waleed@107
 5. Receive `accessToken` and `refreshToken` → Can login with limited access
 6. Await admin approval for full features
 7. After approval: Full feature access
+
+### For Forgot Password (User/Provider)
+1. User clicks "Forgot Password" → Call `POST /api/auth/forgot-password` with email
+2. User receives beautiful HTML email with reset link
+3. User clicks email link → `/reset-password?token=xxx&type=user|provider`
+4. **Option A - Web Page:** 
+   - Page auto-redirects to app in 1 second with deep link
+   - User can manually copy token if app not installed
+   - Deep link format: `metromatrix://reset-password?resetToken=xxx&userType=user&email=user@example.com`
+
+5. **Option B - API Validation (Optional):**
+   - Frontend can call `GET /api/reset-password?token=xxx&type=user` first
+   - Validates token before showing reset form
+   - Returns user email and name for confirmation
+
+6. Frontend then calls `POST /api/auth/reset-password` with new password
+7. Token is validated and password is updated
+8. User can now login with new password
 
 ### Error Handling
 All endpoints return standardized error responses:

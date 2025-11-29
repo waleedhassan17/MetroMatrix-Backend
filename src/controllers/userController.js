@@ -161,45 +161,92 @@ const completeProfile = asyncHandler(async (req, res) => {
 // @route   POST /api/users/upload-photo
 // @access  Private
 const uploadProfilePhoto = asyncHandler(async (req, res) => {
-  const user = await User.findById(req.user.id);
+  try {
+    const user = await User.findById(req.user.id);
 
-  if (!user) {
-    res.status(404);
-    throw new Error('User not found');
-  }
-
-  if (!req.file) {
-    res.status(400);
-    throw new Error('Please upload a file');
-  }
-
-  // Delete old photo if exists
-  if (user.profilePhotoId) {
-    try {
-      await deleteFile(user.profilePhotoId);
-    } catch (error) {
-      console.error('Error deleting old photo:', error);
+    if (!user) {
+      res.status(404);
+      throw new Error('User not found');
     }
+
+    if (!req.file) {
+      res.status(400);
+      throw new Error('Please upload a file');
+    }
+
+    // Validate file was actually uploaded to Cloudinary
+    if (!req.file.path) {
+      res.status(400);
+      throw new Error('File upload failed - no URL returned from server');
+    }
+
+    console.log('✅ File uploaded successfully:', {
+      filename: req.file.filename,
+      path: req.file.path,
+      mimetype: req.file.mimetype,
+      size: req.file.size,
+    });
+
+    // Delete old photo if exists
+    if (user.profilePhotoId) {
+      try {
+        const { deleteFile } = require('../config/cloudinary');
+        await deleteFile(user.profilePhotoId);
+        console.log('✅ Old photo deleted:', user.profilePhotoId);
+      } catch (error) {
+        console.error('⚠️ Error deleting old photo:', error.message);
+        // Don't throw - continue with upload even if old photo deletion fails
+      }
+    }
+
+    // Update user with new photo
+    user.profilePhoto = req.file.path;
+    user.profilePhotoId = req.file.filename;
+    user.profilePhotoUrl = req.file.path; // Add explicit URL field
+    
+    // If this is part of profile completion
+    if (user.profileCompletionStep === 2) {
+      user.profileCompletionStep = 3;
+      user.checkProfileComplete();
+    }
+
+    await user.save();
+
+    console.log('✅ User profile photo updated:', {
+      userId: user._id,
+      photoUrl: user.profilePhoto,
+      photoId: user.profilePhotoId,
+      profileComplete: user.profileComplete,
+    });
+
+    res.json({
+      success: true,
+      message: 'Profile photo uploaded successfully',
+      profilePhoto: user.profilePhoto,
+      profilePhotoUrl: user.profilePhoto,
+      profilePhotoId: user.profilePhotoId,
+      profileComplete: user.profileComplete,
+      user: {
+        id: user._id,
+        fullName: user.fullName,
+        email: user.email,
+        profilePhoto: user.profilePhoto,
+      }
+    });
+  } catch (error) {
+    console.error('❌ Profile photo upload error:', error.message);
+    
+    // Clean error messages for frontend
+    if (error.message.includes('Invalid file type')) {
+      res.status(400);
+      throw new Error('Invalid file type. Please upload a JPG, PNG, GIF, or WebP image.');
+    } else if (error.message.includes('too large')) {
+      res.status(400);
+      throw new Error('File size is too large. Maximum size is 5MB.');
+    }
+    
+    throw error;
   }
-
-  // Update user with new photo
-  user.profilePhoto = req.file.path;
-  user.profilePhotoId = req.file.filename;
-  
-  // If this is part of profile completion
-  if (user.profileCompletionStep === 2) {
-    user.profileCompletionStep = 3;
-    user.checkProfileComplete();
-  }
-
-  await user.save();
-
-  res.json({
-    success: true,
-    message: 'Profile photo uploaded successfully',
-    profilePhoto: user.profilePhoto,
-    profileComplete: user.profileComplete,
-  });
 });
 
 // @desc    Update user preferences
