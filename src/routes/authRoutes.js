@@ -12,6 +12,8 @@ const {
   refreshToken,
   forgotPassword,
   resetPassword,
+  verifyResetOTP,             // ✅ NEW - Verify OTP
+  resendResetOTP,             // ✅ NEW - Resend OTP
   verifyEmail,
   logout,
   sendVerificationEmail,
@@ -93,16 +95,40 @@ router.get('/facebook/callback',
 router.post('/refresh', refreshToken);
 router.post('/logout', protect, logout);
 
-// Password reset
+// Password reset with OTP
+// ✅ UPDATED: New OTP-based password reset flow
 router.post('/forgot-password', 
-  body('email').isEmail().normalizeEmail(),
+  [
+    body('email').isEmail().normalizeEmail().withMessage('Valid email is required'),
+    body('userType').optional().isIn(['user', 'provider'])
+  ],
   validate,
   forgotPassword
 );
 
+// ✅ NEW: Verify OTP and get reset token
+router.post('/verify-reset-otp',
+  [
+    body('email').isEmail().normalizeEmail().withMessage('Valid email is required'),
+    body('otp').notEmpty().withMessage('OTP is required'),
+  ],
+  validate,
+  verifyResetOTP
+);
+
+// ✅ NEW: Resend OTP
+router.post('/resend-reset-otp',
+  [
+    body('email').isEmail().normalizeEmail().withMessage('Valid email is required'),
+  ],
+  validate,
+  resendResetOTP
+);
+
+// Reset password with reset token (from OTP)
 router.post('/reset-password',
   [
-    body('token').notEmpty().withMessage('Reset token is required'),
+    body('resetToken').notEmpty().withMessage('Reset token is required'),
     body('password').isLength({ min: 6 }).withMessage('Password must be at least 6 characters')
   ],
   validate,

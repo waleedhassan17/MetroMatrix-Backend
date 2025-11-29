@@ -4,6 +4,7 @@ const crypto = require('crypto');
 const User = require('../models/User');
 const Provider = require('../models/Provider');
 const PendingSignup = require('../models/PendingSignup');
+const PasswordResetOTP = require('../models/PasswordResetOTP');
 const { generateTokens } = require('../utils/generateToken');
 const { sendEmail, emailTemplates } = require('../services/emailService');
 const EmailVerificationService = require('../services/emailVerificationService');
@@ -350,37 +351,58 @@ const refreshToken = asyncHandler(async (req, res) => {
 // @desc    Forgot password
 // @route   POST /api/auth/forgot-password
 // @access  Public
+// ✅ UPDATED: Now sends OTP instead of direct reset link
 const forgotPassword = asyncHandler(async (req, res) => {
-  const { email } = req.body;
-  
+  const { email, userType } = req.body;
+
+  if (!email) {
+    res.status(400);
+    throw new Error('Email is required');
+  }
+
   // Try to find user or provider
   let user = await User.findOne({ email });
-  let isProvider = false;
-  
+  let type = 'user';
+
   if (!user) {
     user = await Provider.findOne({ email });
-    isProvider = true;
+    type = 'provider';
   }
-  
+
   if (!user) {
     res.status(404);
     throw new Error('No account found with this email');
   }
-  
-  // Get reset token
-  const resetToken = user.getResetPasswordToken();
-  await user.save();
-  
-  // Create reset URL (using web page instead of client URL)
-  const resetUrl = `https://metromatrix-api-2e35f5f074df.herokuapp.com/reset-password?token=${resetToken}&type=${
-    isProvider ? 'provider' : 'user'
-  }`;
-  
+
+  // Check if account is already locked due to too many attempts
+  const existingOTP = await PasswordResetOTP.findOne({ email }).select('+isLocked +lockedUntil');
+  if (existingOTP && existingOTP.isAccountLocked()) {
+    res.status(429);
+    throw new Error(`Account temporarily locked. Please try again after 30 minutes.`);
+  }
+
+  // Generate 6-digit OTP
+  const otp = Math.floor(100000 + Math.random() * 900000).toString();
+
   try {
-    // Send email with proper template
+    // Delete any existing OTP for this email
+    await PasswordResetOTP.deleteMany({ email });
+
+    // Create new OTP record
+    const otpRecord = new PasswordResetOTP({
+      email,
+      userType: type,
+      otp, // Will be hashed in pre-save hook
+      otpExpires: new Date(Date.now() + 10 * 60 * 1000), // 10 minutes
+      attempts: 0,
+    });
+
+    await otpRecord.save();
+
+    // Send OTP to email
     await sendEmail({
       email: user.email,
-      subject: 'Password Reset Request - MetroMatrix',
+      subject: 'Password Reset Code - MetroMatrix',
       html: `
         <div style="font-family: 'Inter', Arial, sans-serif; max-width: 600px; margin: 0 auto; background: #f9fafb; padding: 20px; border-radius: 8px;">
           <div style="background: white; padding: 40px; border-radius: 8px; box-shadow: 0 2px 8px rgba(0,0,0,0.1);">
@@ -389,35 +411,30 @@ const forgotPassword = asyncHandler(async (req, res) => {
               <p style="color: #6b7280; margin: 8px 0 0 0; font-size: 14px;">Community Service Platform</p>
             </div>
             
-            <h2 style="color: #1f2937; font-size: 24px; margin-bottom: 8px;">Reset Your Password</h2>
+            <h2 style="color: #1f2937; font-size: 24px; margin-bottom: 8px;">Password Reset Code</h2>
             <p style="color: #6b7280; font-size: 15px; line-height: 1.6; margin: 0 0 20px 0;">
               Hi ${user.fullName},
             </p>
             
             <p style="color: #6b7280; font-size: 15px; line-height: 1.6; margin: 0 0 28px 0;">
-              We received a request to reset your password. Click the button below to securely reset your password. This link will expire in <strong>10 minutes</strong>.
+              Your password reset code is:
             </p>
             
-            <div style="text-align: center; margin: 32px 0;">
-              <a href="${resetUrl}" 
-                 style="background: linear-gradient(135deg, #6366f1 0%, #8b5cf6 100%); color: white; padding: 14px 40px; text-decoration: none; border-radius: 8px; display: inline-block; font-weight: 600; font-size: 16px; transition: transform 0.3s;">
-                Reset Password
-              </a>
+            <div style="text-align: center; margin: 32px 0; background: #f0f0f0; padding: 20px; border-radius: 8px;">
+              <div style="font-size: 42px; font-weight: 700; color: #6366f1; letter-spacing: 4px; font-family: 'Courier New', monospace;">
+                ${otp}
+              </div>
+              <p style="color: #9ca3af; font-size: 13px; margin: 12px 0 0 0;">
+                This code will expire in 10 minutes
+              </p>
             </div>
             
-            <p style="color: #6b7280; font-size: 13px; margin: 28px 0 0 0; padding-top: 20px; border-top: 1px solid #e5e7eb;">
-              Or copy and paste this link in your browser:
-            </p>
-            <p style="color: #6366f1; font-size: 12px; word-break: break-all; margin: 8px 0; background: #f0f0f0; padding: 12px; border-radius: 4px;">
-              ${resetUrl}
-            </p>
-            
             <div style="background: #fef3c7; border: 1px solid #fcd34d; border-radius: 6px; padding: 16px; margin: 20px 0; color: #92400e; font-size: 13px;">
-              <strong>⚠️ Security Notice:</strong> Never share this link with anyone. MetroMatrix team will never ask for your password via email.
+              <strong>⚠️ Security:</strong> Never share this code with anyone. MetroMatrix support will never ask for your code.
             </div>
             
             <p style="color: #6b7280; font-size: 14px; margin: 20px 0 0 0;">
-              If you didn't request this password reset, please ignore this email or <a href="mailto:sp23-bcs-104@cuilahore.edu.pk" style="color: #6366f1; text-decoration: none;">contact support</a> if you have concerns.
+              If you didn't request this password reset, please ignore this email or <a href="mailto:sp23-bcs-104@cuilahore.edu.pk" style="color: #6366f1; text-decoration: none;">contact support</a> immediately.
             </p>
             
             <p style="color: #6b7280; font-size: 13px; margin: 30px 0 0 0; padding-top: 20px; border-top: 1px solid #e5e7eb;">
@@ -436,63 +453,272 @@ const forgotPassword = asyncHandler(async (req, res) => {
         </div>
       `,
     });
-    
+
     res.json({
       success: true,
-      message: 'Password reset email sent successfully',
+      message: 'Password reset code sent to your email',
       email: user.email,
+      expiresIn: 600, // 10 minutes in seconds
     });
   } catch (error) {
-    user.resetPasswordToken = undefined;
-    user.resetPasswordExpire = undefined;
-    await user.save();
-    
+    console.error('Error sending OTP:', error);
     res.status(500);
-    throw new Error('Email could not be sent');
+    throw new Error('Failed to send password reset code. Please try again.');
   }
 });
 
-// @desc    Reset password
+// @desc    Verify OTP and get reset token
+// @route   POST /api/auth/verify-reset-otp
+// @access  Public
+// ✅ NEW: Verify OTP and return reset token
+const verifyResetOTP = asyncHandler(async (req, res) => {
+  const { email, otp, userType } = req.body;
+
+  if (!email || !otp) {
+    res.status(400);
+    throw new Error('Email and OTP are required');
+  }
+
+  // Find OTP record
+  const otpRecord = await PasswordResetOTP.findOne({ email }).select('+otp +isLocked +lockedUntil');
+
+  if (!otpRecord) {
+    res.status(400);
+    throw new Error('Invalid or expired OTP. Request a new code.');
+  }
+
+  // Check if account is locked
+  if (otpRecord.isAccountLocked()) {
+    res.status(429);
+    throw new Error('Too many failed attempts. Please try again after 30 minutes.');
+  }
+
+  // Check if OTP is expired
+  if (otpRecord.otpExpires < new Date()) {
+    res.status(400);
+    throw new Error('OTP has expired. Please request a new code.');
+  }
+
+  // Check if OTP is already used
+  if (otpRecord.isUsed) {
+    res.status(400);
+    throw new Error('This OTP has already been used. Please request a new code.');
+  }
+
+  // Verify OTP
+  if (!otpRecord.verifyOTP(otp)) {
+    otpRecord.attempts += 1;
+    
+    // Lock account after 5 failed attempts
+    if (otpRecord.attempts >= 5) {
+      otpRecord.lockAccount();
+      await otpRecord.save();
+      res.status(429);
+      throw new Error('Too many failed attempts. Account locked for 30 minutes.');
+    }
+
+    await otpRecord.save();
+    res.status(400);
+    throw new Error(`Invalid OTP. You have ${5 - otpRecord.attempts} attempts remaining.`);
+  }
+
+  // OTP is valid - generate reset token
+  const resetToken = otpRecord.generateResetToken();
+  otpRecord.isUsed = true;
+  otpRecord.attempts = 0;
+  await otpRecord.save();
+
+  res.json({
+    success: true,
+    message: 'OTP verified successfully',
+    resetToken,
+    email: otpRecord.email,
+    expiresIn: 300, // 5 minutes in seconds
+  });
+});
+
+// @desc    Resend OTP
+// @route   POST /api/auth/resend-reset-otp
+// @access  Public
+// ✅ NEW: Resend OTP with rate limiting
+const resendResetOTP = asyncHandler(async (req, res) => {
+  const { email, userType } = req.body;
+
+  if (!email) {
+    res.status(400);
+    throw new Error('Email is required');
+  }
+
+  // Find existing OTP record
+  const otpRecord = await PasswordResetOTP.findOne({ email }).select('+createdAt');
+
+  if (otpRecord) {
+    // Check if account is locked
+    if (otpRecord.isAccountLocked()) {
+      res.status(429);
+      throw new Error('Account temporarily locked due to too many attempts. Please try again after 30 minutes.');
+    }
+
+    // Rate limiting: Max 3 resends per 10 minutes
+    const timeSinceCreation = (Date.now() - otpRecord.createdAt.getTime()) / 1000; // seconds
+    if (timeSinceCreation < 600) { // Within 10 minutes
+      const timeToWait = Math.ceil(120 - (timeSinceCreation % 120)); // 2 minutes between resends
+      if (timeToWait > 0) {
+        res.status(429);
+        throw new Error(`Please wait ${timeToWait} seconds before requesting a new code`);
+      }
+    }
+
+    // Delete old OTP
+    await PasswordResetOTP.deleteOne({ _id: otpRecord._id });
+  }
+
+  // Try to find user or provider
+  let user = await User.findOne({ email });
+  let type = 'user';
+
+  if (!user) {
+    user = await Provider.findOne({ email });
+    type = 'provider';
+  }
+
+  if (!user) {
+    res.status(404);
+    throw new Error('No account found with this email');
+  }
+
+  // Generate new OTP
+  const newOtp = Math.floor(100000 + Math.random() * 900000).toString();
+
+  try {
+    // Create new OTP record
+    const newOtpRecord = new PasswordResetOTP({
+      email,
+      userType: type,
+      otp: newOtp,
+      otpExpires: new Date(Date.now() + 10 * 60 * 1000),
+      attempts: 0,
+    });
+
+    await newOtpRecord.save();
+
+    // Send OTP to email
+    await sendEmail({
+      email: user.email,
+      subject: 'New Password Reset Code - MetroMatrix',
+      html: `
+        <div style="font-family: 'Inter', Arial, sans-serif; max-width: 600px; margin: 0 auto; background: #f9fafb; padding: 20px; border-radius: 8px;">
+          <div style="background: white; padding: 40px; border-radius: 8px; box-shadow: 0 2px 8px rgba(0,0,0,0.1);">
+            <div style="text-align: center; margin-bottom: 30px;">
+              <h1 style="color: #6366f1; font-size: 28px; margin: 0;">MetroMatrix</h1>
+            </div>
+            
+            <h2 style="color: #1f2937; font-size: 24px; margin-bottom: 8px;">New Password Reset Code</h2>
+            <p style="color: #6b7280; font-size: 15px; line-height: 1.6; margin: 0 0 20px 0;">
+              Hi ${user.fullName},
+            </p>
+            
+            <p style="color: #6b7280; font-size: 15px; line-height: 1.6; margin: 0 0 28px 0;">
+              Here's your new password reset code:
+            </p>
+            
+            <div style="text-align: center; margin: 32px 0; background: #f0f0f0; padding: 20px; border-radius: 8px;">
+              <div style="font-size: 42px; font-weight: 700; color: #6366f1; letter-spacing: 4px; font-family: 'Courier New', monospace;">
+                ${newOtp}
+              </div>
+              <p style="color: #9ca3af; font-size: 13px; margin: 12px 0 0 0;">
+                This code will expire in 10 minutes
+              </p>
+            </div>
+            
+            <p style="color: #6b7280; font-size: 13px; margin: 20px 0 0 0; padding-top: 20px; border-top: 1px solid #e5e7eb;">
+              Best regards,<br/>
+              <strong>The MetroMatrix Team</strong>
+            </p>
+          </div>
+        </div>
+      `,
+    });
+
+    res.json({
+      success: true,
+      message: 'New password reset code sent to your email',
+      email: user.email,
+      expiresIn: 600,
+    });
+  } catch (error) {
+    console.error('Error sending new OTP:', error);
+    res.status(500);
+    throw new Error('Failed to send new password reset code. Please try again.');
+  }
+});
+
+// @desc    Reset password with reset token
 // @route   POST /api/auth/reset-password
 // @access  Public
+// ✅ UPDATED: Now uses reset token from OTP verification
 const resetPassword = asyncHandler(async (req, res) => {
-  const { token, password } = req.body;
-  
-  // Get hashed token
-  const hashedToken = crypto.createHash('sha256').update(token).digest('hex');
-  
-  // Find user or provider with token
-  let user = await User.findOne({
-    resetPasswordToken: hashedToken,
-    resetPasswordExpire: { $gt: Date.now() },
-  });
-  let isProvider = false;
-  
-  if (!user) {
-    user = await Provider.findOne({
-      resetPasswordToken: hashedToken,
-      resetPasswordExpire: { $gt: Date.now() },
-    });
-    isProvider = true;
+  const { resetToken, password } = req.body;
+
+  if (!resetToken || !password) {
+    res.status(400);
+    throw new Error('Reset token and password are required');
   }
+
+  // Validate password
+  if (password.length < 6) {
+    res.status(400);
+    throw new Error('Password must be at least 6 characters long');
+  }
+
+  // Find OTP record with matching reset token
+  const hashedResetToken = crypto.createHash('sha256').update(resetToken).digest('hex');
   
-  if (!user) {
+  const otpRecord = await PasswordResetOTP.findOne({
+    resetToken: hashedResetToken,
+    resetTokenExpires: { $gt: Date.now() },
+  }).select('+resetTokenExpires');
+
+  if (!otpRecord) {
     res.status(400);
     throw new Error('Invalid or expired reset token');
   }
-  
-  // Set new password
+
+  // Find user or provider
+  const Model = otpRecord.userType === 'provider' ? Provider : User;
+  const user = await Model.findOne({ email: otpRecord.email });
+
+  if (!user) {
+    res.status(404);
+    throw new Error('User not found');
+  }
+
+  // Update password
   user.password = password;
-  user.resetPasswordToken = undefined;
-  user.resetPasswordExpire = undefined;
-  await user.save();
   
+  // Clear any existing reset tokens if using old model fields
+  if (user.resetPasswordToken) {
+    user.resetPasswordToken = undefined;
+    user.resetPasswordExpire = undefined;
+  }
+
+  await user.save();
+
+  // Delete OTP record
+  await PasswordResetOTP.deleteOne({ _id: otpRecord._id });
+
+  console.log(`✅ Password reset successful for ${otpRecord.userType}: ${user.email}`);
+
   res.json({
     success: true,
-    message: 'Password reset successful. You can now login with your new password.',
-    userType: isProvider ? 'provider' : 'user',
+    message: 'Password reset successfully. You can now login with your new password.',
+    userType: otpRecord.userType,
     email: user.email,
-    fullName: user.fullName,
+    user: {
+      id: user._id,
+      email: user.email,
+      fullName: user.fullName,
+    },
   });
 });
 
@@ -961,6 +1187,8 @@ module.exports = {
   refreshToken,
   forgotPassword,
   resetPassword,
+  verifyResetOTP,             // ✅ NEW - Verify OTP for password reset
+  resendResetOTP,             // ✅ NEW - Resend OTP
   verifyEmail,
   verifyEmailToken,           // Generic verification (uses userType param)
   verifyUserEmail,            // ✅ NEW - User-specific verification
