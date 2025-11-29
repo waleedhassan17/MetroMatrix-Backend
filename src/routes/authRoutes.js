@@ -131,6 +131,7 @@ router.post('/provider/check-verification-status', checkEmailVerificationStatus)
 // Generic verification endpoint (for backward compatibility, uses userType param)
 router.post('/verify-email-token', verifyEmailToken);
 router.post('/send-verification-email', sendVerificationEmail);
+router.post('/check-verification-status', checkEmailVerificationStatus);
 
 // ============================================
 // 🔧 DEBUGGING ROUTES (Development only)
