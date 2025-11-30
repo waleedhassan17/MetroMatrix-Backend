@@ -207,7 +207,10 @@ const getProviderForReview = asyncHandler(async (req, res) => {
 // @desc    Approve provider
 // @route   POST /api/admin/providers/:id/approve
 // @access  Private/Admin
+// ✅ UPDATED: Issue FULL token when approving (two-phase auth)
 const approveProvider = asyncHandler(async (req, res) => {
+  const { generateTokens } = require('../utils/generateToken');
+  
   const provider = await Provider.findById(req.params.id);
 
   if (!provider) {
@@ -220,11 +223,17 @@ const approveProvider = asyncHandler(async (req, res) => {
     throw new Error('Provider is already approved');
   }
 
+  // Update status to approved (two-phase auth)
   provider.verificationStatus = 'approved';
+  provider.onboardingStatus = 'approved'; // Phase 2: Full access
   provider.isVerified = true;
+  provider.canLogin = true; // Now can login with full token
   provider.verifiedBy = req.user._id;
   provider.approvedAt = new Date();
   await provider.save();
+
+  // Generate FULL access token for immediate use
+  const tokens = generateTokens(provider._id);
 
   // Log admin activity
   req.user.logActivity(
@@ -244,8 +253,9 @@ const approveProvider = asyncHandler(async (req, res) => {
       html: `
         <h1>Congratulations!</h1>
         <p>Dear ${provider.fullName},</p>
-        <p>Your provider account has been approved. You can now start offering your services on MetroMatrix.</p>
-        <p>Login to your account to get started.</p>
+        <p>Your provider account has been approved! You can now start offering your services on MetroMatrix.</p>
+        <p>You have been issued a FULL access token. You can use it immediately to access your dashboard and manage your services.</p>
+        <p>If you prefer to login, use your email and password on the login page.</p>
         <p>Best regards,<br>MetroMatrix Team</p>
       `,
     });
@@ -255,18 +265,23 @@ const approveProvider = asyncHandler(async (req, res) => {
 
   res.json({
     success: true,
-    message: 'Provider approved successfully',
+    message: 'Provider approved successfully. FULL access token issued.',
     provider: {
       id: provider._id,
       fullName: provider.fullName,
+      email: provider.email,
+      onboardingStatus: provider.onboardingStatus,
       verificationStatus: provider.verificationStatus,
     },
+    tokens: tokens, // Return FULL token for immediate use
+    tokenType: 'FULL', // Indicate this is full access
   });
 });
 
 // @desc    Reject provider
 // @route   POST /api/admin/providers/:id/reject
 // @access  Private/Admin
+// ✅ UPDATED: Keep onboarding status as pending_approval so provider can resubmit (two-phase auth)
 const rejectProvider = asyncHandler(async (req, res) => {
   const { reason } = req.body;
   const provider = await Provider.findById(req.params.id);
@@ -279,6 +294,7 @@ const rejectProvider = asyncHandler(async (req, res) => {
   provider.verificationStatus = 'rejected';
   provider.rejectionReason = reason;
   provider.verifiedBy = req.user._id;
+  // Keep onboardingStatus as pending_approval so provider can resubmit with corrections
   await provider.save();
 
   // Log admin activity
@@ -299,9 +315,10 @@ const rejectProvider = asyncHandler(async (req, res) => {
       html: `
         <h1>Application Update</h1>
         <p>Dear ${provider.fullName},</p>
-        <p>Unfortunately, your provider application could not be approved at this time.</p>
+        <p>Thank you for submitting your provider application. Unfortunately, it could not be approved at this time.</p>
         <p><strong>Reason:</strong> ${reason}</p>
-        <p>Please address the issues mentioned and you can reapply by updating your information.</p>
+        <p>Good news! You can resubmit your application with corrections. Simply log in with your LIMITED token or use your credentials to update your information and documents.</p>
+        <p>We look forward to reviewing your updated application.</p>
         <p>Best regards,<br>MetroMatrix Team</p>
       `,
     });

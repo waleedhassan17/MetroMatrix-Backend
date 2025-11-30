@@ -3,6 +3,7 @@ const router = express.Router();
 const { body } = require('express-validator');
 const { uploadSingleDocument, uploadMultipleDocuments } = require('../middleware/uploadMiddleware');
 const { protect, providerOnly, optionalAuth } = require('../middleware/authMiddleware');
+const { allowLimitedOrFullToken, requireFullToken, getProviderStatus } = require('../middleware/onboardingMiddleware');
 const { validate } = require('../middleware/validate');
 const {
   getProviderProfile,
@@ -60,20 +61,20 @@ router.post('/:id/rate', ratingRules, validate, rateProvider);
 // ===== PROVIDER-ONLY ROUTES =====
 router.use(providerOnly);
 
-// Verification status (specific route before generic :id)
-router.get('/verification', getVerificationStatus);
+// Verification status (LIMITED or FULL token can check)
+router.get('/verification', getProviderStatus, getVerificationStatus);
 
-// Profile management
-router.get('/profile', getProviderProfile);
-router.put('/profile', updateProviderProfile);
+// Profile management (FULL token only)
+router.get('/profile', requireFullToken, getProviderProfile);
+router.put('/profile', requireFullToken, updateProviderProfile);
 
-// Personal information submission with documents
-router.post('/personal-info', uploadMultipleDocuments, personalInfoRules, validate, submitPersonalInfo);
+// Personal information submission with documents (LIMITED or FULL token)
+router.post('/personal-info', allowLimitedOrFullToken, uploadMultipleDocuments, personalInfoRules, validate, submitPersonalInfo);
 
-// Document upload - single file
-router.post('/upload-document', uploadSingleDocument, uploadDocumentController);
+// Document upload - single file (FULL token only)
+router.post('/upload-document', requireFullToken, uploadSingleDocument, uploadDocumentController);
 
-// Availability management
-router.put('/availability', availabilityRules, validate, updateAvailability);
+// Availability management (FULL token only)
+router.put('/availability', requireFullToken, availabilityRules, validate, updateAvailability);
 
 module.exports = router;

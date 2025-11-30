@@ -205,18 +205,26 @@ const loginProvider = asyncHandler(async (req, res) => {
   }
 
   // Check email verification
-  if (!provider.emailVerified || !provider.canLogin) {
+  if (!provider.emailVerified) {
     res.status(403);
     throw new Error('Please verify your email before logging in');
   }
   
   if (provider && (await provider.matchPassword(password))) {
-    // Check admin approval
-    if (provider.verificationStatus !== 'approved') {
+    // Check onboarding status (two-phase auth)
+    if (provider.onboardingStatus !== 'approved') {
       res.status(403);
-      throw new Error('Your account is pending admin approval');
+      throw new Error(
+        `Cannot login yet. Current status: ${provider.onboardingStatus}. ` +
+        `${provider.onboardingStatus === 'pending_email' 
+          ? 'Please verify your email.' 
+          : provider.onboardingStatus === 'pending_profile'
+          ? 'Please submit your personal information using your LIMITED token.'
+          : 'Please wait for admin approval.'}`
+      );
     }
 
+    // Now issue FULL access token
     const tokens = generateTokens(provider._id);
     
     provider.refreshToken = tokens.refreshToken;
@@ -225,6 +233,8 @@ const loginProvider = asyncHandler(async (req, res) => {
     
     res.json({
       success: true,
+      message: 'Login successful! You have FULL access.',
+      tokenType: 'FULL',
       provider: {
         id: provider._id,
         fullName: provider.fullName,
@@ -232,6 +242,7 @@ const loginProvider = asyncHandler(async (req, res) => {
         phoneNumber: provider.phoneNumber,
         providerType: provider.providerType,
         providerSubType: provider.providerSubType,
+        onboardingStatus: provider.onboardingStatus,
         profileComplete: provider.profileComplete,
         verificationStatus: provider.verificationStatus,
         isVerified: provider.isVerified,
@@ -792,7 +803,9 @@ const sendVerificationEmail = asyncHandler(async (req, res) => {
   }
 });
 
-// ✅ UPDATED: Verify email with token AND create user/provider AND return auth tokens for auto-login
+// ✅ UPDATED: Verify email with token AND create user/provider AND return auth tokens
+// For providers: Issue LIMITED token (personal-info endpoint only)
+// For users: Issue FULL token
 // @desc    Verify email with token and return authenticated session
 // @route   POST /api/auth/verify-email-token
 // @access  Public
@@ -823,7 +836,7 @@ const verifyEmailToken = asyncHandler(async (req, res) => {
     // Now create the actual user/provider from pending signup data
     let user;
     if (userType === 'provider') {
-      // Create Provider
+      // Create Provider with LIMITED onboarding status (two-phase auth)
       user = await Provider.create({
         fullName: pending.fullName,
         phoneNumber: pending.phoneNumber,
@@ -831,10 +844,11 @@ const verifyEmailToken = asyncHandler(async (req, res) => {
         password: pending.password,
         emailVerified: true,
         isVerified: true,
-        canLogin: true,
+        canLogin: false, // Cannot login yet, but can use LIMITED token
+        onboardingStatus: 'pending_profile', // Phase 1: Can now submit personal info
       });
     } else {
-      // Create User
+      // Create User with full access
       user = await User.create({
         fullName: pending.fullName,
         phoneNumber: pending.phoneNumber,
@@ -862,7 +876,7 @@ const verifyEmailToken = asyncHandler(async (req, res) => {
       phoneNumber: user.phoneNumber,
       providerType: user.providerType,
       profileComplete: user.profileComplete,
-      verificationStatus: user.verificationStatus,
+      onboardingStatus: user.onboardingStatus,
       emailVerified: user.emailVerified,
       canLogin: user.canLogin,
     } : {
@@ -874,11 +888,17 @@ const verifyEmailToken = asyncHandler(async (req, res) => {
       emailVerified: user.emailVerified,
     };
 
+    // For providers: message indicates LIMITED access
+    const message = userType === 'provider' 
+      ? 'Email verified! You can now submit your personal information and documents. LIMITED ACCESS - Full access after admin approval.'
+      : 'Email verified successfully! Your account has been created. You are now logged in.';
+
     res.json({
       success: true,
-      message: 'Email verified successfully! Your account has been created. You are now logged in.',
+      message: message,
       isVerified: true,
       emailVerified: true,
+      tokenType: userType === 'provider' ? 'LIMITED' : 'FULL', // Indicate token type
       [userType === 'provider' ? 'provider' : 'user']: userData,
       ...tokens, // Return accessToken and refreshToken
     });

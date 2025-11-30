@@ -147,7 +147,17 @@ const providerSchema = new mongoose.Schema(
     googleId: String,
     facebookId: String,
 
-    // Status
+    // Status & Onboarding (Two-Phase Authentication)
+    onboardingStatus: {
+      type: String,
+      enum: ['pending_email', 'pending_profile', 'pending_approval', 'approved', 'rejected'],
+      default: 'pending_email',
+      // pending_email: Email not verified yet (no token)
+      // pending_profile: Email verified, can submit personal info with LIMITED token
+      // pending_approval: Profile submitted, awaiting admin review (still LIMITED token)
+      // approved: Admin approved, full access with FULL token
+      // rejected: Admin rejected, can resubmit
+    },
     profileComplete: {
       type: Boolean,
       default: false,
@@ -172,21 +182,21 @@ const providerSchema = new mongoose.Schema(
       default: 'pending',
     },
     emailVerified: {
-  type: Boolean,
-  default: false,
-},
-emailVerificationToken: String,
-emailVerificationExpire: Date,
-emailVerificationSentAt: Date,
-emailVerificationAttempts: {
-  type: Number,
-  default: 0,
-},
-// Prevent login until email verified
-canLogin: {
-  type: Boolean,
-  default: false,
-},
+      type: Boolean,
+      default: false,
+    },
+    emailVerificationToken: String,
+    emailVerificationExpire: Date,
+    emailVerificationSentAt: Date,
+    emailVerificationAttempts: {
+      type: Number,
+      default: 0,
+    },
+    // Prevent login until email verified
+    canLogin: {
+      type: Boolean,
+      default: false,
+    },
     rejectionReason: String,
     verifiedBy: {
       type: mongoose.Schema.Types.ObjectId,

@@ -121,8 +121,9 @@ const submitPersonalInfo = asyncHandler(async (req, res) => {
       throw new Error('National ID Card is required');
     }
 
-    // Mark onboarding step complete
+    // Mark onboarding step complete and update onboarding status to pending_approval
     provider.onboardingStep = 1;
+    provider.onboardingStatus = 'pending_approval'; // Two-phase auth: awaiting admin approval
     provider.verificationStatus = 'pending';
     await provider.save();
 
