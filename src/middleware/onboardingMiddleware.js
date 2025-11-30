@@ -11,18 +11,22 @@ const Provider = require('../models/Provider');
  * Includes provider check to ensure only providers can access
  */
 const allowLimitedOrFullToken = asyncHandler(async (req, res, next) => {
-  // First check: ensure user is a provider
-  if (!req.isProvider) {
+  // Check if user exists
+  if (!req.user) {
+    res.status(401);
+    throw new Error('Not authorized. Please login first.');
+  }
+
+  // Check if user is a provider (either from req.isProvider flag or from userType in token)
+  const isProvider = req.isProvider || req.user.constructor.modelName === 'Provider';
+  
+  if (!isProvider) {
     res.status(403);
     throw new Error('This route is only for providers');
   }
 
-  if (!req.user || req.user.constructor.modelName !== 'Provider') {
-    res.status(403);
-    throw new Error('This endpoint is for providers only');
-  }
-
-  const provider = await Provider.findById(req.user.id);
+  // Fetch provider to check onboarding status
+  const provider = await Provider.findById(req.user._id);
   
   if (!provider) {
     res.status(404);
@@ -55,12 +59,22 @@ const allowLimitedOrFullToken = asyncHandler(async (req, res, next) => {
  * Used for: Dashboard, bookings, orders, etc.
  */
 const requireFullToken = asyncHandler(async (req, res, next) => {
-  if (!req.user || req.user.constructor.modelName !== 'Provider') {
-    res.status(403);
-    throw new Error('This endpoint is for providers only');
+  // Check if user exists
+  if (!req.user) {
+    res.status(401);
+    throw new Error('Not authorized. Please login first.');
   }
 
-  const provider = await Provider.findById(req.user.id);
+  // Check if user is a provider
+  const isProvider = req.isProvider || req.user.constructor.modelName === 'Provider';
+  
+  if (!isProvider) {
+    res.status(403);
+    throw new Error('This route is only for providers');
+  }
+
+  // Fetch provider to check onboarding status
+  const provider = await Provider.findById(req.user._id);
   
   if (!provider) {
     res.status(404);
