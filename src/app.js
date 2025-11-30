@@ -164,7 +164,10 @@ app.get('/api/verify-email', async (req, res) => {
         }
         
         // Generate tokens
-        const tokens = generateTokens(user._id);
+        const tokens = generateTokens(user._id, {
+          userType: type,
+          email: user.email
+        });
         user.refreshToken = tokens.refreshToken;
         user.lastLoginDate = Date.now();
         await user.save();
@@ -260,7 +263,12 @@ app.get('/verify-email', async (req, res) => {
           });
           
           // ✅ Generate auth tokens for provider (can login with limited access)
-          const tokens = generateTokens(user._id);
+          const tokens = generateTokens(user._id, {
+            userType: 'provider',
+            email: user.email,
+            tokenType: 'LIMITED',
+            onboardingStatus: user.onboardingStatus
+          });
           user.refreshToken = tokens.refreshToken;
           user.lastLoginDate = Date.now();
           await user.save();
@@ -290,7 +298,10 @@ app.get('/verify-email', async (req, res) => {
           });
           
           // Generate auth tokens for user (immediate login)
-          const tokens = generateTokens(user._id);
+          const tokens = generateTokens(user._id, {
+            userType: 'user',
+            email: user.email
+          });
           user.refreshToken = tokens.refreshToken;
           user.lastLoginDate = Date.now();
           await user.save();
@@ -345,7 +356,11 @@ app.get('/verify-email', async (req, res) => {
       user.canLogin = true;
     }
 
-    const tokens = generateTokens(user._id);
+    const tokens = generateTokens(user._id, {
+      userType: type,
+      email: user.email,
+      tokenType: type === 'provider' ? 'LIMITED' : 'FULL'
+    });
     user.refreshToken = tokens.refreshToken;
     user.lastLoginDate = Date.now();
     await user.save();

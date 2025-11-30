@@ -66,7 +66,10 @@ class AuthService {
     });
 
     // Generate tokens
-    const tokens = generateTokens(user._id);
+    const tokens = generateTokens(user._id, {
+      userType: 'user',
+      email: user.email
+    });
     user.refreshToken = tokens.refreshToken;
     user.lastLoginDate = Date.now();
 
@@ -123,7 +126,10 @@ class AuthService {
     });
 
     // Generate tokens
-    const tokens = generateTokens(provider._id);
+    const tokens = generateTokens(provider._id, {
+      userType: 'provider',
+      email: provider.email
+    });
     provider.refreshToken = tokens.refreshToken;
     provider.lastLoginDate = Date.now();
     await provider.save();

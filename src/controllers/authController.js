@@ -90,7 +90,10 @@ const loginUser = asyncHandler(async (req, res) => {
   const user = await User.findOne({ email }).select('+password');
   
   if (user && (await user.matchPassword(password))) {
-    const tokens = generateTokens(user._id);
+    const tokens = generateTokens(user._id, { 
+      userType: 'user',
+      email: user.email 
+    });
     
     // Update user login info
     user.refreshToken = tokens.refreshToken;
@@ -224,8 +227,13 @@ const loginProvider = asyncHandler(async (req, res) => {
       );
     }
 
-    // Now issue FULL access token
-    const tokens = generateTokens(provider._id);
+    // Now issue FULL access token with userType and metadata
+    const tokens = generateTokens(provider._id, {
+      userType: 'provider',
+      email: provider.email,
+      tokenType: 'FULL',
+      onboardingStatus: provider.onboardingStatus
+    });
     
     provider.refreshToken = tokens.refreshToken;
     provider.lastLoginDate = Date.now();
@@ -264,7 +272,10 @@ const googleAuth = asyncHandler(async (req, res) => {
   const { user, info } = req;
   
   if (user) {
-    const tokens = generateTokens(user._id);
+    const tokens = generateTokens(user._id, {
+      userType: 'user',
+      email: user.email
+    });
     
     // Update refresh token
     user.refreshToken = tokens.refreshToken;
@@ -292,7 +303,10 @@ const facebookAuth = asyncHandler(async (req, res) => {
   const { user, info } = req;
   
   if (user) {
-    const tokens = generateTokens(user._id);
+    const tokens = generateTokens(user._id, {
+      userType: 'user',
+      email: user.email
+    });
     
     user.refreshToken = tokens.refreshToken;
     user.lastLoginDate = Date.now();
@@ -344,7 +358,10 @@ const refreshToken = asyncHandler(async (req, res) => {
       throw new Error('Account is deactivated');
     }
     
-    const tokens = generateTokens(user._id);
+    const tokens = generateTokens(user._id, {
+      userType: isProvider ? 'provider' : 'user',
+      email: user.email
+    });
     user.refreshToken = tokens.refreshToken;
     await user.save();
     
@@ -859,8 +876,19 @@ const verifyEmailToken = asyncHandler(async (req, res) => {
       });
     }
 
-    // Generate auth tokens
-    const tokens = generateTokens(user._id);
+    // Generate auth tokens with userType and metadata
+    const tokenOptions = {
+      userType: userType,
+      email: user.email,
+    };
+
+    // For providers, add token type and onboarding status
+    if (userType === 'provider') {
+      tokenOptions.tokenType = 'LIMITED';
+      tokenOptions.onboardingStatus = user.onboardingStatus;
+    }
+
+    const tokens = generateTokens(user._id, tokenOptions);
     user.refreshToken = tokens.refreshToken;
     user.lastLoginDate = Date.now();
     await user.save();
@@ -947,7 +975,10 @@ const verifyUserEmail = asyncHandler(async (req, res) => {
     });
 
     // Generate auth tokens for auto-login
-    const tokens = generateTokens(user._id);
+    const tokens = generateTokens(user._id, {
+      userType: 'user',
+      email: user.email
+    });
     user.refreshToken = tokens.refreshToken;
     user.lastLoginDate = Date.now();
     await user.save();
@@ -1019,7 +1050,12 @@ const verifyProviderEmail = asyncHandler(async (req, res) => {
     });
 
     // ✅ Generate auth tokens for provider (can login, but limited until approved)
-    const tokens = generateTokens(provider._id);
+    const tokens = generateTokens(provider._id, {
+      userType: 'provider',
+      email: provider.email,
+      tokenType: 'FULL',
+      onboardingStatus: provider.onboardingStatus
+    });
     provider.refreshToken = tokens.refreshToken;
     provider.lastLoginDate = Date.now();
     await provider.save();

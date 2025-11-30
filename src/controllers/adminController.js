@@ -26,7 +26,11 @@ const adminLogin = asyncHandler(async (req, res) => {
   }
 
   if (admin && (await admin.matchPassword(password))) {
-    const tokens = generateTokens(admin._id);
+    const tokens = generateTokens(admin._id, {
+      userType: 'admin',
+      email: admin.email,
+      role: admin.role
+    });
 
     admin.refreshToken = tokens.refreshToken;
     admin.lastLoginDate = Date.now();
@@ -233,7 +237,12 @@ const approveProvider = asyncHandler(async (req, res) => {
   await provider.save();
 
   // Generate FULL access token for immediate use
-  const tokens = generateTokens(provider._id);
+  const tokens = generateTokens(provider._id, {
+    userType: 'provider',
+    email: provider.email,
+    tokenType: 'FULL',
+    onboardingStatus: provider.onboardingStatus
+  });
 
   // Log admin activity
   req.user.logActivity(
