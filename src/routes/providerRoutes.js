@@ -59,22 +59,24 @@ router.use(protect);
 router.post('/:id/rate', ratingRules, validate, rateProvider);
 
 // ===== PROVIDER-ONLY ROUTES =====
-router.use(providerOnly);
+// Note: providerOnly is applied per-route instead of globally to support two-phase authentication
+// where LIMITED tokens need to access some provider endpoints before full approval
 
 // Verification status (LIMITED or FULL token can check)
-router.get('/verification', getProviderStatus, getVerificationStatus);
+router.get('/verification', providerOnly, getProviderStatus, getVerificationStatus);
 
 // Profile management (FULL token only)
-router.get('/profile', requireFullToken, getProviderProfile);
-router.put('/profile', requireFullToken, updateProviderProfile);
+router.get('/profile', providerOnly, requireFullToken, getProviderProfile);
+router.put('/profile', providerOnly, requireFullToken, updateProviderProfile);
 
 // Personal information submission with documents (LIMITED or FULL token)
+// Note: allowLimitedOrFullToken includes providerOnly check internally
 router.post('/personal-info', allowLimitedOrFullToken, uploadMultipleDocuments, personalInfoRules, validate, submitPersonalInfo);
 
 // Document upload - single file (FULL token only)
-router.post('/upload-document', requireFullToken, uploadSingleDocument, uploadDocumentController);
+router.post('/upload-document', providerOnly, requireFullToken, uploadSingleDocument, uploadDocumentController);
 
 // Availability management (FULL token only)
-router.put('/availability', requireFullToken, availabilityRules, validate, updateAvailability);
+router.put('/availability', providerOnly, requireFullToken, availabilityRules, validate, updateAvailability);
 
 module.exports = router;

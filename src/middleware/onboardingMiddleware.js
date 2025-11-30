@@ -8,8 +8,15 @@ const Provider = require('../models/Provider');
 /**
  * Allows LIMITED token access (personal-info endpoint only)
  * Used for: POST /api/providers/personal-info
+ * Includes provider check to ensure only providers can access
  */
 const allowLimitedOrFullToken = asyncHandler(async (req, res, next) => {
+  // First check: ensure user is a provider
+  if (!req.isProvider) {
+    res.status(403);
+    throw new Error('This route is only for providers');
+  }
+
   if (!req.user || req.user.constructor.modelName !== 'Provider') {
     res.status(403);
     throw new Error('This endpoint is for providers only');
