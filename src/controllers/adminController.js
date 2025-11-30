@@ -2,6 +2,7 @@ const asyncHandler = require('express-async-handler');
 const Admin = require('../models/Admin');
 const User = require('../models/User');
 const Provider = require('../models/Provider');
+const ProviderDocument = require('../models/ProviderDocument');
 const Post = require('../models/Post');
 const { generateTokens } = require('../utils/generateToken');
 const { sendEmail } = require('../services/emailService');
@@ -130,9 +131,31 @@ const getPendingProviders = asyncHandler(async (req, res) => {
     .limit(limit)
     .skip(skip);
 
+  // Fetch documents for each provider
+  const providersWithDocs = await Promise.all(
+    providers.map(async (provider) => {
+      const documents = await ProviderDocument.find({
+        providerId: provider._id,
+      }).select('-__v');
+
+      return {
+        ...provider.toObject(),
+        documents: documents.map((doc) => ({
+          id: doc._id,
+          documentType: doc.documentType,
+          fileName: doc.fileName,
+          fileUrl: doc.fileUrl,
+          fileSize: doc.fileSize,
+          uploadedAt: doc.uploadedAt,
+          verified: doc.verified,
+        })),
+      };
+    })
+  );
+
   res.json({
     success: true,
-    providers,
+    providers: providersWithDocs,
     pagination: {
       page,
       limit,
@@ -153,9 +176,31 @@ const getProviderForReview = asyncHandler(async (req, res) => {
     throw new Error('Provider not found');
   }
 
+  // Fetch all documents for this provider
+  const documents = await ProviderDocument.find({
+    providerId: provider._id,
+  }).select('-__v');
+
+  const providerData = {
+    ...provider.toObject(),
+    documents: documents.map((doc) => ({
+      id: doc._id,
+      documentType: doc.documentType,
+      fileName: doc.fileName,
+      fileUrl: doc.fileUrl,
+      fileSize: doc.fileSize,
+      mimeType: doc.mimeType,
+      uploadedAt: doc.uploadedAt,
+      verified: doc.verified,
+      verifiedAt: doc.verifiedAt,
+      verifiedBy: doc.verifiedBy,
+      rejectionReason: doc.rejectionReason,
+    })),
+  };
+
   res.json({
     success: true,
-    provider,
+    provider: providerData,
   });
 });
 

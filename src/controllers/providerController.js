@@ -1,6 +1,164 @@
 const asyncHandler = require('express-async-handler');
 const Provider = require('../models/Provider');
+const ProviderDocument = require('../models/ProviderDocument');
 const { deleteFile } = require('../config/cloudinary');
+
+// @desc    Submit provider personal info and documents (Onboarding Step 1)
+// @route   POST /api/providers/personal-info
+// @access  Private (Provider)
+// ✅ NEW: Unified endpoint for provider profile and document submission
+const submitPersonalInfo = asyncHandler(async (req, res) => {
+  try {
+    const providerId = req.user.id;
+    const {
+      providerType,
+      providerSubType,
+      fullName,
+      email,
+      phoneNumber,
+      specialty,
+      profession,
+      experience,
+      rate,
+      briefDescription,
+      city,
+      idNumber,
+      category,
+      businessName,
+    } = req.body;
+
+    // Validate required fields
+    if (!providerType || !fullName || !email || !phoneNumber || !city || !idNumber) {
+      res.status(400);
+      throw new Error('Missing required fields: providerType, fullName, email, phoneNumber, city, idNumber');
+    }
+
+    // Find existing provider
+    let provider = await Provider.findById(providerId);
+    if (!provider) {
+      res.status(404);
+      throw new Error('Provider not found');
+    }
+
+    // Update provider info
+    provider.providerType = providerType;
+    provider.providerSubType = providerSubType || null;
+    provider.fullName = fullName;
+    provider.email = email;
+    provider.phoneNumber = phoneNumber;
+    provider.specialty = specialty || null;
+    provider.profession = profession || null;
+    provider.experience = experience;
+    provider.rate = rate;
+    provider.briefDescription = briefDescription;
+    provider.city = city;
+    provider.idNumber = idNumber;
+    provider.category = category || null;
+    provider.businessName = businessName || null;
+
+    // Handle document uploads via multer fields
+    const documentMap = {
+      medicalLicense: 'medicalLicense',
+      degreeCertificate: 'degreeCertificate',
+      professionalCertificate: 'professionalCertificate',
+      businessLicense: 'businessLicense',
+      nationalIdCard: 'nationalIdCard',
+    };
+
+    // Process uploaded documents
+    if (req.files && Object.keys(req.files).length > 0) {
+      for (const [fieldName, documentType] of Object.entries(documentMap)) {
+        if (req.files[fieldName]?.[0]) {
+          const file = req.files[fieldName][0];
+
+          // Delete old document if exists
+          const oldDoc = await ProviderDocument.findOne({
+            providerId,
+            documentType,
+          });
+
+          if (oldDoc?.publicId) {
+            try {
+              await deleteFile(oldDoc.publicId);
+            } catch (error) {
+              console.error(`Error deleting old ${documentType}:`, error.message);
+            }
+          }
+
+          // Create new document record
+          const providerDoc = await ProviderDocument.findOneAndUpdate(
+            { providerId, documentType },
+            {
+              providerId,
+              documentType,
+              fileName: file.originalname,
+              fileUrl: file.path,
+              fileSize: file.size,
+              mimeType: file.mimetype,
+              publicId: file.filename,
+              uploadedAt: Date.now(),
+              verified: false,
+            },
+            { upsert: true, new: true }
+          );
+
+          console.log(`✅ Document uploaded: ${documentType}`, {
+            fileName: file.originalname,
+            fileUrl: file.path,
+          });
+        }
+      }
+    }
+
+    // Check if nationalIdCard is uploaded (required)
+    const nationalIdExists = await ProviderDocument.findOne({
+      providerId,
+      documentType: 'nationalIdCard',
+    });
+
+    if (!nationalIdExists) {
+      res.status(400);
+      throw new Error('National ID Card is required');
+    }
+
+    // Mark onboarding step complete
+    provider.onboardingStep = 1;
+    provider.verificationStatus = 'pending';
+    await provider.save();
+
+    // Get all uploaded documents
+    const documents = await ProviderDocument.find({ providerId }).select('-__v');
+
+    console.log(`✅ Provider personal info submitted: ${provider.email}`, {
+      providerType,
+      documentsCount: documents.length,
+      verificationStatus: provider.verificationStatus,
+    });
+
+    res.json({
+      success: true,
+      message: 'Profile submitted for review. Admin will review your documents and contact you within 24 hours.',
+      provider: {
+        id: provider._id,
+        fullName: provider.fullName,
+        email: provider.email,
+        providerType: provider.providerType,
+        verificationStatus: provider.verificationStatus,
+        onboardingStep: provider.onboardingStep,
+      },
+      documents: documents.map((doc) => ({
+        id: doc._id,
+        documentType: doc.documentType,
+        fileName: doc.fileName,
+        uploadedAt: doc.uploadedAt,
+        verified: doc.verified,
+      })),
+    });
+  } catch (error) {
+    console.error('❌ Error submitting personal info:', error.message);
+    throw error;
+  }
+});
 
 // @desc    Get provider profile
 // @route   GET /api/providers/profile
@@ -58,95 +216,6 @@ const updateProviderProfile = asyncHandler(async (req, res) => {
     success: true,
     message: 'Profile updated successfully',
     provider,
-  });
-});
-
-// @desc    Submit provider personal info (multi-step onboarding)
-// @route   POST /api/providers/personal-info
-// @access  Private (Provider)
-const submitPersonalInfo = asyncHandler(async (req, res) => {
-  const provider = await Provider.findById(req.user.id);
-
-  if (!provider) {
-    res.status(404);
-    throw new Error('Provider not found');
-  }
-
-  if (provider.verificationStatus === 'approved') {
-    res.status(400);
-    throw new Error('Provider is already verified');
-  }
-
-  const {
-    providerType,
-    providerSubType,
-    specialty,
-    profession,
-    category,
-    experience,
-    briefDescription,
-    rate,
-    professionalName,
-    businessName,
-    city,
-    idNumber,
-  } = req.body;
-
-  // Validate provider type
-  if (!providerType || !['doctor', 'home_service', 'vendor'].includes(providerType)) {
-    res.status(400);
-    throw new Error('Invalid provider type');
-  }
-
-  // Update provider information
-  provider.providerType = providerType;
-
-  // Type-specific fields
-  if (providerType === 'doctor') {
-    if (!specialty) {
-      res.status(400);
-      throw new Error('Specialty is required for doctors');
-    }
-    provider.specialty = specialty;
-    provider.professionalName = professionalName;
-  } else if (providerType === 'home_service') {
-    if (!providerSubType) {
-      res.status(400);
-      throw new Error('Service type is required');
-    }
-    provider.providerSubType = providerSubType;
-    provider.profession = profession || providerSubType;
-  } else if (providerType === 'vendor') {
-    if (!category) {
-      res.status(400);
-      throw new Error('Category is required for vendors');
-    }
-    provider.category = category;
-    provider.businessName = businessName;
-  }
-
-  // Common fields
-  provider.experience = experience;
-  provider.briefDescription = briefDescription;
-  provider.city = city;
-  provider.idNumber = idNumber;
-  provider.rate = rate;
-
-  // Update onboarding step
-  provider.onboardingStep = Math.max(provider.onboardingStep, 2);
-
-  await provider.save();
-
-  res.json({
-    success: true,
-    message: 'Personal information submitted successfully',
-    provider: {
-      id: provider._id,
-      providerType: provider.providerType,
-      providerSubType: provider.providerSubType,
-      onboardingStep: provider.onboardingStep,
-      profileComplete: provider.profileComplete,
-    },
   });
 });
 
@@ -222,7 +291,7 @@ const uploadDocument = asyncHandler(async (req, res) => {
 // @access  Private (Provider)
 const getVerificationStatus = asyncHandler(async (req, res) => {
   const provider = await Provider.findById(req.user.id).select(
-    'verificationStatus isVerified rejectionReason documents profileComplete'
+    'verificationStatus isVerified rejectionReason onboardingStep'
   );
 
   if (!provider) {
@@ -230,21 +299,30 @@ const getVerificationStatus = asyncHandler(async (req, res) => {
     throw new Error('Provider not found');
   }
 
+  // Fetch documents for this provider
+  const documents = await ProviderDocument.find({
+    providerId: provider._id,
+  }).select('documentType verified verifiedAt rejectionReason');
+
+  const documentStatus = documents.reduce((acc, doc) => {
+    acc[doc.documentType] = {
+      uploaded: true,
+      verified: doc.verified,
+      verifiedAt: doc.verifiedAt,
+      rejectionReason: doc.rejectionReason,
+    };
+    return acc;
+  }, {});
+
   res.json({
     success: true,
     verificationStatus: provider.verificationStatus,
     isVerified: provider.isVerified,
     rejectionReason: provider.rejectionReason,
-    profileComplete: provider.profileComplete,
-    documents: Object.keys(provider.documents).reduce((acc, key) => {
-      if (provider.documents[key]?.url) {
-        acc[key] = {
-          uploaded: true,
-          verified: provider.documents[key].verified,
-        };
-      }
-      return acc;
-    }, {}),
+    onboardingStep: provider.onboardingStep,
+    documentsCount: documents.length,
+    documentsVerified: documents.filter((d) => d.verified).length,
+    documents: documentStatus,
   });
 });
 
