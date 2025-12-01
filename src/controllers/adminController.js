@@ -3,6 +3,7 @@ const Admin = require('../models/Admin');
 const User = require('../models/User');
 const Provider = require('../models/Provider');
 const ProviderDocument = require('../models/ProviderDocument');
+const ProviderSubmission = require('../models/ProviderSubmission');
 const Post = require('../models/Post');
 const { generateTokens } = require('../utils/generateToken');
 const { sendEmail } = require('../services/emailService');
@@ -569,6 +570,463 @@ const deletePost = asyncHandler(async (req, res) => {
   });
 });
 
+// ===== PROVIDER SUBMISSION ENDPOINTS (PUBLIC/NO AUTH) =====
+
+// @desc    Submit provider application (PUBLIC - no auth needed)
+// @route   POST /api/admin/provider-submissions
+// @access  Public
+const submitProviderApplication = asyncHandler(async (req, res) => {
+  const {
+    providerType,
+    providerSubType,
+    fullName,
+    email,
+    phoneNumber,
+    specialty,
+    experience,
+    qualification,
+    city,
+    address,
+    idNumber,
+    bio,
+    services,
+    consultationFee,
+    serviceFee,
+  } = req.body;
+
+  // Check if submission already exists for this email
+  const existingSubmission = await ProviderSubmission.findOne({ 
+    email,
+    status: 'pending_review'
+  });
+
+  if (existingSubmission) {
+    res.status(400);
+    throw new Error('You already have a pending submission. Please wait for admin review.');
+  }
+
+  // Process uploaded documents
+  const documents = {};
+  
+  if (req.files) {
+    if (req.files.medicalLicense) {
+      documents.medicalLicense = {
+        url: req.files.medicalLicense[0].path,
+        publicId: req.files.medicalLicense[0].filename,
+      };
+    }
+    if (req.files.degreeCertificate) {
+      documents.degreeCertificate = {
+        url: req.files.degreeCertificate[0].path,
+        publicId: req.files.degreeCertificate[0].filename,
+      };
+    }
+    if (req.files.nationalIdCard) {
+      documents.nationalIdCard = {
+        url: req.files.nationalIdCard[0].path,
+        publicId: req.files.nationalIdCard[0].filename,
+      };
+    }
+    if (req.files.profilePhoto) {
+      documents.profilePhoto = {
+        url: req.files.profilePhoto[0].path,
+        publicId: req.files.profilePhoto[0].filename,
+      };
+    }
+    if (req.files.additionalCertificates) {
+      documents.additionalCertificates = req.files.additionalCertificates.map(file => ({
+        url: file.path,
+        publicId: file.filename,
+        name: file.originalname,
+      }));
+    }
+  }
+
+  // Create submission
+  const submission = await ProviderSubmission.create({
+    providerType,
+    providerSubType,
+    fullName,
+    email,
+    phoneNumber,
+    specialty,
+    experience,
+    qualification,
+    city,
+    address,
+    idNumber,
+    bio,
+    services: services ? (Array.isArray(services) ? services : JSON.parse(services)) : [],
+    consultationFee,
+    serviceFee,
+    documents,
+    status: 'pending_review',
+    submittedAt: new Date(),
+  });
+
+  // Send notification email to admins
+  try {
+    await sendEmail({
+      email: process.env.ADMIN_EMAIL || 'admin@metromatrix.com',
+      subject: 'New Provider Application Submitted',
+      html: `
+        <h2>New Provider Application</h2>
+        <p><strong>Name:</strong> ${fullName}</p>
+        <p><strong>Email:</strong> ${email}</p>
+        <p><strong>Type:</strong> ${providerType}</p>
+        <p><strong>City:</strong> ${city}</p>
+        <p>Please review this application in the admin dashboard.</p>
+      `,
+    });
+  } catch (error) {
+    console.error('Error sending admin notification:', error);
+  }
+
+  res.status(201).json({
+    success: true,
+    message: 'Your application has been submitted successfully! Please wait for admin approval.',
+    submissionId: submission._id,
+    status: 'pending_review',
+  });
+});
+
+// @desc    Check submission status by email (PUBLIC - no auth)
+// @route   GET /api/admin/provider-submissions/check-status
+// @access  Public
+const checkSubmissionStatus = asyncHandler(async (req, res) => {
+  const { email } = req.query;
+
+  if (!email) {
+    res.status(400);
+    throw new Error('Email is required');
+  }
+
+  // Find most recent submission for this email
+  const submission = await ProviderSubmission.findOne({ email })
+    .sort({ submittedAt: -1 })
+    .select('status submittedAt reviewedAt rejectionReason providerId');
+
+  if (!submission) {
+    res.status(404);
+    throw new Error('No submission found for this email');
+  }
+
+  const response = {
+    success: true,
+    status: submission.status,
+    submissionId: submission._id,
+    submittedAt: submission.submittedAt,
+  };
+
+  // If approved, fetch provider and generate tokens
+  if (submission.status === 'approved' && submission.providerId) {
+    const provider = await Provider.findById(submission.providerId);
+    
+    if (provider) {
+      const tokens = generateTokens(provider._id, {
+        userType: 'provider',
+        email: provider.email,
+        tokenType: 'FULL',
+        onboardingStatus: 'approved'
+      });
+
+      response.tokens = tokens;
+      response.provider = {
+        id: provider._id,
+        fullName: provider.fullName,
+        email: provider.email,
+        providerType: provider.providerType,
+      };
+    }
+  }
+
+  // If rejected, include rejection reason
+  if (submission.status === 'rejected') {
+    response.rejectionReason = submission.rejectionReason;
+    response.reviewedAt = submission.reviewedAt;
+  }
+
+  res.json(response);
+});
+
+// @desc    Get all provider submissions (for admin review)
+// @route   GET /api/admin/provider-submissions
+// @access  Private/Admin
+const getProviderSubmissions = asyncHandler(async (req, res) => {
+  const { status } = req.query;
+
+  const filter = status ? { status } : {};
+  
+  const submissions = await ProviderSubmission.find(filter)
+    .sort({ submittedAt: -1 })
+    .select('-documents.medicalLicense.publicId -documents.degreeCertificate.publicId');
+
+  res.json({
+    success: true,
+    count: submissions.length,
+    submissions,
+  });
+});
+
+// @desc    Get single provider submission details
+// @route   GET /api/admin/provider-submissions/:id
+// @access  Private/Admin
+const getProviderSubmissionById = asyncHandler(async (req, res) => {
+  const submission = await ProviderSubmission.findById(req.params.id);
+
+  if (!submission) {
+    res.status(404);
+    throw new Error('Submission not found');
+  }
+
+  res.json({
+    success: true,
+    submission,
+  });
+});
+
+// @desc    Approve provider submission (creates actual Provider)
+// @route   POST /api/admin/provider-submissions/:id/approve
+// @access  Private/Admin
+const approveProviderSubmission = asyncHandler(async (req, res) => {
+  const submission = await ProviderSubmission.findById(req.params.id);
+
+  if (!submission) {
+    res.status(404);
+    throw new Error('Submission not found');
+  }
+
+  if (submission.status !== 'pending_review') {
+    res.status(400);
+    throw new Error(`Submission already ${submission.status}`);
+  }
+
+  // Check if provider already exists
+  const existingProvider = await Provider.findOne({ email: submission.email });
+  if (existingProvider) {
+    res.status(400);
+    throw new Error('Provider with this email already exists');
+  }
+
+  // Create actual Provider from submission
+  const provider = await Provider.create({
+    providerType: submission.providerType,
+    providerSubType: submission.providerSubType,
+    fullName: submission.fullName,
+    email: submission.email,
+    phoneNumber: submission.phoneNumber,
+    specialty: submission.specialty,
+    experience: submission.experience,
+    qualification: submission.qualification,
+    city: submission.city,
+    address: submission.address,
+    idNumber: submission.idNumber,
+    bio: submission.bio,
+    services: submission.services,
+    consultationFee: submission.consultationFee,
+    serviceFee: submission.serviceFee,
+    profilePhoto: submission.documents.profilePhoto?.url,
+    
+    // Set as verified and approved
+    emailVerified: true,
+    isVerified: true,
+    onboardingStatus: 'approved',
+    verificationStatus: 'approved',
+    canLogin: true,
+    
+    // Admin info
+    verifiedBy: req.user._id,
+    approvedAt: new Date(),
+  });
+
+  // Create ProviderDocument records for uploaded documents
+  const documentPromises = [];
+  
+  if (submission.documents.medicalLicense) {
+    documentPromises.push(
+      ProviderDocument.create({
+        provider: provider._id,
+        documentType: 'medicalLicense',
+        documentUrl: submission.documents.medicalLicense.url,
+        publicId: submission.documents.medicalLicense.publicId,
+        status: 'approved',
+        verifiedBy: req.user._id,
+        verifiedAt: new Date(),
+      })
+    );
+  }
+  
+  if (submission.documents.degreeCertificate) {
+    documentPromises.push(
+      ProviderDocument.create({
+        provider: provider._id,
+        documentType: 'degreeCertificate',
+        documentUrl: submission.documents.degreeCertificate.url,
+        publicId: submission.documents.degreeCertificate.publicId,
+        status: 'approved',
+        verifiedBy: req.user._id,
+        verifiedAt: new Date(),
+      })
+    );
+  }
+  
+  if (submission.documents.nationalIdCard) {
+    documentPromises.push(
+      ProviderDocument.create({
+        provider: provider._id,
+        documentType: 'nationalIdCard',
+        documentUrl: submission.documents.nationalIdCard.url,
+        publicId: submission.documents.nationalIdCard.publicId,
+        status: 'approved',
+        verifiedBy: req.user._id,
+        verifiedAt: new Date(),
+      })
+    );
+  }
+
+  await Promise.all(documentPromises);
+
+  // Update submission status
+  submission.status = 'approved';
+  submission.providerId = provider._id;
+  submission.reviewedAt = new Date();
+  submission.reviewedBy = req.user._id;
+  await submission.save();
+
+  // Generate FULL access token for provider
+  const tokens = generateTokens(provider._id, {
+    userType: 'provider',
+    email: provider.email,
+    tokenType: 'FULL',
+    onboardingStatus: 'approved'
+  });
+
+  // Log admin activity
+  req.user.logActivity(
+    'approve_provider_submission',
+    provider._id,
+    'Provider',
+    `Approved provider submission: ${provider.fullName}`
+  );
+  req.user.incrementStat('totalProvidersApproved');
+  await req.user.save();
+
+  // Send approval email to provider
+  try {
+    await sendEmail({
+      email: provider.email,
+      subject: 'Your Provider Account Has Been Approved! - MetroMatrix',
+      html: `
+        <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto;">
+          <h1 style="color: #6366f1;">🎉 Congratulations!</h1>
+          <p>Dear ${provider.fullName},</p>
+          <p>Your provider application has been <strong>approved</strong>! You can now login and start offering your services on MetroMatrix.</p>
+          
+          <div style="background: #f0f9ff; padding: 20px; border-radius: 8px; margin: 20px 0;">
+            <h3 style="margin-top: 0;">Next Steps:</h3>
+            <ol>
+              <li>Login to your account using your email and password</li>
+              <li>Complete your profile information</li>
+              <li>Set your availability schedule</li>
+              <li>Start receiving service requests</li>
+            </ol>
+          </div>
+          
+          <p>If you have any questions, feel free to contact our support team.</p>
+          
+          <p>Best regards,<br/>The MetroMatrix Team</p>
+        </div>
+      `,
+    });
+  } catch (error) {
+    console.error('Error sending approval email:', error);
+  }
+
+  res.json({
+    success: true,
+    message: 'Provider application approved successfully',
+    provider: {
+      id: provider._id,
+      fullName: provider.fullName,
+      email: provider.email,
+      providerType: provider.providerType,
+      onboardingStatus: provider.onboardingStatus,
+    },
+    tokens,
+  });
+});
+
+// @desc    Reject provider submission
+// @route   POST /api/admin/provider-submissions/:id/reject
+// @access  Private/Admin
+const rejectProviderSubmission = asyncHandler(async (req, res) => {
+  const { rejectionReason, adminNotes } = req.body;
+  
+  const submission = await ProviderSubmission.findById(req.params.id);
+
+  if (!submission) {
+    res.status(404);
+    throw new Error('Submission not found');
+  }
+
+  if (submission.status !== 'pending_review') {
+    res.status(400);
+    throw new Error(`Submission already ${submission.status}`);
+  }
+
+  // Update submission status
+  submission.status = 'rejected';
+  submission.rejectionReason = rejectionReason;
+  submission.adminNotes = adminNotes;
+  submission.reviewedAt = new Date();
+  submission.reviewedBy = req.user._id;
+  await submission.save();
+
+  // Log admin activity
+  req.user.logActivity(
+    'reject_provider_submission',
+    submission._id,
+    'ProviderSubmission',
+    `Rejected provider submission: ${submission.fullName}`
+  );
+  await req.user.save();
+
+  // Send rejection email
+  try {
+    await sendEmail({
+      email: submission.email,
+      subject: 'Provider Application Update - MetroMatrix',
+      html: `
+        <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto;">
+          <h1>Application Status Update</h1>
+          <p>Dear ${submission.fullName},</p>
+          <p>Thank you for your interest in becoming a provider on MetroMatrix.</p>
+          <p>After careful review, we regret to inform you that we cannot approve your application at this time.</p>
+          
+          ${rejectionReason ? `
+            <div style="background: #fef2f2; padding: 15px; border-left: 4px solid #ef4444; margin: 20px 0;">
+              <strong>Reason:</strong> ${rejectionReason}
+            </div>
+          ` : ''}
+          
+          <p>You may resubmit your application after addressing the issues mentioned above.</p>
+          
+          <p>If you have any questions, please contact our support team.</p>
+          
+          <p>Best regards,<br/>The MetroMatrix Team</p>
+        </div>
+      `,
+    });
+  } catch (error) {
+    console.error('Error sending rejection email:', error);
+  }
+
+  res.json({
+    success: true,
+    message: 'Provider application rejected',
+  });
+});
+
 module.exports = {
   adminLogin,
   getDashboardStats,
@@ -583,4 +1041,10 @@ module.exports = {
   deactivateProvider,
   activateProvider,
   deletePost,
+  submitProviderApplication,
+  checkSubmissionStatus,
+  getProviderSubmissions,
+  getProviderSubmissionById,
+  approveProviderSubmission,
+  rejectProviderSubmission,
 };

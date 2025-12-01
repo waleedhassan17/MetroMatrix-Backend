@@ -3,6 +3,7 @@ const router = express.Router();
 const { body } = require('express-validator');
 const { validate } = require('../middleware/validate');
 const { protect } = require('../middleware/authMiddleware');
+const { uploadMultipleDocuments } = require('../middleware/uploadMiddleware');
 const {
   adminLogin,
   getDashboardStats,
@@ -17,6 +18,12 @@ const {
   deactivateProvider,
   activateProvider,
   deletePost,
+  submitProviderApplication,
+  checkSubmissionStatus,
+  getProviderSubmissions,
+  getProviderSubmissionById,
+  approveProviderSubmission,
+  rejectProviderSubmission,
 } = require('../controllers/adminController');
 
 // Create admin middleware
@@ -36,6 +43,10 @@ const loginRules = [
 
 // Public routes
 router.post('/login', loginRules, validate, adminLogin);
+
+// ===== PUBLIC PROVIDER SUBMISSION (NO AUTH REQUIRED) =====
+router.post('/provider-submissions', uploadMultipleDocuments, submitProviderApplication);
+router.get('/provider-submissions/check-status', checkSubmissionStatus);
 
 // Protected admin routes
 router.use(protect);
@@ -65,5 +76,16 @@ router.put('/users/:id/activate', activateUser);
 
 // Post management
 router.delete('/posts/:id', deletePost);
+
+// ===== PROVIDER SUBMISSION MANAGEMENT =====
+router.get('/provider-submissions', getProviderSubmissions);
+router.get('/provider-submissions/:id', getProviderSubmissionById);
+router.post('/provider-submissions/:id/approve', approveProviderSubmission);
+router.post(
+  '/provider-submissions/:id/reject',
+  body('rejectionReason').notEmpty().withMessage('Rejection reason is required'),
+  validate,
+  rejectProviderSubmission
+);
 
 module.exports = router;
