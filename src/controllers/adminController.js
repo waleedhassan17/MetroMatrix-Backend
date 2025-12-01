@@ -594,11 +594,15 @@ const submitProviderApplication = asyncHandler(async (req, res) => {
     serviceFee,
   } = req.body;
 
-  // Optional: Verify email was verified (check PendingSignup)
-  const PendingSignup = require('../models/PendingSignup');
-  const pendingSignup = await PendingSignup.findOne({ email, userType: 'provider' });
+  // Verify email was verified (check EmailVerification)
+  const EmailVerification = require('../models/EmailVerification');
+  const emailVerification = await EmailVerification.findOne({
+    email,
+    userType: 'provider',
+    verified: true,
+  });
   
-  if (pendingSignup && !pendingSignup.emailVerified) {
+  if (!emailVerification) {
     res.status(400);
     throw new Error('Please verify your email before submitting your application.');
   }

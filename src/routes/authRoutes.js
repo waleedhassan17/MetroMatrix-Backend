@@ -17,6 +17,7 @@ const {
   verifyEmail,
   logout,
   sendVerificationEmail,
+  sendProviderVerificationEmail, // ✅ NEW - Provider standalone verification
   verifyEmailToken,
   verifyUserEmail,            // ✅ NEW - User verification
   verifyProviderEmail,        // ✅ NEW - Provider verification
@@ -48,6 +49,13 @@ router.post('/login', loginRules, validate, loginUser);
 // Provider authentication routes
 router.post('/provider/register', userRegistrationRules, validate, registerProvider);
 router.post('/provider/login', loginRules, validate, loginProvider);
+
+// ===== PROVIDER EMAIL VERIFICATION (STANDALONE - NO ACCOUNT CREATION) =====
+router.post('/provider/send-verification-email', 
+  body('email').isEmail().normalizeEmail().withMessage('Invalid email'),
+  validate,
+  sendProviderVerificationEmail
+);
 
 // ===== GOOGLE OAUTH ROUTES =====
 router.get('/google', (req, res, next) => {

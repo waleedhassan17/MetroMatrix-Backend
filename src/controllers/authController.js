@@ -5,6 +5,7 @@ const User = require('../models/User');
 const Provider = require('../models/Provider');
 const PendingSignup = require('../models/PendingSignup');
 const PasswordResetOTP = require('../models/PasswordResetOTP');
+const EmailVerification = require('../models/EmailVerification');
 const { generateTokens } = require('../utils/generateToken');
 const { sendEmail, emailTemplates } = require('../services/emailService');
 const EmailVerificationService = require('../services/emailVerificationService');
@@ -820,9 +821,83 @@ const sendVerificationEmail = asyncHandler(async (req, res) => {
   }
 });
 
+// @desc    Send provider email verification (standalone - no account creation)
+// @route   POST /api/auth/provider/send-verification-email
+// @access  Public
+const sendProviderVerificationEmail = asyncHandler(async (req, res) => {
+  const { email } = req.body;
+
+  if (!email) {
+    res.status(400);
+    throw new Error('Email is required');
+  }
+
+  // Check if already verified
+  const existingVerification = await EmailVerification.findOne({
+    email,
+    userType: 'provider',
+    verified: true,
+  });
+
+  if (existingVerification) {
+    res.status(400);
+    throw new Error('Email already verified. You can proceed to submit your application.');
+  }
+
+  // Generate verification token
+  const token = crypto.randomBytes(32).toString('hex');
+  const expiresAt = new Date(Date.now() + 24 * 60 * 60 * 1000); // 24 hours
+
+  // Delete any existing unverified tokens for this email
+  await EmailVerification.deleteMany({
+    email,
+    userType: 'provider',
+    verified: false,
+  });
+
+  // Create new verification record
+  await EmailVerification.create({
+    email,
+    token,
+    userType: 'provider',
+    verified: false,
+    expiresAt,
+  });
+
+  // Send verification email
+  const baseUrl = process.env.CLIENT_URL || 'http://localhost:3000';
+  const verificationUrl = `${baseUrl}/verify-email?token=${token}&type=provider`;
+
+  await sendEmail({
+    email: email,
+    subject: 'Verify Your Email - MetroMatrix Provider Registration',
+    html: `
+      <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto;">
+        <h1 style="color: #6366f1;">MetroMatrix</h1>
+        <h2>Verify Your Email Address</h2>
+        <p>Thank you for starting your provider registration with MetroMatrix!</p>
+        <p>Please click the button below to verify your email address:</p>
+        <a href="${verificationUrl}" style="display: inline-block; background: #6366f1; color: white; padding: 12px 24px; text-decoration: none; border-radius: 6px; margin: 20px 0;">
+          Verify Email
+        </a>
+        <p>Or copy and paste this link into your browser:</p>
+        <p style="word-break: break-all; color: #6366f1;">${verificationUrl}</p>
+        <p style="color: #666; font-size: 14px;">This link will expire in 24 hours.</p>
+        <p style="color: #666; font-size: 14px;">If you didn't request this verification, please ignore this email.</p>
+      </div>
+    `,
+  });
+
+  res.json({
+    success: true,
+    message: 'Verification email sent successfully',
+    email: email,
+  });
+});
+
 // ✅ UPDATED: Verify email with token
-// For providers: ONLY mark email as verified (NO Provider creation, NO token)
-// For users: Create user AND return auth tokens
+// For providers: Uses EmailVerification model (standalone verification)
+// For users: Uses PendingSignup model (creates account after verification)
 // @desc    Verify email with token
 // @route   POST /api/auth/verify-email-token
 // @access  Public
@@ -835,39 +910,56 @@ const verifyEmailToken = asyncHandler(async (req, res) => {
   }
 
   try {
-    // Hash the token
-    const hashedToken = crypto.createHash('sha256').update(token).digest('hex');
-    
-    // Find pending signup with valid token
-    const pending = await PendingSignup.findOne({
-      verificationToken: hashedToken,
-      verificationTokenExpire: { $gt: Date.now() },
-      userType: userType,
-    }).select('+password');
-
-    if (!pending) {
-      res.status(400);
-      throw new Error('Invalid or expired verification token');
-    }
-
     if (userType === 'provider') {
-      // ✅ NEW FLOW: For providers, just mark email as verified
-      // DO NOT create Provider - that happens after admin approval
-      
-      // Mark pending signup as email verified (keep it for submission reference)
-      pending.emailVerified = true;
-      await pending.save();
+      // ✅ NEW FLOW: For providers, use EmailVerification model
+      // Find verification record
+      const verification = await EmailVerification.findOne({
+        token,
+        userType: 'provider',
+      });
+
+      if (!verification) {
+        res.status(400);
+        throw new Error('Invalid verification token');
+      }
+
+      if (verification.expiresAt < new Date()) {
+        res.status(400);
+        throw new Error('Verification token has expired');
+      }
+
+      if (verification.verified) {
+        res.status(400);
+        throw new Error('Email already verified');
+      }
+
+      // Mark email as verified
+      verification.verified = true;
+      await verification.save();
 
       res.json({
         success: true,
         message: 'Email verified successfully! You can now submit your provider application.',
         emailVerified: true,
-        email: pending.email,
+        email: verification.email,
         nextStep: 'submit_application',
-        // No tokens - provider will submit application without auth
       });
     } else {
-      // For users: Create user account and return tokens (existing flow)
+      // For users: Use PendingSignup model (existing flow)
+      const hashedToken = crypto.createHash('sha256').update(token).digest('hex');
+      
+      const pending = await PendingSignup.findOne({
+        verificationToken: hashedToken,
+        verificationTokenExpire: { $gt: Date.now() },
+        userType: 'user',
+      }).select('+password');
+
+      if (!pending) {
+        res.status(400);
+        throw new Error('Invalid or expired verification token');
+      }
+
+      // Create user account and return tokens
       const user = await User.create({
         fullName: pending.fullName,
         phoneNumber: pending.phoneNumber,
@@ -1222,6 +1314,7 @@ module.exports = {
   verifyUserEmail,            // ✅ NEW - User-specific verification
   verifyProviderEmail,        // ✅ NEW - Provider-specific verification
   sendVerificationEmail,
+  sendProviderVerificationEmail, // ✅ NEW - Provider standalone verification
   checkEmailVerificationStatus,
   resetVerificationLimit,
   manualVerifyEmail,
