@@ -23,6 +23,7 @@ const adminRoutes = require('./routes/adminRoutes');
 const User = require('./models/User');
 const Provider = require('./models/Provider');
 const PendingSignup = require('./models/PendingSignup');
+const EmailVerification = require('./models/EmailVerification');
 const { generateTokens } = require('./utils/generateToken');
 
 // Initialize express
@@ -334,7 +335,39 @@ app.get('/verify-email', async (req, res) => {
       }
     }
     
-    // Otherwise, check if this is an existing user's email verification (shouldn't happen with new flow)
+    // ✅ NEW: Check EmailVerification table for standalone provider verification (v60)
+    if (type === 'provider') {
+      const emailVerification = await EmailVerification.findOne({
+        token: token, // Use plain token, not hashed (EmailVerification stores plain tokens)
+        userType: 'provider',
+      });
+
+      if (emailVerification) {
+        // Check if expired
+        if (emailVerification.expiresAt < new Date()) {
+          return res.send(getVerificationHTML('expired', 'Verification link has expired. Please request a new verification email from the app.', null, null, type));
+        }
+
+        // Check if already verified
+        if (emailVerification.verified) {
+          return res.send(getVerificationHTML('success', 'Email already verified! Please return to the app and tap "I Verified My Email" to continue.', null, null, type));
+        }
+
+        // Mark as verified
+        emailVerification.verified = true;
+        await emailVerification.save();
+
+        console.log(`✅ Provider email verified via standalone flow: ${emailVerification.email}`);
+
+        // Return success page WITHOUT tokens (provider hasn't submitted profile yet)
+        const successMessage = 'Email verified successfully! Please return to the MetroMatrix app to complete your profile.';
+        const deepLinkUrl = `metromatrix://verified?email=${encodeURIComponent(emailVerification.email)}&type=provider`;
+        
+        return res.send(getVerificationHTML('success', successMessage, deepLinkUrl, null, type));
+      }
+    }
+    
+    // Otherwise, check if this is an existing user's email verification (legacy flow)
     const Model = type === 'provider' ? Provider : User;
     const user = await Model.findOne({
       emailVerificationToken: hashedToken,
