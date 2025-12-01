@@ -40,6 +40,12 @@ const pendingSignupSchema = new mongoose.Schema(
     providerSubType: String,
     city: String,
     
+    // Email verification status
+    emailVerified: {
+      type: Boolean,
+      default: false,
+    },
+    
     // Metadata
     createdAt: {
       type: Date,

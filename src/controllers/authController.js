@@ -820,10 +820,10 @@ const sendVerificationEmail = asyncHandler(async (req, res) => {
   }
 });
 
-// ✅ UPDATED: Verify email with token AND create user/provider AND return auth tokens
-// For providers: Issue LIMITED token (personal-info endpoint only)
-// For users: Issue FULL token
-// @desc    Verify email with token and return authenticated session
+// ✅ UPDATED: Verify email with token
+// For providers: ONLY mark email as verified (NO Provider creation, NO token)
+// For users: Create user AND return auth tokens
+// @desc    Verify email with token
 // @route   POST /api/auth/verify-email-token
 // @access  Public
 const verifyEmailToken = asyncHandler(async (req, res) => {
@@ -850,23 +850,25 @@ const verifyEmailToken = asyncHandler(async (req, res) => {
       throw new Error('Invalid or expired verification token');
     }
 
-    // Now create the actual user/provider from pending signup data
-    let user;
     if (userType === 'provider') {
-      // Create Provider with LIMITED onboarding status (two-phase auth)
-      user = await Provider.create({
-        fullName: pending.fullName,
-        phoneNumber: pending.phoneNumber,
-        email: pending.email,
-        password: pending.password,
+      // ✅ NEW FLOW: For providers, just mark email as verified
+      // DO NOT create Provider - that happens after admin approval
+      
+      // Mark pending signup as email verified (keep it for submission reference)
+      pending.emailVerified = true;
+      await pending.save();
+
+      res.json({
+        success: true,
+        message: 'Email verified successfully! You can now submit your provider application.',
         emailVerified: true,
-        isVerified: true,
-        canLogin: false, // Cannot login yet, but can use LIMITED token
-        onboardingStatus: 'pending_profile', // Phase 1: Can now submit personal info
+        email: pending.email,
+        nextStep: 'submit_application',
+        // No tokens - provider will submit application without auth
       });
     } else {
-      // Create User with full access
-      user = await User.create({
+      // For users: Create user account and return tokens (existing flow)
+      const user = await User.create({
         fullName: pending.fullName,
         phoneNumber: pending.phoneNumber,
         email: pending.email,
@@ -874,62 +876,32 @@ const verifyEmailToken = asyncHandler(async (req, res) => {
         emailVerified: true,
         isVerified: true,
       });
+
+      const tokens = generateTokens(user._id, {
+        userType: 'user',
+        email: user.email
+      });
+      
+      user.refreshToken = tokens.refreshToken;
+      user.lastLoginDate = Date.now();
+      await user.save();
+
+      // Delete pending signup record
+      await PendingSignup.deleteOne({ _id: pending._id });
+
+      res.json({
+        success: true,
+        message: 'Email verified successfully! Your account has been created.',
+        emailVerified: true,
+        user: {
+          id: user._id,
+          fullName: user.fullName,
+          email: user.email,
+          phoneNumber: user.phoneNumber,
+        },
+        ...tokens,
+      });
     }
-
-    // Generate auth tokens with userType and metadata
-    const tokenOptions = {
-      userType: userType,
-      email: user.email,
-    };
-
-    // For providers, add token type and onboarding status
-    if (userType === 'provider') {
-      tokenOptions.tokenType = 'LIMITED';
-      tokenOptions.onboardingStatus = user.onboardingStatus;
-    }
-
-    const tokens = generateTokens(user._id, tokenOptions);
-    user.refreshToken = tokens.refreshToken;
-    user.lastLoginDate = Date.now();
-    await user.save();
-
-    // Delete pending signup record
-    await PendingSignup.deleteOne({ _id: pending._id });
-
-    // Return user/provider data with tokens
-    const userData = userType === 'provider' ? {
-      id: user._id,
-      fullName: user.fullName,
-      email: user.email,
-      phoneNumber: user.phoneNumber,
-      providerType: user.providerType,
-      profileComplete: user.profileComplete,
-      onboardingStatus: user.onboardingStatus,
-      emailVerified: user.emailVerified,
-      canLogin: user.canLogin,
-    } : {
-      id: user._id,
-      fullName: user.fullName,
-      email: user.email,
-      phoneNumber: user.phoneNumber,
-      profileComplete: user.profileComplete,
-      emailVerified: user.emailVerified,
-    };
-
-    // For providers: message indicates LIMITED access
-    const message = userType === 'provider' 
-      ? 'Email verified! You can now submit your personal information and documents. LIMITED ACCESS - Full access after admin approval.'
-      : 'Email verified successfully! Your account has been created. You are now logged in.';
-
-    res.json({
-      success: true,
-      message: message,
-      isVerified: true,
-      emailVerified: true,
-      tokenType: userType === 'provider' ? 'LIMITED' : 'FULL', // Indicate token type
-      [userType === 'provider' ? 'provider' : 'user']: userData,
-      ...tokens, // Return accessToken and refreshToken
-    });
   } catch (error) {
     console.error('❌ Verification error:', error);
     res.status(400);
