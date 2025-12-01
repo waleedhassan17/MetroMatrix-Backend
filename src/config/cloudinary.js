@@ -94,8 +94,8 @@ const uploadAvatar = multer({
 const uploadDocument = multer({
   storage: documentStorage,
   limits: { 
-    fileSize: 10 * 1024 * 1024, // 10MB
-    files: 1
+    fileSize: 10 * 1024 * 1024, // 10MB per file
+    files: 10 // Allow up to 10 documents (for provider submissions with multiple fields)
   },
   fileFilter: fileFilter([
     'application/pdf',

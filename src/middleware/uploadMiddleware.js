@@ -17,7 +17,7 @@ const handleUploadError = (uploadFunction) => {
         if (err.code === 'LIMIT_FILE_COUNT') {
           return res.status(400).json({
             success: false,
-            error: 'Too many files. Maximum 5 images allowed per post.',
+            error: 'Too many files. Maximum 10 documents allowed per submission.',
             code: 'FILE_COUNT_EXCEEDED',
           });
         }
@@ -72,9 +72,11 @@ module.exports = {
     uploadDocument.fields([
       { name: 'medicalLicense', maxCount: 1 },
       { name: 'degreeCertificate', maxCount: 1 },
+      { name: 'nationalIdCard', maxCount: 1 },
+      { name: 'profilePhoto', maxCount: 1 },
       { name: 'professionalCertificate', maxCount: 1 },
       { name: 'businessLicense', maxCount: 1 },
-      { name: 'nationalIdCard', maxCount: 1 },
+      { name: 'additionalCertificates', maxCount: 5 },
     ])
   ),
   
