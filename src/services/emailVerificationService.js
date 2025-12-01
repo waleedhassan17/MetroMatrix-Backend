@@ -197,20 +197,45 @@ class EmailVerificationService {
    * @returns {Object} verification status
    */
   static async checkVerificationStatus(email, userType = 'user') {
-    const Model = userType === 'provider' ? Provider : User;
-    const user = await Model.findOne({ email });
+    if (userType === 'provider') {
+      // ✅ For providers: Check EmailVerifications table (not Providers table)
+      // Providers don't exist in database until admin approves
+      const EmailVerification = require('../models/EmailVerification');
+      const verification = await EmailVerification.findOne({
+        email,
+        userType: 'provider'
+      });
 
-    if (!user) {
-      throw new Error('Account not found');
+      if (!verification) {
+        throw new Error('Verification record not found. Please sign up first.');
+      }
+
+      return {
+        success: true,
+        emailVerified: verification.verified || false,
+        isVerified: verification.verified || false,
+        canLogin: false, // Providers can't login until admin approves
+        verificationPending: !verification.verified,
+        message: verification.verified
+          ? 'Email verified. Please complete your profile submission.'
+          : 'Email not verified yet. Please check your email.',
+      };
+    } else {
+      // ✅ For regular users: Check Users table (existing logic)
+      const user = await User.findOne({ email });
+
+      if (!user) {
+        throw new Error('Account not found');
+      }
+
+      return {
+        success: true,
+        emailVerified: user.emailVerified,
+        isVerified: user.emailVerified,
+        canLogin: user.emailVerified,
+        verificationPending: !user.emailVerified,
+      };
     }
-
-    return {
-      success: true,
-      emailVerified: user.emailVerified,
-      isVerified: user.emailVerified,
-      canLogin: userType === 'provider' ? user.canLogin : user.emailVerified,
-      verificationPending: !user.emailVerified,
-    };
   }
 
   /**
