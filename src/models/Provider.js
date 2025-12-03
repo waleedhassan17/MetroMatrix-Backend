@@ -147,16 +147,16 @@ const providerSchema = new mongoose.Schema(
     googleId: String,
     facebookId: String,
 
-    // Status & Onboarding (Two-Phase Authentication)
+    // Status & Onboarding (Updated Flow - Mirrors User Flow)
     onboardingStatus: {
       type: String,
-      enum: ['pending_email', 'pending_profile', 'pending_approval', 'approved', 'rejected'],
+      enum: ['pending_email', 'pending_documents', 'pending_approval', 'approved', 'rejected'],
       default: 'pending_email',
-      // pending_email: Email not verified yet (no token)
-      // pending_profile: Email verified, can submit personal info with LIMITED token
-      // pending_approval: Profile submitted, awaiting admin review (still LIMITED token)
-      // approved: Admin approved, full access with FULL token
-      // rejected: Admin rejected, can resubmit
+      // pending_email: Email not verified yet (stored in PendingSignup)
+      // pending_documents: Email verified, account created, needs to upload documents
+      // pending_approval: Documents submitted, awaiting admin review (isVerified=false)
+      // approved: Admin approved, can login (isVerified=true)
+      // rejected: Admin rejected, can resubmit documents
     },
     profileComplete: {
       type: Boolean,
@@ -171,6 +171,7 @@ const providerSchema = new mongoose.Schema(
     isVerified: {
       type: Boolean,
       default: false,
+      // CRITICAL: Provider can only login when isVerified=true (set by admin approval)
     },
     isActive: {
       type: Boolean,
@@ -192,7 +193,7 @@ const providerSchema = new mongoose.Schema(
       type: Number,
       default: 0,
     },
-    // Prevent login until email verified
+    // Prevent login until admin approves (isVerified=true)
     canLogin: {
       type: Boolean,
       default: false,

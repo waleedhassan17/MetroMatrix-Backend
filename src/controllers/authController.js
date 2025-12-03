@@ -198,6 +198,7 @@ const registerProvider = asyncHandler(async (req, res) => {
 // @desc    Login provider
 // @route   POST /api/auth/provider/login
 // @access  Public
+// ✅ UPDATED: Provider can only login after admin approval (isVerified=true)
 const loginProvider = asyncHandler(async (req, res) => {
   const { email, password } = req.body;
   
@@ -215,24 +216,26 @@ const loginProvider = asyncHandler(async (req, res) => {
   }
   
   if (provider && (await provider.matchPassword(password))) {
-    // Check onboarding status (two-phase auth)
-    if (provider.onboardingStatus !== 'approved') {
+    // ✅ CRITICAL: Check if admin has verified the provider
+    if (!provider.isVerified) {
+      let message = 'Your account is pending admin approval. ';
+      
+      if (provider.onboardingStatus === 'pending_documents') {
+        message = 'Please submit your professional documents for admin review.';
+      } else if (provider.onboardingStatus === 'pending_approval') {
+        message = 'Your documents have been submitted and are under admin review. Please wait for approval.';
+      } else if (provider.onboardingStatus === 'rejected') {
+        message = `Your application was rejected. Reason: ${provider.rejectionReason || 'Not specified'}. You can resubmit your documents.`;
+      }
+      
       res.status(403);
-      throw new Error(
-        `Cannot login yet. Current status: ${provider.onboardingStatus}. ` +
-        `${provider.onboardingStatus === 'pending_email' 
-          ? 'Please verify your email.' 
-          : provider.onboardingStatus === 'pending_profile'
-          ? 'Please submit your personal information using your LIMITED token.'
-          : 'Please wait for admin approval.'}`
-      );
+      throw new Error(message);
     }
 
-    // Now issue FULL access token with userType and metadata
+    // ✅ Provider is verified by admin - allow login
     const tokens = generateTokens(provider._id, {
       userType: 'provider',
       email: provider.email,
-      tokenType: 'FULL',
       onboardingStatus: provider.onboardingStatus
     });
     
@@ -242,8 +245,7 @@ const loginProvider = asyncHandler(async (req, res) => {
     
     res.json({
       success: true,
-      message: 'Login successful! You have FULL access.',
-      tokenType: 'FULL',
+      message: 'Login successful!',
       provider: {
         id: provider._id,
         fullName: provider.fullName,

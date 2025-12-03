@@ -149,8 +149,9 @@ app.get('/api/verify-email', async (req, res) => {
             email: pending.email,
             password: pending.password,
             emailVerified: true,
-            isVerified: true,
-            canLogin: true,
+            isVerified: false, // Cannot login until admin approves
+            canLogin: false,
+            onboardingStatus: 'pending_documents',
             verificationStatus: 'pending',
           });
         } else {
@@ -164,33 +165,51 @@ app.get('/api/verify-email', async (req, res) => {
           });
         }
         
-        // Generate tokens
+        // Delete pending signup
+        await PendingSignup.deleteOne({ _id: pending._id });
+        
+        console.log(`✅ ${type} verified via API: ${user.email}`);
+        
+        // Provider flow: No tokens until admin approval
+        if (type === 'provider') {
+          return res.json({
+            success: true,
+            message: 'Provider email verified successfully! Please submit your documents for admin review.',
+            emailVerified: true,
+            requiresDocuments: true,
+            onboardingStatus: 'pending_documents',
+            provider: {
+              id: user._id,
+              fullName: user.fullName,
+              email: user.email,
+              phoneNumber: user.phoneNumber,
+              canLogin: false,
+              isVerified: false,
+            },
+          });
+        }
+        
+        // User flow: Full access immediately
         const tokens = generateTokens(user._id, {
-          userType: type,
+          userType: 'user',
           email: user.email
         });
         user.refreshToken = tokens.refreshToken;
         user.lastLoginDate = Date.now();
         await user.save();
         
-        // Delete pending signup
-        await PendingSignup.deleteOne({ _id: pending._id });
-        
-        console.log(`✅ ${type} verified via API: ${user.email}`);
-        
-        // Return JSON response
         return res.json({
           success: true,
-          message: `${type.charAt(0).toUpperCase() + type.slice(1)} email verified successfully!`,
+          message: 'User email verified successfully!',
           isVerified: true,
           emailVerified: true,
-          [type === 'provider' ? 'provider' : 'user']: {
+          user: {
             id: user._id,
             fullName: user.fullName,
             email: user.email,
             phoneNumber: user.phoneNumber,
-            [type === 'provider' ? 'canLogin' : 'profileComplete']: type === 'provider' ? user.canLogin : user.profileComplete,
-            [type === 'provider' ? 'verificationStatus' : 'emailVerified']: type === 'provider' ? user.verificationStatus : user.emailVerified,
+            profileComplete: user.profileComplete,
+            emailVerified: user.emailVerified,
           },
           accessToken: tokens.accessToken,
           refreshToken: tokens.refreshToken,
@@ -251,41 +270,32 @@ app.get('/verify-email', async (req, res) => {
       
       try {
         if (type === 'provider') {
-          // ✅ PROVIDER FLOW: Create and enable login with auth tokens
+          // ✅ PROVIDER FLOW: Create account, email verified, needs to submit documents
           user = await Provider.create({
             fullName: pending.fullName,
             phoneNumber: pending.phoneNumber,
             email: pending.email,
             password: pending.password,
             emailVerified: true,
-            isVerified: true,
-            canLogin: true, // ✅ Can login after email verification
-            verificationStatus: 'pending', // Pending admin approval
+            isVerified: false, // ✅ Cannot login until admin approves documents
+            canLogin: false, // ✅ Cannot login until admin approval
+            onboardingStatus: 'pending_documents', // ✅ Next step: upload documents
+            verificationStatus: 'pending',
           });
           
-          // ✅ Generate auth tokens for provider (can login with limited access)
-          const tokens = generateTokens(user._id, {
-            userType: 'provider',
-            email: user.email,
-            tokenType: 'LIMITED',
-            onboardingStatus: user.onboardingStatus
-          });
-          user.refreshToken = tokens.refreshToken;
-          user.lastLoginDate = Date.now();
+          // ✅ Save provider ID for document submission
           await user.save();
           
-          successMessage = 'Your email has been verified successfully! You can now login. Your account is pending admin approval for full provider features.';
+          successMessage = 'Your email has been verified successfully! Your account has been created. Please submit your professional documents for admin review.';
           
           deepLinkParams = new URLSearchParams({
             verified: 'true',
-            accessToken: tokens.accessToken,
-            refreshToken: tokens.refreshToken,
             userType: 'provider',
             userId: user._id.toString(),
             email: user.email,
             fullName: user.fullName,
-            canLogin: 'true',
-            verificationStatus: 'pending',
+            onboardingStatus: 'pending_documents',
+            requiresDocuments: 'true',
           });
         } else {
           // ✅ USER FLOW: Create and enable full access immediately

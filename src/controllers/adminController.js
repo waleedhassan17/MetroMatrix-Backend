@@ -575,13 +575,16 @@ const deletePost = asyncHandler(async (req, res) => {
 // @desc    Submit provider application (PUBLIC - no auth needed)
 // @route   POST /api/admin/provider-submissions
 // @access  Public
+// @desc    Submit provider documents (after email verification)
+// @route   POST /api/admin/provider-submissions
+// @access  Public (but requires providerId from verified email)
+// ✅ UPDATED: Provider account already exists (created during email verification)
 const submitProviderApplication = asyncHandler(async (req, res) => {
   const {
+    providerId, // ✅ NEW: Provider ID from email verification
     providerType,
     providerSubType,
-    fullName,
     email,
-    phoneNumber,
     specialty,
     experience,
     qualification,
@@ -594,20 +597,20 @@ const submitProviderApplication = asyncHandler(async (req, res) => {
     serviceFee,
   } = req.body;
 
-  // Verify email was verified (check EmailVerification)
-  const EmailVerification = require('../models/EmailVerification');
-  const emailVerification = await EmailVerification.findOne({
-    email,
-    userType: 'provider',
-    verified: true,
-  });
+  // ✅ Verify provider exists and email is verified
+  const provider = await Provider.findOne({ _id: providerId, email });
   
-  if (!emailVerification) {
-    res.status(400);
-    throw new Error('Please verify your email before submitting your application.');
+  if (!provider) {
+    res.status(404);
+    throw new Error('Provider not found. Please verify your email first.');
   }
 
-  // Check if submission already exists for this email
+  if (!provider.emailVerified) {
+    res.status(400);
+    throw new Error('Please verify your email before submitting documents.');
+  }
+
+  // Check if submission already exists for this provider
   const existingSubmission = await ProviderSubmission.findOne({ 
     email,
     status: 'pending_review'
@@ -655,13 +658,31 @@ const submitProviderApplication = asyncHandler(async (req, res) => {
     }
   }
 
-  // Create submission
+  // ✅ Update provider with document submission data
+  provider.providerType = providerType || provider.providerType;
+  provider.providerSubType = providerSubType || provider.providerSubType;
+  provider.specialty = specialty || provider.specialty;
+  provider.experience = experience || provider.experience;
+  provider.city = city || provider.city;
+  provider.idNumber = idNumber || provider.idNumber;
+  provider.briefDescription = bio || provider.briefDescription;
+  provider.onboardingStatus = 'pending_approval'; // ✅ Documents submitted, awaiting admin
+  provider.isVerified = false; // ✅ Still not verified until admin approves
+  
+  if (address) {
+    provider.address = typeof address === 'string' ? JSON.parse(address) : address;
+  }
+  
+  await provider.save();
+
+  // Create submission record
   const submission = await ProviderSubmission.create({
+    providerId: provider._id, // ✅ Link to provider account
     providerType,
     providerSubType,
-    fullName,
+    fullName: provider.fullName,
     email,
-    phoneNumber,
+    phoneNumber: provider.phoneNumber,
     specialty,
     experience,
     qualification,
@@ -681,14 +702,15 @@ const submitProviderApplication = asyncHandler(async (req, res) => {
   try {
     await sendEmail({
       email: process.env.ADMIN_EMAIL || 'admin@metromatrix.com',
-      subject: 'New Provider Application Submitted',
+      subject: 'New Provider Documents Submitted - Review Required',
       html: `
-        <h2>New Provider Application</h2>
-        <p><strong>Name:</strong> ${fullName}</p>
+        <h2>Provider Documents Submitted</h2>
+        <p><strong>Name:</strong> ${provider.fullName}</p>
         <p><strong>Email:</strong> ${email}</p>
         <p><strong>Type:</strong> ${providerType}</p>
         <p><strong>City:</strong> ${city}</p>
-        <p>Please review this application in the admin dashboard.</p>
+        <p><strong>Submission ID:</strong> ${submission._id}</p>
+        <p>Please review this provider's documents in the admin dashboard.</p>
       `,
     });
   } catch (error) {
@@ -697,9 +719,11 @@ const submitProviderApplication = asyncHandler(async (req, res) => {
 
   res.status(201).json({
     success: true,
-    message: 'Your application has been submitted successfully! Please wait for admin approval.',
+    message: 'Your documents have been submitted successfully! Please wait for admin approval.',
     submissionId: submission._id,
+    providerId: provider._id,
     status: 'pending_review',
+    onboardingStatus: 'pending_approval',
   });
 });
 
@@ -798,9 +822,10 @@ const getProviderSubmissionById = asyncHandler(async (req, res) => {
   });
 });
 
-// @desc    Approve provider submission (creates actual Provider)
+// @desc    Approve provider submission (updates existing Provider)
 // @route   POST /api/admin/provider-submissions/:id/approve
 // @access  Private/Admin
+// ✅ UPDATED: Provider account already exists - just set isVerified=true
 const approveProviderSubmission = asyncHandler(async (req, res) => {
   const submission = await ProviderSubmission.findById(req.params.id);
 
@@ -814,43 +839,29 @@ const approveProviderSubmission = asyncHandler(async (req, res) => {
     throw new Error(`Submission already ${submission.status}`);
   }
 
-  // Check if provider already exists
-  const existingProvider = await Provider.findOne({ email: submission.email });
-  if (existingProvider) {
-    res.status(400);
-    throw new Error('Provider with this email already exists');
+  // ✅ Get existing provider account (created during email verification)
+  const provider = await Provider.findOne({ email: submission.email });
+  
+  if (!provider) {
+    res.status(404);
+    throw new Error('Provider account not found. Please contact support.');
   }
 
-  // Create actual Provider from submission
-  const provider = await Provider.create({
-    providerType: submission.providerType,
-    providerSubType: submission.providerSubType,
-    fullName: submission.fullName,
-    email: submission.email,
-    phoneNumber: submission.phoneNumber,
-    specialty: submission.specialty,
-    experience: submission.experience,
-    qualification: submission.qualification,
-    city: submission.city,
-    address: submission.address,
-    idNumber: submission.idNumber,
-    bio: submission.bio,
-    services: submission.services,
-    consultationFee: submission.consultationFee,
-    serviceFee: submission.serviceFee,
-    profilePhoto: submission.documents.profilePhoto?.url,
-    
-    // Set as verified and approved
-    emailVerified: true,
-    isVerified: true,
-    onboardingStatus: 'approved',
-    verificationStatus: 'approved',
-    canLogin: true,
-    
-    // Admin info
-    verifiedBy: req.user._id,
-    approvedAt: new Date(),
-  });
+  // ✅ Update provider with approval status
+  provider.isVerified = true; // ✅ CRITICAL: Enable login
+  provider.canLogin = true;
+  provider.onboardingStatus = 'approved';
+  provider.verificationStatus = 'approved';
+  provider.verifiedBy = req.user._id;
+  provider.approvedAt = new Date();
+  
+  // Update profile photo if provided
+  if (submission.documents.profilePhoto?.url) {
+    provider.profilePhoto = submission.documents.profilePhoto.url;
+    provider.profilePhotoId = submission.documents.profilePhoto.publicId;
+  }
+  
+  await provider.save();
 
   // Create ProviderDocument records for uploaded documents
   const documentPromises = [];
@@ -906,14 +917,6 @@ const approveProviderSubmission = asyncHandler(async (req, res) => {
   submission.reviewedBy = req.user._id;
   await submission.save();
 
-  // Generate FULL access token for provider
-  const tokens = generateTokens(provider._id, {
-    userType: 'provider',
-    email: provider.email,
-    tokenType: 'FULL',
-    onboardingStatus: 'approved'
-  });
-
   // Log admin activity
   req.user.logActivity(
     'approve_provider_submission',
@@ -928,7 +931,7 @@ const approveProviderSubmission = asyncHandler(async (req, res) => {
   try {
     await sendEmail({
       email: provider.email,
-      subject: 'Your Provider Account Has Been Approved! - MetroMatrix',
+      subject: '✅ Your Provider Account Has Been Approved! - MetroMatrix',
       html: `
         <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto;">
           <h1 style="color: #6366f1;">🎉 Congratulations!</h1>
@@ -945,6 +948,8 @@ const approveProviderSubmission = asyncHandler(async (req, res) => {
             </ol>
           </div>
           
+          <p><strong>You can now login!</strong> Use your registered email and password to access your account.</p>
+          
           <p>If you have any questions, feel free to contact our support team.</p>
           
           <p>Best regards,<br/>The MetroMatrix Team</p>
@@ -957,21 +962,23 @@ const approveProviderSubmission = asyncHandler(async (req, res) => {
 
   res.json({
     success: true,
-    message: 'Provider application approved successfully',
+    message: 'Provider application approved successfully. Provider can now login.',
     provider: {
       id: provider._id,
       fullName: provider.fullName,
       email: provider.email,
       providerType: provider.providerType,
       onboardingStatus: provider.onboardingStatus,
+      isVerified: provider.isVerified,
+      canLogin: provider.canLogin,
     },
-    tokens,
   });
 });
 
 // @desc    Reject provider submission
 // @route   POST /api/admin/provider-submissions/:id/reject
 // @access  Private/Admin
+// ✅ UPDATED: Also update provider status so they can resubmit
 const rejectProviderSubmission = asyncHandler(async (req, res) => {
   const { rejectionReason, adminNotes } = req.body;
   
@@ -985,6 +992,17 @@ const rejectProviderSubmission = asyncHandler(async (req, res) => {
   if (submission.status !== 'pending_review') {
     res.status(400);
     throw new Error(`Submission already ${submission.status}`);
+  }
+
+  // ✅ Update provider account status
+  const provider = await Provider.findOne({ email: submission.email });
+  if (provider) {
+    provider.onboardingStatus = 'rejected';
+    provider.verificationStatus = 'rejected';
+    provider.rejectionReason = rejectionReason;
+    provider.isVerified = false; // Still cannot login
+    provider.canLogin = false;
+    await provider.save();
   }
 
   // Update submission status
