@@ -147,6 +147,15 @@ app.get('/api/verify-email', async (req, res) => {
 
         console.log(`✅ Provider email verified via API: ${provider.email}`);
 
+        // Generate temporary tokens for profile completion (like users get tokens)
+        const tokens = generateTokens(provider._id, {
+          userType: 'provider',
+          email: provider.email,
+          onboardingStatus: 'email_verified'
+        });
+        provider.refreshToken = tokens.refreshToken;
+        await provider.save();
+
         return res.json({
           success: true,
           message: 'Email verified successfully. Please complete your profile.',
@@ -161,7 +170,8 @@ app.get('/api/verify-email', async (req, res) => {
             isApproved: false,
             status: 'email_verified',
           },
-          // ❌ NO TOKENS - provider needs admin approval
+          accessToken: tokens.accessToken,
+          refreshToken: tokens.refreshToken,
         });
       }
     }
@@ -269,12 +279,31 @@ app.get('/verify-email', async (req, res) => {
         provider.onboardingStatus = 'email_verified'; // Update status
         provider.emailVerificationToken = undefined;
         provider.emailVerificationExpire = undefined;
+        
+        // Generate tokens for profile completion (same as users)
+        const tokens = generateTokens(provider._id, {
+          userType: 'provider',
+          email: provider.email,
+          onboardingStatus: 'email_verified'
+        });
+        provider.refreshToken = tokens.refreshToken;
         await provider.save();
 
         console.log(`✅ Provider email verified: ${provider.email}`);
 
         const successMessage = 'Email verified successfully! Please return to the MetroMatrix app to complete your profile.';
-        const deepLinkUrl = `metromatrix://verified?email=${encodeURIComponent(provider.email)}&type=provider&userId=${provider._id}`;
+        
+        const deepLinkParams = new URLSearchParams({
+          verified: 'true',
+          accessToken: tokens.accessToken,
+          refreshToken: tokens.refreshToken,
+          userType: 'provider',
+          userId: provider._id.toString(),
+          email: provider.email,
+          fullName: provider.fullName,
+        });
+        
+        const deepLinkUrl = `metromatrix://verify-success?${deepLinkParams}`;
         
         return res.send(getVerificationHTML('success', successMessage, deepLinkUrl, null, type));
       }
