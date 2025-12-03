@@ -163,7 +163,7 @@ const registerProvider = asyncHandler(async (req, res) => {
       emailVerified: false,
       isVerified: false, // Cannot login until admin approves
       canLogin: false,
-      onboardingStatus: 'pending_email_verification',
+      onboardingStatus: 'pending_email', // ✅ Valid enum value
       verificationStatus: 'pending',
       emailVerificationToken: hashedToken,
       emailVerificationExpire: expireTime,
@@ -193,7 +193,8 @@ const registerProvider = asyncHandler(async (req, res) => {
         fullName: provider.fullName,
         emailVerified: false,
         isApproved: false,
-        status: 'pending_email_verification',
+        status: 'pending_email_verification', // Frontend-friendly name
+        onboardingStatus: provider.onboardingStatus, // Backend: 'pending_email'
         createdAt: provider.createdAt
       },
       // ❌ NO TOKENS - provider needs email verification + admin approval

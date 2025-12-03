@@ -140,21 +140,21 @@ app.get('/api/verify-email', async (req, res) => {
 
       if (provider) {
         provider.emailVerified = true;
-        provider.onboardingStatus = 'email_verified';
+        provider.onboardingStatus = 'pending_documents'; // ✅ Valid enum: email verified, needs to upload docs
         provider.emailVerificationToken = undefined;
         provider.emailVerificationExpire = undefined;
-        await provider.save();
-
-        console.log(`✅ Provider email verified via API: ${provider.email}`);
 
         // Generate temporary tokens for profile completion (like users get tokens)
         const tokens = generateTokens(provider._id, {
           userType: 'provider',
           email: provider.email,
-          onboardingStatus: 'email_verified'
+          onboardingStatus: 'pending_documents'
         });
         provider.refreshToken = tokens.refreshToken;
         await provider.save();
+
+        console.log(`✅ Provider email verified via API: ${provider.email}`);
+
 
         return res.json({
           success: true,
@@ -168,7 +168,8 @@ app.get('/api/verify-email', async (req, res) => {
             fullName: provider.fullName,
             emailVerified: true,
             isApproved: false,
-            status: 'email_verified',
+            status: 'email_verified', // Frontend-friendly name
+            onboardingStatus: provider.onboardingStatus, // Backend: 'pending_documents'
           },
           accessToken: tokens.accessToken,
           refreshToken: tokens.refreshToken,
@@ -276,7 +277,7 @@ app.get('/verify-email', async (req, res) => {
       if (provider) {
         // Mark email as verified
         provider.emailVerified = true;
-        provider.onboardingStatus = 'email_verified'; // Update status
+        provider.onboardingStatus = 'pending_documents'; // ✅ Valid enum: email verified, needs to upload docs
         provider.emailVerificationToken = undefined;
         provider.emailVerificationExpire = undefined;
         
@@ -284,7 +285,7 @@ app.get('/verify-email', async (req, res) => {
         const tokens = generateTokens(provider._id, {
           userType: 'provider',
           email: provider.email,
-          onboardingStatus: 'email_verified'
+          onboardingStatus: 'pending_documents'
         });
         provider.refreshToken = tokens.refreshToken;
         await provider.save();
