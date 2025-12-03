@@ -177,14 +177,22 @@ const providerSchema = new mongoose.Schema(
       type: Boolean,
       default: true,
     },
-    verificationStatus: {
-      type: String,
-      enum: ['pending', 'approved', 'rejected'],
-      default: 'pending',
-    },
+    // ✅ UPDATED: Use 'pending', 'active', 'inactive' flags
     emailVerified: {
-      type: Boolean,
-      default: false,
+      type: String,
+      enum: ['pending', 'active', 'inactive'],
+      default: 'pending',
+      // pending: Email not verified yet
+      // active: Email verified
+      // inactive: Email verification failed/revoked
+    },
+    adminVerified: {
+      type: String,
+      enum: ['pending', 'active', 'inactive'],
+      default: 'pending',
+      // pending: Awaiting admin approval
+      // active: Admin approved (can login)
+      // inactive: Admin rejected (cannot login)
     },
     emailVerificationToken: String,
     emailVerificationExpire: Date,
@@ -193,15 +201,27 @@ const providerSchema = new mongoose.Schema(
       type: Number,
       default: 0,
     },
-    // Prevent login until admin approves (isVerified=true)
-    canLogin: {
-      type: Boolean,
-      default: false,
-    },
     rejectionReason: String,
     verifiedBy: {
       type: mongoose.Schema.Types.ObjectId,
       ref: 'Admin',
+    },
+    approvedAt: Date,
+    rejectedAt: Date,
+    
+    // Legacy fields (kept for backward compatibility)
+    verificationStatus: {
+      type: String,
+      enum: ['pending', 'approved', 'rejected'],
+      default: 'pending',
+    },
+    isVerified: {
+      type: Boolean,
+      default: false,
+    },
+    canLogin: {
+      type: Boolean,
+      default: false,
     },
     
 

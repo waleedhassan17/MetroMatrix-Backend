@@ -629,11 +629,12 @@ const updateProviderProfileComplete = asyncHandler(async (req, res) => {
   }
 
   // Check email verification
-  if (!provider.emailVerified) {
+  if (provider.emailVerified !== 'active') {
     return res.status(403).json({
       success: false,
       message: 'Please verify your email first',
-      error: 'EMAIL_NOT_VERIFIED'
+      error: 'EMAIL_NOT_VERIFIED',
+      emailVerified: provider.emailVerified
     });
   }
 
@@ -716,8 +717,8 @@ const updateProviderProfileComplete = asyncHandler(async (req, res) => {
       _id: provider._id,
       email: provider.email,
       fullName: provider.fullName,
-      emailVerified: true,
-      isApproved: false,
+      emailVerified: 'active', // ✅ New flag
+      adminVerified: 'pending', // ✅ New flag
       status: 'pending_approval',
       city: provider.city,
       providerType: provider.providerType,
@@ -756,23 +757,23 @@ const checkApprovalStatus = asyncHandler(async (req, res) => {
     });
   }
 
-  // Determine status based on isVerified flag (set by admin)
+  // Determine status based on new flags
   let status = 'pending_approval';
-  let isApproved = provider.isVerified || false;
   let message = 'Your application is under review by our admin team.';
 
-  if (provider.isVerified && provider.verificationStatus === 'approved') {
+  if (provider.adminVerified === 'active') {
     status = 'approved';
-    isApproved = true;
     message = 'Your account has been approved! You can now sign in.';
-  } else if (provider.verificationStatus === 'rejected') {
+  } else if (provider.adminVerified === 'inactive') {
     status = 'rejected';
-    isApproved = false;
     message = 'Your application was not approved.';
-  } else if (provider.onboardingStatus === 'email_verified' || provider.onboardingStatus === 'pending_documents') {
+  } else if (provider.emailVerified === 'pending') {
+    status = 'pending_email';
+    message = 'Please verify your email first.';
+  } else if (provider.emailVerified === 'active' && !provider.profileComplete) {
     status = 'email_verified';
     message = 'Please complete your profile.';
-  } else if (provider.onboardingStatus === 'pending_approval') {
+  } else if (provider.adminVerified === 'pending') {
     status = 'pending_approval';
     message = 'Your application is under review by our admin team.';
   }
@@ -780,13 +781,14 @@ const checkApprovalStatus = asyncHandler(async (req, res) => {
   const response = {
     success: true,
     status,
-    isApproved,
     message,
     provider: {
       _id: provider._id,
       fullName: provider.fullName,
       email: provider.email,
-      providerType: provider.providerType
+      providerType: provider.providerType,
+      emailVerified: provider.emailVerified, // ✅ New flag
+      adminVerified: provider.adminVerified, // ✅ New flag
     }
   };
 
@@ -801,7 +803,7 @@ const checkApprovalStatus = asyncHandler(async (req, res) => {
     }
   } else if (status === 'rejected') {
     response.rejectionReason = provider.rejectionReason || 'No reason provided';
-    response.rejectedAt = provider.updatedAt;
+    response.rejectedAt = provider.rejectedAt;
     if (provider.verifiedBy) {
       response.rejectedBy = {
         adminId: provider.verifiedBy._id,

@@ -154,19 +154,21 @@ const registerProvider = asyncHandler(async (req, res) => {
   const { token, hashedToken, expireTime } = EmailVerificationService.generateVerificationToken();
   
   try {
-    // ✅ Create provider immediately with unverified flags
+    // ✅ Create provider immediately with pending flags
     const provider = await Provider.create({
       fullName,
       phoneNumber,
       email: email.toLowerCase(),
       password, // Will be hashed by pre-save hook
-      emailVerified: false,
-      isVerified: false, // Cannot login until admin approves
-      canLogin: false,
-      onboardingStatus: 'pending_email', // ✅ Valid enum value
-      verificationStatus: 'pending',
+      emailVerified: 'pending', // ✅ New flag system
+      adminVerified: 'pending', // ✅ New flag system
+      onboardingStatus: 'pending_email',
       emailVerificationToken: hashedToken,
       emailVerificationExpire: expireTime,
+      // Legacy fields
+      isVerified: false,
+      canLogin: false,
+      verificationStatus: 'pending',
     });
     
     // Create verification URL
@@ -191,10 +193,9 @@ const registerProvider = asyncHandler(async (req, res) => {
         email: provider.email,
         phoneNumber: provider.phoneNumber,
         fullName: provider.fullName,
-        emailVerified: false,
-        isApproved: false,
-        status: 'pending_email_verification', // Frontend-friendly name
-        onboardingStatus: provider.onboardingStatus, // Backend: 'pending_email'
+        emailVerified: 'pending', // ✅ New flag
+        adminVerified: 'pending', // ✅ New flag
+        status: 'pending_email_verification',
         createdAt: provider.createdAt
       },
       // ❌ NO TOKENS - provider needs email verification + admin approval
@@ -238,25 +239,25 @@ const loginProvider = asyncHandler(async (req, res) => {
   }
 
   // Check email verification
-  if (!provider.emailVerified) {
+  if (provider.emailVerified !== 'active') {
     return res.status(403).json({
       success: false,
       message: 'Please verify your email before logging in',
       error: 'EMAIL_NOT_VERIFIED',
-      emailVerified: false
+      emailVerified: provider.emailVerified
     });
   }
   
-  // ✅ CRITICAL: Check if admin has approved the provider (isVerified flag)
-  if (!provider.isVerified) {
+  // ✅ CRITICAL: Check if admin has approved the provider
+  if (provider.adminVerified !== 'active') {
     // Check if rejected
-    if (provider.verificationStatus === 'rejected') {
+    if (provider.adminVerified === 'inactive') {
       return res.status(403).json({
         success: false,
         message: 'Your application was not approved. Please contact support for details.',
         error: 'ACCOUNT_REJECTED',
-        emailVerified: true,
-        isApproved: false,
+        emailVerified: provider.emailVerified,
+        adminVerified: provider.adminVerified,
         status: 'rejected',
         rejectionReason: provider.rejectionReason || 'No reason provided'
       });
@@ -266,9 +267,9 @@ const loginProvider = asyncHandler(async (req, res) => {
         success: false,
         message: 'Your account is pending admin approval. You will receive an email once approved.',
         error: 'ACCOUNT_NOT_APPROVED',
-        emailVerified: true,
-        isApproved: false,
-        status: provider.onboardingStatus || 'pending_approval'
+        emailVerified: provider.emailVerified,
+        adminVerified: provider.adminVerified,
+        status: 'pending_approval'
       });
     }
   }
@@ -294,8 +295,8 @@ const loginProvider = asyncHandler(async (req, res) => {
       fullName: provider.fullName,
       email: provider.email,
       phoneNumber: provider.phoneNumber,
-      emailVerified: true,
-      isApproved: true,
+      emailVerified: 'active', // ✅ New flag
+      adminVerified: 'active', // ✅ New flag
       status: 'approved',
       providerType: provider.providerType,
       providerSubType: provider.providerSubType,

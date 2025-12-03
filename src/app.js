@@ -139,12 +139,12 @@ app.get('/api/verify-email', async (req, res) => {
       });
 
       if (provider) {
-        provider.emailVerified = true;
-        provider.onboardingStatus = 'pending_documents'; // ✅ Valid enum: email verified, needs to upload docs
+        provider.emailVerified = 'active'; // ✅ Set to 'active'
+        provider.onboardingStatus = 'pending_documents';
         provider.emailVerificationToken = undefined;
         provider.emailVerificationExpire = undefined;
 
-        // Generate temporary tokens for profile completion (like users get tokens)
+        // Generate temporary tokens for profile completion
         const tokens = generateTokens(provider._id, {
           userType: 'provider',
           email: provider.email,
@@ -159,17 +159,15 @@ app.get('/api/verify-email', async (req, res) => {
         return res.json({
           success: true,
           message: 'Email verified successfully. Please complete your profile.',
-          emailVerified: true,
           userType: 'provider',
           provider: {
             _id: provider._id,
             email: provider.email,
             phoneNumber: provider.phoneNumber,
             fullName: provider.fullName,
-            emailVerified: true,
-            isApproved: false,
-            status: 'email_verified', // Frontend-friendly name
-            onboardingStatus: provider.onboardingStatus, // Backend: 'pending_documents'
+            emailVerified: 'active', // ✅ New flag
+            adminVerified: 'pending', // ✅ New flag
+            status: 'email_verified',
           },
           accessToken: tokens.accessToken,
           refreshToken: tokens.refreshToken,
@@ -276,12 +274,12 @@ app.get('/verify-email', async (req, res) => {
 
       if (provider) {
         // Mark email as verified
-        provider.emailVerified = true;
-        provider.onboardingStatus = 'pending_documents'; // ✅ Valid enum: email verified, needs to upload docs
+        provider.emailVerified = 'active'; // ✅ Set to 'active'
+        provider.onboardingStatus = 'pending_documents';
         provider.emailVerificationToken = undefined;
         provider.emailVerificationExpire = undefined;
         
-        // Generate tokens for profile completion (same as users)
+        // Generate tokens for profile completion
         const tokens = generateTokens(provider._id, {
           userType: 'provider',
           email: provider.email,

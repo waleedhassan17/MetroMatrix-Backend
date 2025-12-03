@@ -228,11 +228,12 @@ const approveProvider = asyncHandler(async (req, res) => {
     throw new Error('Provider is already approved');
   }
 
-  // Update status to approved (two-phase auth)
+  // Update status to approved
+  provider.adminVerified = 'active'; // ✅ New flag: Set to 'active'
   provider.verificationStatus = 'approved';
-  provider.onboardingStatus = 'approved'; // Phase 2: Full access
+  provider.onboardingStatus = 'approved';
   provider.isVerified = true;
-  provider.canLogin = true; // Now can login with full token
+  provider.canLogin = true;
   provider.verifiedBy = req.user._id;
   provider.approvedAt = new Date();
   await provider.save();
@@ -301,9 +302,11 @@ const rejectProvider = asyncHandler(async (req, res) => {
     throw new Error('Provider not found');
   }
 
+  provider.adminVerified = 'inactive'; // ✅ New flag: Set to 'inactive'
   provider.verificationStatus = 'rejected';
   provider.rejectionReason = reason;
   provider.verifiedBy = req.user._id;
+  provider.rejectedAt = new Date();
   // Keep onboardingStatus as pending_approval so provider can resubmit with corrections
   await provider.save();
 
