@@ -1323,6 +1323,84 @@ const getVerificationStatus = asyncHandler(async (req, res) => {
   }
 });
 
+// @desc    Resend email verification for provider
+// @route   POST /api/auth/provider/resend-verification
+// @access  Public
+const resendProviderVerification = asyncHandler(async (req, res) => {
+  const { email } = req.body;
+  
+  if (!email) {
+    return res.status(400).json({
+      success: false,
+      message: 'Email is required',
+      error: 'MISSING_EMAIL'
+    });
+  }
+
+  const provider = await Provider.findOne({ email: email.toLowerCase() });
+
+  if (!provider) {
+    return res.status(404).json({
+      success: false,
+      message: 'Provider not found with this email',
+      error: 'PROVIDER_NOT_FOUND'
+    });
+  }
+
+  // Check if already verified
+  if (provider.emailVerified === 'active') {
+    return res.status(400).json({
+      success: false,
+      message: 'Email is already verified',
+      error: 'ALREADY_VERIFIED',
+      emailVerified: 'active'
+    });
+  }
+
+  // Generate new verification token
+  const { token, hashedToken, expireTime } = EmailVerificationService.generateVerificationToken();
+  
+  provider.emailVerificationToken = hashedToken;
+  provider.emailVerificationExpire = expireTime;
+  provider.emailVerificationAttempts = (provider.emailVerificationAttempts || 0) + 1;
+  await provider.save();
+
+  // Create verification URL
+  const baseUrl = process.env.API_URL || process.env.CLIENT_URL || 'http://localhost:5000';
+  const verificationUrl = `${baseUrl}/verify-email?token=${token}&type=provider`;
+  
+  console.log('📧 Resending provider verification email to:', email);
+  console.log('🔗 Verification URL:', verificationUrl);
+  
+  // Send verification email
+  try {
+    await sendEmail({
+      email: email.toLowerCase(),
+      subject: 'Verify Your Email - MetroMatrix Provider Registration',
+      html: EmailVerificationService.getVerificationEmailTemplate(provider.fullName, verificationUrl, 'provider'),
+    });
+
+    res.json({
+      success: true,
+      message: 'Verification email resent successfully. Please check your inbox.',
+      provider: {
+        _id: provider._id,
+        email: provider.email,
+        fullName: provider.fullName,
+        emailVerified: provider.emailVerified,
+        adminVerified: provider.adminVerified
+      }
+    });
+  } catch (error) {
+    console.error('Failed to send verification email:', error);
+    return res.status(500).json({
+      success: false,
+      message: 'Failed to send verification email. Please try again.',
+      error: 'EMAIL_SEND_FAILED'
+    });
+  }
+});
+
 // @desc    Logout
 // @route   POST /api/auth/logout
 // @access  Private
@@ -1360,5 +1438,6 @@ module.exports = {
   resetVerificationLimit,
   manualVerifyEmail,
   getVerificationStatus,
+  resendProviderVerification, // ✅ NEW - Resend verification email
   logout,
 };

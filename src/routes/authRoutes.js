@@ -25,6 +25,7 @@ const {
   resetVerificationLimit,
   manualVerifyEmail,
   getVerificationStatus,
+  resendProviderVerification, // ✅ NEW - Resend verification email
 } = require('../controllers/authController');
 const { protect } = require('../middleware/authMiddleware');
 const { validate } = require('../middleware/validate');
@@ -55,6 +56,13 @@ router.post('/provider/send-verification-email',
   body('email').isEmail().normalizeEmail().withMessage('Invalid email'),
   validate,
   sendProviderVerificationEmail
+);
+
+// ===== RESEND PROVIDER VERIFICATION EMAIL =====
+router.post('/provider/resend-verification', 
+  body('email').isEmail().normalizeEmail().withMessage('Invalid email'),
+  validate,
+  resendProviderVerification
 );
 
 // ===== GOOGLE OAUTH ROUTES =====
