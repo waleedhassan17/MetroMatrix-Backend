@@ -584,11 +584,21 @@ const getProvidersByType = asyncHandler(async (req, res) => {
 
 // @desc    Update provider profile with documents (After email verification)
 // @route   PUT /api/provider/profile
-// @access  Private (Provider) or Public with providerId
-// ✅ NEW: Frontend expects this endpoint for profile completion
+// @access  Private (Provider with JWT) - REQUIRED
+// ✅ UPDATED: Match frontend requirements exactly
 const updateProviderProfileComplete = asyncHandler(async (req, res) => {
+  // ✅ REQUIRE authentication - frontend sends JWT token
+  const providerId = req.user?.id;
+  
+  if (!providerId) {
+    return res.status(401).json({
+      success: false,
+      message: 'Authentication required',
+      error: 'UNAUTHORIZED'
+    });
+  }
+
   const {
-    providerId, // Can come from body for non-authenticated requests
     providerType,
     providerSubType,
     fullName,
@@ -598,30 +608,33 @@ const updateProviderProfileComplete = asyncHandler(async (req, res) => {
     specialty,
     profession,
     category,
+    experience,
     yearsOfExperience,
     idNumber,
     bio,
+    briefDescription,
+    professionalName,
+    businessName,
+    rate,
   } = req.body;
 
-  // Get provider ID from auth or body
-  const id = req.user?.id || providerId;
-  
-  if (!id) {
-    res.status(400);
-    throw new Error('Provider ID is required');
-  }
-
   // Find provider
-  const provider = await Provider.findById(id);
+  const provider = await Provider.findById(providerId);
   if (!provider) {
-    res.status(404);
-    throw new Error('Provider not found');
+    return res.status(404).json({
+      success: false,
+      message: 'Provider not found',
+      error: 'PROVIDER_NOT_FOUND'
+    });
   }
 
   // Check email verification
   if (!provider.emailVerified) {
-    res.status(403);
-    throw new Error('Please verify your email before updating profile');
+    return res.status(403).json({
+      success: false,
+      message: 'Please verify your email first',
+      error: 'EMAIL_NOT_VERIFIED'
+    });
   }
 
   // Update profile fields
@@ -634,9 +647,14 @@ const updateProviderProfileComplete = asyncHandler(async (req, res) => {
   if (specialty) provider.specialty = specialty;
   if (profession) provider.profession = profession;
   if (category) provider.category = category;
+  if (experience) provider.experience = experience;
   if (yearsOfExperience) provider.experience = yearsOfExperience;
   if (idNumber) provider.idNumber = idNumber;
   if (bio) provider.briefDescription = bio;
+  if (briefDescription) provider.briefDescription = briefDescription;
+  if (professionalName) provider.professionalName = professionalName;
+  if (businessName) provider.businessName = businessName;
+  if (rate) provider.rate = rate;
 
   // Handle document uploads
   const documents = {};
@@ -649,6 +667,7 @@ const updateProviderProfileComplete = asyncHandler(async (req, res) => {
         documents[field] = {
           url: file.path,
           key: file.filename,
+          uploadedAt: new Date()
         };
         
         // Store in provider documents field
@@ -658,6 +677,7 @@ const updateProviderProfileComplete = asyncHandler(async (req, res) => {
           publicId: file.filename,
           name: file.originalname,
           uploadedAt: new Date(),
+          verified: false
         };
       }
     });
@@ -666,12 +686,32 @@ const updateProviderProfileComplete = asyncHandler(async (req, res) => {
   // ✅ Update status to pending_approval after profile completion
   provider.onboardingStatus = 'pending_approval';
   provider.profileComplete = true;
+  provider.submittedAt = new Date();
   
   await provider.save();
 
+  // Send notification to admin
+  try {
+    const { sendEmail } = require('../services/emailService');
+    await sendEmail({
+      email: process.env.ADMIN_EMAIL || 'admin@metromatrix.com',
+      subject: 'New Provider Profile Submitted - Review Required',
+      html: `
+        <h2>Provider Profile Submitted</h2>
+        <p><strong>Name:</strong> ${provider.fullName}</p>
+        <p><strong>Email:</strong> ${provider.email}</p>
+        <p><strong>Type:</strong> ${provider.providerType}</p>
+        <p><strong>City:</strong> ${provider.city}</p>
+        <p>Please review this provider's profile in the admin dashboard.</p>
+      `,
+    });
+  } catch (emailError) {
+    console.error('Error sending admin notification:', emailError);
+  }
+
   res.json({
     success: true,
-    message: 'Profile updated successfully. Pending admin approval.',
+    message: 'Profile updated and submitted for admin approval',
     provider: {
       _id: provider._id,
       email: provider.email,
@@ -679,34 +719,47 @@ const updateProviderProfileComplete = asyncHandler(async (req, res) => {
       emailVerified: true,
       isApproved: false,
       status: 'pending_approval',
+      city: provider.city,
+      providerType: provider.providerType,
       documents,
+      submittedAt: provider.submittedAt,
+      updatedAt: provider.updatedAt
     },
+    submissionId: provider._id,
   });
 });
 
 // @desc    Check provider approval status
 // @route   GET /api/provider/approval-status
 // @access  Public
-// ✅ NEW: Frontend polls this endpoint to check approval status
+// ✅ UPDATED: Match frontend requirements exactly
 const checkApprovalStatus = asyncHandler(async (req, res) => {
   const { email } = req.query;
 
   if (!email) {
-    res.status(400);
-    throw new Error('Email is required');
+    return res.status(400).json({
+      success: false,
+      message: 'Email is required',
+      error: 'MISSING_EMAIL'
+    });
   }
 
-  const provider = await Provider.findOne({ email });
+  const provider = await Provider.findOne({ email })
+    .populate('verifiedBy', 'fullName')
+    .select('-password -refreshToken');
 
   if (!provider) {
-    res.status(404);
-    throw new Error('Provider not found');
+    return res.status(404).json({
+      success: false,
+      message: 'Provider not found with this email',
+      error: 'PROVIDER_NOT_FOUND'
+    });
   }
 
-  // Determine status
+  // Determine status based on isVerified flag (set by admin)
   let status = 'pending_approval';
-  let isApproved = false;
-  let message = 'Your application is under review.';
+  let isApproved = provider.isVerified || false;
+  let message = 'Your application is under review by our admin team.';
 
   if (provider.isVerified && provider.verificationStatus === 'approved') {
     status = 'approved';
@@ -716,23 +769,50 @@ const checkApprovalStatus = asyncHandler(async (req, res) => {
     status = 'rejected';
     isApproved = false;
     message = 'Your application was not approved.';
-  } else if (provider.onboardingStatus === 'email_verified') {
-    status = 'pending_profile';
+  } else if (provider.onboardingStatus === 'email_verified' || provider.onboardingStatus === 'pending_documents') {
+    status = 'email_verified';
     message = 'Please complete your profile.';
   } else if (provider.onboardingStatus === 'pending_approval') {
     status = 'pending_approval';
-    message = 'Your application is under review.';
+    message = 'Your application is under review by our admin team.';
   }
 
-  res.json({
+  const response = {
     success: true,
     status,
     isApproved,
     message,
-    rejectionReason: provider.rejectionReason,
-    approvedAt: provider.approvedAt,
-    rejectedAt: provider.verificationStatus === 'rejected' ? provider.updatedAt : null,
-  });
+    provider: {
+      _id: provider._id,
+      fullName: provider.fullName,
+      email: provider.email,
+      providerType: provider.providerType
+    }
+  };
+
+  // Add additional details based on status
+  if (status === 'approved') {
+    response.approvedAt = provider.approvedAt;
+    if (provider.verifiedBy) {
+      response.approvedBy = {
+        adminId: provider.verifiedBy._id,
+        adminName: provider.verifiedBy.fullName
+      };
+    }
+  } else if (status === 'rejected') {
+    response.rejectionReason = provider.rejectionReason || 'No reason provided';
+    response.rejectedAt = provider.updatedAt;
+    if (provider.verifiedBy) {
+      response.rejectedBy = {
+        adminId: provider.verifiedBy._id,
+        adminName: provider.verifiedBy.fullName
+      };
+    }
+  } else if (status === 'pending_approval') {
+    response.submittedAt = provider.submittedAt;
+  }
+
+  res.json(response);
 });
 
 module.exports = {

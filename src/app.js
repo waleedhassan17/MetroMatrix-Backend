@@ -131,7 +131,7 @@ app.get('/api/verify-email', async (req, res) => {
   try {
     const hashedToken = crypto.createHash('sha256').update(token).digest('hex');
     
-    // ✅ NEW: Check if provider email verification (provider already exists)
+    // ✅ UPDATED: Check if provider email verification (provider already exists)
     if (type === 'provider') {
       const provider = await Provider.findOne({
         emailVerificationToken: hashedToken,
@@ -145,10 +145,13 @@ app.get('/api/verify-email', async (req, res) => {
         provider.emailVerificationExpire = undefined;
         await provider.save();
 
+        console.log(`✅ Provider email verified via API: ${provider.email}`);
+
         return res.json({
           success: true,
-          message: 'Email verified successfully',
+          message: 'Email verified successfully. Please complete your profile.',
           emailVerified: true,
+          userType: 'provider',
           provider: {
             _id: provider._id,
             email: provider.email,
@@ -158,6 +161,7 @@ app.get('/api/verify-email', async (req, res) => {
             isApproved: false,
             status: 'email_verified',
           },
+          // ❌ NO TOKENS - provider needs admin approval
         });
       }
     }
@@ -1503,10 +1507,11 @@ app.use('/api/providers', providerRoutes);
 app.use('/api/posts', postRoutes);
 app.use('/api/admin', adminRoutes);
 
-// ✅ NEW: Specific provider profile update endpoint (matches frontend expectation)
+// ✅ UPDATED: Provider profile endpoints with proper authentication
 const { uploadMultipleDocuments } = require('./middleware/uploadMiddleware');
 const { updateProviderProfileComplete, checkApprovalStatus } = require('./controllers/providerController');
-app.put('/api/provider/profile', uploadMultipleDocuments, updateProviderProfileComplete);
+const { protect } = require('./middleware/authMiddleware');
+app.put('/api/provider/profile', protect, uploadMultipleDocuments, updateProviderProfileComplete);
 app.get('/api/provider/approval-status', checkApprovalStatus);
 
 // Welcome route

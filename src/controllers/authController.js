@@ -132,16 +132,22 @@ const registerProvider = asyncHandler(async (req, res) => {
   const { fullName, phoneNumber, email, password } = req.body;
   
   // Check if provider already exists
-  const providerExists = await Provider.findOne({ email });
+  const providerExists = await Provider.findOne({ email: email.toLowerCase() });
   if (providerExists) {
-    res.status(400);
-    throw new Error('Provider already exists with this email');
+    return res.status(400).json({
+      success: false,
+      message: 'Email already registered',
+      error: 'DUPLICATE_EMAIL'
+    });
   }
   
   // Validate input
   if (!fullName || !phoneNumber || !email || !password) {
-    res.status(400);
-    throw new Error('Please provide all required fields');
+    return res.status(400).json({
+      success: false,
+      message: 'Please provide all required fields',
+      error: 'MISSING_FIELDS'
+    });
   }
   
   // Generate verification token
@@ -152,12 +158,12 @@ const registerProvider = asyncHandler(async (req, res) => {
     const provider = await Provider.create({
       fullName,
       phoneNumber,
-      email,
+      email: email.toLowerCase(),
       password, // Will be hashed by pre-save hook
       emailVerified: false,
       isVerified: false, // Cannot login until admin approves
       canLogin: false,
-      onboardingStatus: 'pending_email', // Frontend expects 'status' field
+      onboardingStatus: 'pending_email_verification',
       verificationStatus: 'pending',
       emailVerificationToken: hashedToken,
       emailVerificationExpire: expireTime,
@@ -172,108 +178,131 @@ const registerProvider = asyncHandler(async (req, res) => {
     
     // Send verification email
     await sendEmail({
-      email: email,
+      email: email.toLowerCase(),
       subject: 'Verify Your Email - MetroMatrix Provider Registration',
       html: EmailVerificationService.getVerificationEmailTemplate(fullName, verificationUrl, 'provider'),
     });
     
     res.status(201).json({
       success: true,
-      message: 'Provider created successfully. Please verify your email.',
+      message: 'Provider registered successfully. Please verify your email.',
       provider: {
         _id: provider._id,
         email: provider.email,
         phoneNumber: provider.phoneNumber,
         fullName: provider.fullName,
         emailVerified: false,
-        isApproved: false, // Frontend expects isApproved
+        isApproved: false,
         status: 'pending_email_verification',
+        createdAt: provider.createdAt
       },
       // ❌ NO TOKENS - provider needs email verification + admin approval
     });
   } catch (error) {
-    console.error('❌ Signup error:', error);
-    res.status(500);
-    throw new Error(error.message || 'Failed to complete signup. Please try again.');
+    console.error('❌ Provider registration error:', error);
+    return res.status(500).json({
+      success: false,
+      message: 'Registration failed',
+      error: error.message || 'Failed to complete signup. Please try again.'
+    });
   }
 });
 
 // @desc    Login provider
 // @route   POST /api/auth/provider/login
 // @access  Public
-// ✅ UPDATED: Provider can only login after admin approval (isVerified=true)
+// ✅ UPDATED: Match frontend requirements - proper error handling
 const loginProvider = asyncHandler(async (req, res) => {
   const { email, password } = req.body;
   
-  const provider = await Provider.findOne({ email }).select('+password');
+  const provider = await Provider.findOne({ email: email.toLowerCase() }).select('+password');
   
   if (!provider) {
-    res.status(401);
-    throw new Error('Invalid email or password');
+    return res.status(401).json({
+      success: false,
+      message: 'Invalid email or password',
+      error: 'INVALID_CREDENTIALS'
+    });
+  }
+
+  // Verify password first
+  const validPassword = await provider.matchPassword(password);
+  
+  if (!validPassword) {
+    return res.status(401).json({
+      success: false,
+      message: 'Invalid email or password',
+      error: 'INVALID_CREDENTIALS'
+    });
   }
 
   // Check email verification
   if (!provider.emailVerified) {
-    res.status(403);
-    throw new Error('Email not verified. Please verify your email before logging in.');
+    return res.status(403).json({
+      success: false,
+      message: 'Please verify your email before logging in',
+      error: 'EMAIL_NOT_VERIFIED',
+      emailVerified: false
+    });
   }
   
-  if (provider && (await provider.matchPassword(password))) {
-    // ✅ CRITICAL: Check if admin has approved the provider
-    if (!provider.isVerified) {
-      // Check specific status
-      const status = provider.onboardingStatus || 'pending_approval';
-      
-      if (status === 'pending_email' || status === 'pending_documents') {
-        res.status(403);
-        throw new Error('Account not approved. Your account is pending admin approval. You will receive an email once approved.');
-      } else if (status === 'pending_approval') {
-        res.status(403);
-        throw new Error('Account not approved. Your account is pending admin approval. You will receive an email once approved.');
-      } else if (status === 'rejected' || provider.verificationStatus === 'rejected') {
-        res.status(403);
-        throw new Error(`Account rejected. ${provider.rejectionReason || 'Your application was not approved. Please contact support.'}`);
-      } else {
-        res.status(403);
-        throw new Error('Account not approved. Your account is pending admin approval. You will receive an email once approved.');
-      }
+  // ✅ CRITICAL: Check if admin has approved the provider (isVerified flag)
+  if (!provider.isVerified) {
+    // Check if rejected
+    if (provider.verificationStatus === 'rejected') {
+      return res.status(403).json({
+        success: false,
+        message: 'Your application was not approved. Please contact support for details.',
+        error: 'ACCOUNT_REJECTED',
+        emailVerified: true,
+        isApproved: false,
+        status: 'rejected',
+        rejectionReason: provider.rejectionReason || 'No reason provided'
+      });
+    } else {
+      // Still pending approval
+      return res.status(403).json({
+        success: false,
+        message: 'Your account is pending admin approval. You will receive an email once approved.',
+        error: 'ACCOUNT_NOT_APPROVED',
+        emailVerified: true,
+        isApproved: false,
+        status: provider.onboardingStatus || 'pending_approval'
+      });
     }
-
-    // ✅ Provider is approved by admin - allow login
-    const tokens = generateTokens(provider._id, {
-      userType: 'provider',
-      email: provider.email,
-      onboardingStatus: provider.onboardingStatus
-    });
-    
-    provider.refreshToken = tokens.refreshToken;
-    provider.lastLoginDate = Date.now();
-    await provider.save();
-    
-    res.json({
-      success: true,
-      message: 'Login successful!',
-      accessToken: tokens.accessToken,
-      refreshToken: tokens.refreshToken,
-      provider: {
-        id: provider._id,
-        fullName: provider.fullName,
-        email: provider.email,
-        phoneNumber: provider.phoneNumber,
-        providerType: provider.providerType,
-        providerSubType: provider.providerSubType,
-        onboardingStatus: provider.onboardingStatus,
-        profileComplete: provider.profileComplete,
-        verificationStatus: provider.verificationStatus,
-        isVerified: provider.isVerified,
-        city: provider.city,
-        ratings: provider.ratings
-      }
-    });
-  } else {
-    res.status(401);
-    throw new Error('Invalid email or password');
   }
+
+  // ✅ Provider is approved by admin - allow login
+  const tokens = generateTokens(provider._id, {
+    userType: 'provider',
+    email: provider.email,
+    onboardingStatus: provider.onboardingStatus
+  });
+  
+  provider.refreshToken = tokens.refreshToken;
+  provider.lastLoginDate = Date.now();
+  await provider.save();
+  
+  res.json({
+    success: true,
+    message: 'Login successful',
+    accessToken: tokens.accessToken,
+    refreshToken: tokens.refreshToken,
+    provider: {
+      _id: provider._id,
+      fullName: provider.fullName,
+      email: provider.email,
+      phoneNumber: provider.phoneNumber,
+      emailVerified: true,
+      isApproved: true,
+      status: 'approved',
+      providerType: provider.providerType,
+      providerSubType: provider.providerSubType,
+      specialty: provider.specialty,
+      city: provider.city,
+      profileComplete: provider.profileComplete
+    }
+  });
 });
 
 // @desc    Google OAuth callback
