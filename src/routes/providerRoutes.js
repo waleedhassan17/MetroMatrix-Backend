@@ -17,6 +17,8 @@ const {
   getProviderById,
   rateProvider,
   getProvidersByType,
+  updateProviderProfileComplete, // ✅ NEW
+  checkApprovalStatus, // ✅ NEW
 } = require('../controllers/providerController');
 
 // Provider info validation
@@ -40,6 +42,9 @@ const ratingRules = [
 ];
 
 // ===== PUBLIC ROUTES (no auth required) =====
+// ✅ NEW: Check provider approval status (no auth)
+router.get('/approval-status', checkApprovalStatus);
+
 // Get all providers
 router.get('/', optionalAuth, getProviders);
 

@@ -127,7 +127,7 @@ const loginUser = asyncHandler(async (req, res) => {
 // @desc    Register provider
 // @route   POST /api/auth/provider/register
 // @access  Public
-// ✅ UPDATED: Stores data in PendingSignup, creates Provider AFTER email verification
+// ✅ UPDATED: Creates Provider immediately with emailVerified=false, isApproved=false
 const registerProvider = asyncHandler(async (req, res) => {
   const { fullName, phoneNumber, email, password } = req.body;
   
@@ -136,13 +136,6 @@ const registerProvider = asyncHandler(async (req, res) => {
   if (providerExists) {
     res.status(400);
     throw new Error('Provider already exists with this email');
-  }
-  
-  // Check if signup is already pending
-  const pendingSignup = await PendingSignup.findOne({ email });
-  if (pendingSignup) {
-    res.status(400);
-    throw new Error('Signup already pending for this email. Please verify your email or try again in 24 hours.');
   }
   
   // Validate input
@@ -155,15 +148,19 @@ const registerProvider = asyncHandler(async (req, res) => {
   const { token, hashedToken, expireTime } = EmailVerificationService.generateVerificationToken();
   
   try {
-    // Store signup data temporarily in PendingSignup (auto-deletes after 24 hours)
-    const pending = await PendingSignup.create({
+    // ✅ Create provider immediately with unverified flags
+    const provider = await Provider.create({
       fullName,
       phoneNumber,
       email,
-      password,
-      verificationToken: hashedToken,
-      verificationTokenExpire: expireTime,
-      userType: 'provider',
+      password, // Will be hashed by pre-save hook
+      emailVerified: false,
+      isVerified: false, // Cannot login until admin approves
+      canLogin: false,
+      onboardingStatus: 'pending_email', // Frontend expects 'status' field
+      verificationStatus: 'pending',
+      emailVerificationToken: hashedToken,
+      emailVerificationExpire: expireTime,
     });
     
     // Create verification URL
@@ -182,11 +179,17 @@ const registerProvider = asyncHandler(async (req, res) => {
     
     res.status(201).json({
       success: true,
-      message: 'Provider signup successful! Please verify your email to complete registration.',
-      email: email,
-      requiresEmailVerification: true,
-      expiresIn: '24 hours',
-      instructions: 'Check your email and click the verification link to complete your provider signup.',
+      message: 'Provider created successfully. Please verify your email.',
+      provider: {
+        _id: provider._id,
+        email: provider.email,
+        phoneNumber: provider.phoneNumber,
+        fullName: provider.fullName,
+        emailVerified: false,
+        isApproved: false, // Frontend expects isApproved
+        status: 'pending_email_verification',
+      },
+      // ❌ NO TOKENS - provider needs email verification + admin approval
     });
   } catch (error) {
     console.error('❌ Signup error:', error);
@@ -212,27 +215,31 @@ const loginProvider = asyncHandler(async (req, res) => {
   // Check email verification
   if (!provider.emailVerified) {
     res.status(403);
-    throw new Error('Please verify your email before logging in');
+    throw new Error('Email not verified. Please verify your email before logging in.');
   }
   
   if (provider && (await provider.matchPassword(password))) {
-    // ✅ CRITICAL: Check if admin has verified the provider
+    // ✅ CRITICAL: Check if admin has approved the provider
     if (!provider.isVerified) {
-      let message = 'Your account is pending admin approval. ';
+      // Check specific status
+      const status = provider.onboardingStatus || 'pending_approval';
       
-      if (provider.onboardingStatus === 'pending_documents') {
-        message = 'Please submit your professional documents for admin review.';
-      } else if (provider.onboardingStatus === 'pending_approval') {
-        message = 'Your documents have been submitted and are under admin review. Please wait for approval.';
-      } else if (provider.onboardingStatus === 'rejected') {
-        message = `Your application was rejected. Reason: ${provider.rejectionReason || 'Not specified'}. You can resubmit your documents.`;
+      if (status === 'pending_email' || status === 'pending_documents') {
+        res.status(403);
+        throw new Error('Account not approved. Your account is pending admin approval. You will receive an email once approved.');
+      } else if (status === 'pending_approval') {
+        res.status(403);
+        throw new Error('Account not approved. Your account is pending admin approval. You will receive an email once approved.');
+      } else if (status === 'rejected' || provider.verificationStatus === 'rejected') {
+        res.status(403);
+        throw new Error(`Account rejected. ${provider.rejectionReason || 'Your application was not approved. Please contact support.'}`);
+      } else {
+        res.status(403);
+        throw new Error('Account not approved. Your account is pending admin approval. You will receive an email once approved.');
       }
-      
-      res.status(403);
-      throw new Error(message);
     }
 
-    // ✅ Provider is verified by admin - allow login
+    // ✅ Provider is approved by admin - allow login
     const tokens = generateTokens(provider._id, {
       userType: 'provider',
       email: provider.email,
@@ -246,6 +253,8 @@ const loginProvider = asyncHandler(async (req, res) => {
     res.json({
       success: true,
       message: 'Login successful!',
+      accessToken: tokens.accessToken,
+      refreshToken: tokens.refreshToken,
       provider: {
         id: provider._id,
         fullName: provider.fullName,
@@ -259,8 +268,7 @@ const loginProvider = asyncHandler(async (req, res) => {
         isVerified: provider.isVerified,
         city: provider.city,
         ratings: provider.ratings
-      },
-      ...tokens
+      }
     });
   } else {
     res.status(401);

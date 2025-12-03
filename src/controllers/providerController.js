@@ -582,6 +582,159 @@ const getProvidersByType = asyncHandler(async (req, res) => {
   });
 });
 
+// @desc    Update provider profile with documents (After email verification)
+// @route   PUT /api/provider/profile
+// @access  Private (Provider) or Public with providerId
+// ✅ NEW: Frontend expects this endpoint for profile completion
+const updateProviderProfileComplete = asyncHandler(async (req, res) => {
+  const {
+    providerId, // Can come from body for non-authenticated requests
+    providerType,
+    providerSubType,
+    fullName,
+    phoneNumber,
+    city,
+    address,
+    specialty,
+    profession,
+    category,
+    yearsOfExperience,
+    idNumber,
+    bio,
+  } = req.body;
+
+  // Get provider ID from auth or body
+  const id = req.user?.id || providerId;
+  
+  if (!id) {
+    res.status(400);
+    throw new Error('Provider ID is required');
+  }
+
+  // Find provider
+  const provider = await Provider.findById(id);
+  if (!provider) {
+    res.status(404);
+    throw new Error('Provider not found');
+  }
+
+  // Check email verification
+  if (!provider.emailVerified) {
+    res.status(403);
+    throw new Error('Please verify your email before updating profile');
+  }
+
+  // Update profile fields
+  if (providerType) provider.providerType = providerType;
+  if (providerSubType) provider.providerSubType = providerSubType;
+  if (fullName) provider.fullName = fullName;
+  if (phoneNumber) provider.phoneNumber = phoneNumber;
+  if (city) provider.city = city;
+  if (address) provider.address = typeof address === 'string' ? JSON.parse(address) : address;
+  if (specialty) provider.specialty = specialty;
+  if (profession) provider.profession = profession;
+  if (category) provider.category = category;
+  if (yearsOfExperience) provider.experience = yearsOfExperience;
+  if (idNumber) provider.idNumber = idNumber;
+  if (bio) provider.briefDescription = bio;
+
+  // Handle document uploads
+  const documents = {};
+  if (req.files) {
+    const fileFields = ['medicalLicense', 'degreeCertificate', 'nationalIdCard', 'professionalCertificate', 'businessLicense', 'insuranceDocument', 'profilePhoto'];
+    
+    fileFields.forEach(field => {
+      if (req.files[field] && req.files[field][0]) {
+        const file = req.files[field][0];
+        documents[field] = {
+          url: file.path,
+          key: file.filename,
+        };
+        
+        // Store in provider documents field
+        if (!provider.documents) provider.documents = {};
+        provider.documents[field] = {
+          url: file.path,
+          publicId: file.filename,
+          name: file.originalname,
+          uploadedAt: new Date(),
+        };
+      }
+    });
+  }
+
+  // ✅ Update status to pending_approval after profile completion
+  provider.onboardingStatus = 'pending_approval';
+  provider.profileComplete = true;
+  
+  await provider.save();
+
+  res.json({
+    success: true,
+    message: 'Profile updated successfully. Pending admin approval.',
+    provider: {
+      _id: provider._id,
+      email: provider.email,
+      fullName: provider.fullName,
+      emailVerified: true,
+      isApproved: false,
+      status: 'pending_approval',
+      documents,
+    },
+  });
+});
+
+// @desc    Check provider approval status
+// @route   GET /api/provider/approval-status
+// @access  Public
+// ✅ NEW: Frontend polls this endpoint to check approval status
+const checkApprovalStatus = asyncHandler(async (req, res) => {
+  const { email } = req.query;
+
+  if (!email) {
+    res.status(400);
+    throw new Error('Email is required');
+  }
+
+  const provider = await Provider.findOne({ email });
+
+  if (!provider) {
+    res.status(404);
+    throw new Error('Provider not found');
+  }
+
+  // Determine status
+  let status = 'pending_approval';
+  let isApproved = false;
+  let message = 'Your application is under review.';
+
+  if (provider.isVerified && provider.verificationStatus === 'approved') {
+    status = 'approved';
+    isApproved = true;
+    message = 'Your account has been approved! You can now sign in.';
+  } else if (provider.verificationStatus === 'rejected') {
+    status = 'rejected';
+    isApproved = false;
+    message = 'Your application was not approved.';
+  } else if (provider.onboardingStatus === 'email_verified') {
+    status = 'pending_profile';
+    message = 'Please complete your profile.';
+  } else if (provider.onboardingStatus === 'pending_approval') {
+    status = 'pending_approval';
+    message = 'Your application is under review.';
+  }
+
+  res.json({
+    success: true,
+    status,
+    isApproved,
+    message,
+    rejectionReason: provider.rejectionReason,
+    approvedAt: provider.approvedAt,
+    rejectedAt: provider.verificationStatus === 'rejected' ? provider.updatedAt : null,
+  });
+});
+
 module.exports = {
   getProviderProfile,
   updateProviderProfile,
@@ -594,4 +747,6 @@ module.exports = {
   getProviderById,
   rateProvider,
   getProvidersByType,
+  updateProviderProfileComplete, // ✅ NEW
+  checkApprovalStatus, // ✅ NEW
 };

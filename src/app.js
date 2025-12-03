@@ -131,7 +131,38 @@ app.get('/api/verify-email', async (req, res) => {
   try {
     const hashedToken = crypto.createHash('sha256').update(token).digest('hex');
     
-    // Check if this is a PendingSignup verification
+    // ✅ NEW: Check if provider email verification (provider already exists)
+    if (type === 'provider') {
+      const provider = await Provider.findOne({
+        emailVerificationToken: hashedToken,
+        emailVerificationExpire: { $gt: Date.now() },
+      });
+
+      if (provider) {
+        provider.emailVerified = true;
+        provider.onboardingStatus = 'email_verified';
+        provider.emailVerificationToken = undefined;
+        provider.emailVerificationExpire = undefined;
+        await provider.save();
+
+        return res.json({
+          success: true,
+          message: 'Email verified successfully',
+          emailVerified: true,
+          provider: {
+            _id: provider._id,
+            email: provider.email,
+            phoneNumber: provider.phoneNumber,
+            fullName: provider.fullName,
+            emailVerified: true,
+            isApproved: false,
+            status: 'email_verified',
+          },
+        });
+      }
+    }
+    
+    // Check if this is a PendingSignup verification (USER only)
     const pending = await PendingSignup.findOne({
       verificationToken: hashedToken,
       verificationTokenExpire: { $gt: Date.now() },
@@ -139,55 +170,22 @@ app.get('/api/verify-email', async (req, res) => {
     }).select('+password');
 
     if (pending) {
-      // Create user/provider from pending signup
+      // Create user from pending signup
       let user;
       try {
-        if (type === 'provider') {
-          user = await Provider.create({
-            fullName: pending.fullName,
-            phoneNumber: pending.phoneNumber,
-            email: pending.email,
-            password: pending.password,
-            emailVerified: true,
-            isVerified: false, // Cannot login until admin approves
-            canLogin: false,
-            onboardingStatus: 'pending_documents',
-            verificationStatus: 'pending',
-          });
-        } else {
-          user = await User.create({
-            fullName: pending.fullName,
-            phoneNumber: pending.phoneNumber,
-            email: pending.email,
-            password: pending.password,
-            emailVerified: true,
-            isVerified: true,
-          });
-        }
+        user = await User.create({
+          fullName: pending.fullName,
+          phoneNumber: pending.phoneNumber,
+          email: pending.email,
+          password: pending.password,
+          emailVerified: true,
+          isVerified: true,
+        });
         
         // Delete pending signup
         await PendingSignup.deleteOne({ _id: pending._id });
         
         console.log(`✅ ${type} verified via API: ${user.email}`);
-        
-        // Provider flow: No tokens until admin approval
-        if (type === 'provider') {
-          return res.json({
-            success: true,
-            message: 'Provider email verified successfully! Please submit your documents for admin review.',
-            emailVerified: true,
-            requiresDocuments: true,
-            onboardingStatus: 'pending_documents',
-            provider: {
-              id: user._id,
-              fullName: user.fullName,
-              email: user.email,
-              phoneNumber: user.phoneNumber,
-              canLogin: false,
-              isVerified: false,
-            },
-          });
-        }
         
         // User flow: Full access immediately
         const tokens = generateTokens(user._id, {
@@ -253,7 +251,32 @@ app.get('/verify-email', async (req, res) => {
   try {
     const hashedToken = crypto.createHash('sha256').update(token).digest('hex');
     
-    // First, check if this is a PendingSignup (new signup verification)
+    // ✅ NEW FLOW: Provider already exists, just verify email
+    // Check if this is a Provider's email verification (created during signup)
+    if (type === 'provider') {
+      const provider = await Provider.findOne({
+        emailVerificationToken: hashedToken,
+        emailVerificationExpire: { $gt: Date.now() },
+      });
+
+      if (provider) {
+        // Mark email as verified
+        provider.emailVerified = true;
+        provider.onboardingStatus = 'email_verified'; // Update status
+        provider.emailVerificationToken = undefined;
+        provider.emailVerificationExpire = undefined;
+        await provider.save();
+
+        console.log(`✅ Provider email verified: ${provider.email}`);
+
+        const successMessage = 'Email verified successfully! Please return to the MetroMatrix app to complete your profile.';
+        const deepLinkUrl = `metromatrix://verified?email=${encodeURIComponent(provider.email)}&type=provider&userId=${provider._id}`;
+        
+        return res.send(getVerificationHTML('success', successMessage, deepLinkUrl, null, type));
+      }
+    }
+    
+    // Check if this is a PendingSignup (USER signup verification only)
     const pending = await PendingSignup.findOne({
       verificationToken: hashedToken,
       verificationTokenExpire: { $gt: Date.now() },
@@ -261,7 +284,7 @@ app.get('/verify-email', async (req, res) => {
     }).select('+password');
 
     if (pending) {
-      // This is a new signup verification - create the user/provider
+      // This is a new USER signup verification - create the user
       console.log(`✅ Verifying new ${type} signup: ${pending.email}`);
       
       let user;
@@ -269,66 +292,36 @@ app.get('/verify-email', async (req, res) => {
       let deepLinkParams;
       
       try {
-        if (type === 'provider') {
-          // ✅ PROVIDER FLOW: Create account, email verified, needs to submit documents
-          user = await Provider.create({
-            fullName: pending.fullName,
-            phoneNumber: pending.phoneNumber,
-            email: pending.email,
-            password: pending.password,
-            emailVerified: true,
-            isVerified: false, // ✅ Cannot login until admin approves documents
-            canLogin: false, // ✅ Cannot login until admin approval
-            onboardingStatus: 'pending_documents', // ✅ Next step: upload documents
-            verificationStatus: 'pending',
-          });
-          
-          // ✅ Save provider ID for document submission
-          await user.save();
-          
-          successMessage = 'Your email has been verified successfully! Your account has been created. Please submit your professional documents for admin review.';
-          
-          deepLinkParams = new URLSearchParams({
-            verified: 'true',
-            userType: 'provider',
-            userId: user._id.toString(),
-            email: user.email,
-            fullName: user.fullName,
-            onboardingStatus: 'pending_documents',
-            requiresDocuments: 'true',
-          });
-        } else {
-          // ✅ USER FLOW: Create and enable full access immediately
-          user = await User.create({
-            fullName: pending.fullName,
-            phoneNumber: pending.phoneNumber,
-            email: pending.email,
-            password: pending.password,
-            emailVerified: true,
-            isVerified: true,
-          });
-          
-          // Generate auth tokens for user (immediate login)
-          const tokens = generateTokens(user._id, {
-            userType: 'user',
-            email: user.email
-          });
-          user.refreshToken = tokens.refreshToken;
-          user.lastLoginDate = Date.now();
-          await user.save();
-          
-          successMessage = 'Your email has been verified successfully! Welcome to MetroMatrix.';
-          
-          deepLinkParams = new URLSearchParams({
-            verified: 'true',
-            accessToken: tokens.accessToken,
-            refreshToken: tokens.refreshToken,
-            userType: 'user',
-            userId: user._id.toString(),
-            email: user.email,
-            fullName: user.fullName,
-          });
-        }
+        // ✅ USER FLOW ONLY: Create and enable full access immediately
+        user = await User.create({
+          fullName: pending.fullName,
+          phoneNumber: pending.phoneNumber,
+          email: pending.email,
+          password: pending.password,
+          emailVerified: true,
+          isVerified: true,
+        });
+        
+        // Generate auth tokens for user (immediate login)
+        const tokens = generateTokens(user._id, {
+          userType: 'user',
+          email: user.email
+        });
+        user.refreshToken = tokens.refreshToken;
+        user.lastLoginDate = Date.now();
+        await user.save();
+        
+        successMessage = 'Your email has been verified successfully! Welcome to MetroMatrix.';
+        
+        deepLinkParams = new URLSearchParams({
+          verified: 'true',
+          accessToken: tokens.accessToken,
+          refreshToken: tokens.refreshToken,
+          userType: 'user',
+          userId: user._id.toString(),
+          email: user.email,
+          fullName: user.fullName,
+        });
         
         // Delete pending signup record
         await PendingSignup.deleteOne({ _id: pending._id });
@@ -1509,6 +1502,12 @@ app.use('/api/users', userRoutes);
 app.use('/api/providers', providerRoutes);
 app.use('/api/posts', postRoutes);
 app.use('/api/admin', adminRoutes);
+
+// ✅ NEW: Specific provider profile update endpoint (matches frontend expectation)
+const { uploadMultipleDocuments } = require('./middleware/uploadMiddleware');
+const { updateProviderProfileComplete, checkApprovalStatus } = require('./controllers/providerController');
+app.put('/api/provider/profile', uploadMultipleDocuments, updateProviderProfileComplete);
+app.get('/api/provider/approval-status', checkApprovalStatus);
 
 // Welcome route
 app.get('/', (req, res) => {

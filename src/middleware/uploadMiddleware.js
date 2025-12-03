@@ -67,7 +67,7 @@ module.exports = {
   // Single document upload
   uploadSingleDocument: handleUploadError(uploadDocument.single('document')),
   
-  // Multiple document fields for provider verification
+  // Multiple document fields for provider verification (✅ Updated for frontend)
   uploadMultipleDocuments: handleUploadError(
     uploadDocument.fields([
       { name: 'medicalLicense', maxCount: 1 },
@@ -76,6 +76,7 @@ module.exports = {
       { name: 'profilePhoto', maxCount: 1 },
       { name: 'professionalCertificate', maxCount: 1 },
       { name: 'businessLicense', maxCount: 1 },
+      { name: 'insuranceDocument', maxCount: 1 },
       { name: 'additionalCertificates', maxCount: 5 },
     ])
   ),
