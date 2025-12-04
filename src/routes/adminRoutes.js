@@ -42,6 +42,12 @@ const {
   activateUserEnhanced,
   deactivateUserEnhanced,
   deleteUser,
+  // Frontend compatibility endpoints
+  getRecentRegistrations,
+  getProvidersByType,
+  getProviderDetailsWithRoute,
+  getAnalytics,
+  refreshAdminToken,
 } = require('../controllers/adminController');
 
 const {
@@ -91,9 +97,7 @@ router.use(adminOnly);
 
 // ===== AUTHENTICATION =====
 router.post('/auth/logout', adminLogout);
-router.post('/auth/refresh-token', (req, res) => {
-  res.json({ success: true, message: 'Use /api/auth/refresh-token endpoint' });
-});
+router.post('/auth/refresh-token', refreshAdminToken);
 
 // ===== PROFILE MANAGEMENT =====
 router.get('/profile', getAdminProfile);
@@ -103,14 +107,20 @@ router.put('/change-password', changeAdminPassword);
 // ===== DASHBOARD & STATISTICS =====
 router.get('/dashboard/stats', getDashboardStatsEnhanced);
 router.get('/dashboard/quick-stats', getQuickStats);
+router.get('/dashboard/recent-registrations', getRecentRegistrations);
 router.get('/dashboard', getDashboardStats); // Legacy route
+
+// ===== ANALYTICS =====
+router.get('/analytics', getAnalytics);
 
 // ===== PROVIDER MANAGEMENT =====
 // List & Filter
-router.get('/providers', getAllProvidersEnhanced);
 router.get('/providers/pending', getPendingProvidersEnhanced);
+router.get('/providers/:providerType(doctor|home_service|vendor)', getProvidersByType);
+router.get('/providers', getAllProvidersEnhanced);
 
 // Provider Details & Actions
+router.get('/providers/:providerId/details', getProviderDetailsWithRoute);
 router.get('/providers/:providerId', getProviderDetails);
 router.put('/providers/:providerId/approve', approveProviderEnhanced);
 router.put(

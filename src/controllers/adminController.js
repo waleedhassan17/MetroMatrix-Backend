@@ -1837,6 +1837,313 @@ const deleteUser = asyncHandler(async (req, res) => {
   });
 });
 
+// @desc    Get recent registrations
+// @route   GET /api/admin/dashboard/recent-registrations
+// @access  Private/Admin
+const getRecentRegistrations = asyncHandler(async (req, res) => {
+  const { limit = 10 } = req.query;
+  
+  const recentProviders = await Provider.find({ adminVerified: 'pending' })
+    .sort({ createdAt: -1 })
+    .limit(parseInt(limit))
+    .select('fullName email providerType providerSubType adminVerified createdAt profilePhoto');
+  
+  res.json({
+    success: true,
+    data: recentProviders.map(p => ({
+      id: p._id,
+      _id: p._id,
+      fullName: p.fullName,
+      email: p.email,
+      providerType: p.providerType,
+      providerSubType: p.providerSubType,
+      verificationStatus: p.adminVerified,
+      createdAt: p.createdAt,
+      avatar: p.profilePhoto,
+    })),
+  });
+});
+
+// @desc    Get providers by type
+// @route   GET /api/admin/providers/:providerType
+// @access  Private/Admin
+const getProvidersByType = asyncHandler(async (req, res) => {
+  const { providerType } = req.params;
+  const {
+    page = 1,
+    limit = 15,
+    status = '',
+    search = '',
+  } = req.query;
+  
+  const query = { providerType };
+  
+  // Status filter
+  if (status && status !== 'all') {
+    if (status === 'pending') query.adminVerified = 'pending';
+    else if (status === 'approved') query.adminVerified = 'active';
+    else if (status === 'rejected') query.adminVerified = 'inactive';
+  }
+  
+  // Search filter
+  if (search) {
+    query.$or = [
+      { fullName: { $regex: search, $options: 'i' } },
+      { email: { $regex: search, $options: 'i' } },
+      { phoneNumber: { $regex: search, $options: 'i' } },
+    ];
+  }
+  
+  const skip = (parseInt(page) - 1) * parseInt(limit);
+  
+  const [providers, total] = await Promise.all([
+    Provider.find(query)
+      .sort({ createdAt: -1 })
+      .skip(skip)
+      .limit(parseInt(limit))
+      .select('-password -emailVerificationToken -refreshToken'),
+    Provider.countDocuments(query),
+  ]);
+  
+  res.json({
+    success: true,
+    providers: providers.map(p => ({
+      id: p._id,
+      _id: p._id,
+      email: p.email,
+      fullName: p.fullName,
+      phoneNumber: p.phoneNumber,
+      providerType: p.providerType,
+      providerSubType: p.providerSubType,
+      specialty: p.specialty,
+      experience: p.experience,
+      briefDescription: p.briefDescription,
+      rate: p.rate,
+      consultationFee: p.consultationFee,
+      city: p.city,
+      address: p.address,
+      documents: p.documents,
+      profileComplete: p.profileComplete,
+      emailVerified: p.emailVerified === 'active',
+      verificationStatus: p.adminVerified === 'active' ? 'approved' : p.adminVerified === 'inactive' ? 'rejected' : 'pending',
+      rejectionReason: p.rejectionReason,
+      isActive: p.isActive,
+      isOnline: p.isOnline,
+      ratings: p.ratings,
+      createdAt: p.createdAt,
+      updatedAt: p.updatedAt,
+    })),
+    pagination: {
+      page: parseInt(page),
+      limit: parseInt(limit),
+      total,
+      pages: Math.ceil(total / parseInt(limit)),
+    },
+  });
+});
+
+// @desc    Get provider details with /details route
+// @route   GET /api/admin/providers/:providerId/details
+// @access  Private/Admin
+const getProviderDetailsWithRoute = asyncHandler(async (req, res) => {
+  const provider = await Provider.findById(req.params.providerId)
+    .select('-password -emailVerificationToken -refreshToken');
+  
+  if (!provider) {
+    res.status(404);
+    throw new Error('Provider not found');
+  }
+  
+  res.json({
+    success: true,
+    provider: {
+      id: provider._id,
+      _id: provider._id,
+      email: provider.email,
+      fullName: provider.fullName,
+      phoneNumber: provider.phoneNumber,
+      providerType: provider.providerType,
+      providerSubType: provider.providerSubType,
+      specialty: provider.specialty,
+      experience: provider.experience,
+      briefDescription: provider.briefDescription,
+      consultationFee: provider.consultationFee,
+      rate: provider.rate,
+      city: provider.city,
+      address: provider.address,
+      idNumber: provider.idNumber,
+      documents: provider.documents,
+      verificationStatus: provider.adminVerified === 'active' ? 'approved' : provider.adminVerified === 'inactive' ? 'rejected' : 'pending',
+      rejectionReason: provider.rejectionReason,
+      isActive: provider.isActive,
+      isOnline: provider.isOnline,
+      ratings: provider.ratings,
+      createdAt: provider.createdAt,
+      updatedAt: provider.updatedAt,
+    },
+  });
+});
+
+// @desc    Get analytics
+// @route   GET /api/admin/analytics
+// @access  Private/Admin
+const getAnalytics = asyncHandler(async (req, res) => {
+  const { startDate, endDate } = req.query;
+  
+  const dateFilter = {};
+  if (startDate) dateFilter.$gte = new Date(startDate);
+  if (endDate) dateFilter.$lte = new Date(endDate);
+  
+  const hasDateFilter = startDate || endDate;
+  
+  // Provider analytics
+  const providerQuery = hasDateFilter ? { createdAt: dateFilter } : {};
+  const [totalProviders, providersByType, providersByStatus] = await Promise.all([
+    Provider.countDocuments(providerQuery),
+    Provider.aggregate([
+      ...(hasDateFilter ? [{ $match: { createdAt: dateFilter } }] : []),
+      { $group: { _id: '$providerType', count: { $sum: 1 } } },
+    ]),
+    Provider.aggregate([
+      ...(hasDateFilter ? [{ $match: { createdAt: dateFilter } }] : []),
+      { $group: { _id: '$adminVerified', count: { $sum: 1 } } },
+    ]),
+  ]);
+  
+  // User analytics
+  const userQuery = hasDateFilter ? { createdAt: dateFilter } : {};
+  const [totalUsers, activeUsers, verifiedUsers] = await Promise.all([
+    User.countDocuments(userQuery),
+    User.countDocuments({ ...userQuery, isActive: true }),
+    User.countDocuments({ ...userQuery, isVerified: true }),
+  ]);
+  
+  // Post analytics
+  const postQuery = hasDateFilter ? { createdAt: dateFilter } : {};
+  const totalPosts = await Post.countDocuments(postQuery);
+  
+  // Provider growth over time (last 30 days)
+  const thirtyDaysAgo = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000);
+  const providerGrowth = await Provider.aggregate([
+    { $match: { createdAt: { $gte: thirtyDaysAgo } } },
+    {
+      $group: {
+        _id: { $dateToString: { format: '%Y-%m-%d', date: '$createdAt' } },
+        count: { $sum: 1 },
+      },
+    },
+    { $sort: { _id: 1 } },
+  ]);
+  
+  // User growth over time (last 30 days)
+  const userGrowth = await User.aggregate([
+    { $match: { createdAt: { $gte: thirtyDaysAgo } } },
+    {
+      $group: {
+        _id: { $dateToString: { format: '%Y-%m-%d', date: '$createdAt' } },
+        count: { $sum: 1 },
+      },
+    },
+    { $sort: { _id: 1 } },
+  ]);
+  
+  res.json({
+    success: true,
+    data: {
+      providers: {
+        total: totalProviders,
+        byType: providersByType.map(item => ({
+          type: item._id,
+          count: item.count,
+        })),
+        byStatus: providersByStatus.map(item => ({
+          status: item._id === 'active' ? 'approved' : item._id === 'inactive' ? 'rejected' : 'pending',
+          count: item.count,
+        })),
+        growth: providerGrowth.map(item => ({
+          date: item._id,
+          count: item.count,
+        })),
+      },
+      users: {
+        total: totalUsers,
+        active: activeUsers,
+        verified: verifiedUsers,
+        growth: userGrowth.map(item => ({
+          date: item._id,
+          count: item.count,
+        })),
+      },
+      posts: {
+        total: totalPosts,
+      },
+    },
+  });
+});
+
+// @desc    Refresh admin token
+// @route   POST /api/admin/auth/refresh-token
+// @access  Public
+const refreshAdminToken = asyncHandler(async (req, res) => {
+  const { refreshToken } = req.body;
+  
+  if (!refreshToken) {
+    return res.status(400).json({
+      success: false,
+      message: 'Refresh token is required',
+      error: 'MISSING_REFRESH_TOKEN',
+    });
+  }
+  
+  try {
+    const jwt = require('jsonwebtoken');
+    const decoded = jwt.verify(refreshToken, process.env.JWT_SECRET);
+    
+    const admin = await Admin.findById(decoded.id);
+    
+    if (!admin || admin.refreshToken !== refreshToken) {
+      return res.status(401).json({
+        success: false,
+        message: 'Invalid refresh token',
+        error: 'INVALID_REFRESH_TOKEN',
+      });
+    }
+    
+    if (!admin.isActive) {
+      return res.status(403).json({
+        success: false,
+        message: 'Admin account is deactivated',
+        error: 'ACCOUNT_DEACTIVATED',
+      });
+    }
+    
+    // Generate new tokens
+    const { generateTokens } = require('../utils/generateToken');
+    const tokens = generateTokens(admin._id, {
+      userType: 'admin',
+      email: admin.email,
+      role: admin.role,
+    });
+    
+    // Update refresh token
+    admin.refreshToken = tokens.refreshToken;
+    await admin.save();
+    
+    res.json({
+      success: true,
+      accessToken: tokens.accessToken,
+      refreshToken: tokens.refreshToken,
+      expiresIn: 86400,
+    });
+  } catch (error) {
+    return res.status(401).json({
+      success: false,
+      message: 'Invalid or expired refresh token',
+      error: 'TOKEN_INVALID',
+    });
+  }
+});
+
 module.exports = {
   adminLogin,
   getDashboardStats,
@@ -1875,4 +2182,10 @@ module.exports = {
   activateUserEnhanced,
   deactivateUserEnhanced,
   deleteUser,
+  // Frontend compatibility endpoints
+  getRecentRegistrations,
+  getProvidersByType,
+  getProviderDetailsWithRoute,
+  getAnalytics,
+  refreshAdminToken,
 };
