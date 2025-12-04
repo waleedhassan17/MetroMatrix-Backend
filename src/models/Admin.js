@@ -56,6 +56,14 @@ const adminSchema = new mongoose.Schema(
         type: Boolean,
         default: true,
       },
+      canManageSettings: {
+        type: Boolean,
+        default: false,
+      },
+      canManageNotifications: {
+        type: Boolean,
+        default: true,
+      },
       canManageAdmins: {
         type: Boolean,
         default: false,
@@ -63,6 +71,10 @@ const adminSchema = new mongoose.Schema(
     },
 
     // Profile
+    avatar: {
+      type: String,
+      default: null,
+    },
     profilePhoto: {
       type: String,
       default: null,

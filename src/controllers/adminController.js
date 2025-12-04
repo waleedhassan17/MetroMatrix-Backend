@@ -17,13 +17,19 @@ const adminLogin = asyncHandler(async (req, res) => {
   const admin = await Admin.findOne({ email }).select('+password');
 
   if (!admin) {
-    res.status(401);
-    throw new Error('Invalid email or password');
+    return res.status(401).json({
+      success: false,
+      message: 'Invalid email or password',
+      error: 'INVALID_CREDENTIALS',
+    });
   }
 
   if (!admin.isActive) {
-    res.status(403);
-    throw new Error('Your admin account has been deactivated');
+    return res.status(403).json({
+      success: false,
+      message: 'Your admin account has been deactivated',
+      error: 'ACCOUNT_DEACTIVATED',
+    });
   }
 
   if (admin && (await admin.matchPassword(password))) {
@@ -40,19 +46,29 @@ const adminLogin = asyncHandler(async (req, res) => {
 
     res.json({
       success: true,
+      message: 'Login successful',
       admin: {
         id: admin._id,
-        fullName: admin.fullName,
+        _id: admin._id,
         email: admin.email,
+        fullName: admin.fullName,
         role: admin.role,
+        avatar: admin.avatar || admin.profilePhoto,
         permissions: admin.permissions,
-        isSuperAdmin: admin.isSuperAdmin,
+        isActive: admin.isActive,
+        lastLoginDate: admin.lastLoginDate,
+        createdAt: admin.createdAt,
       },
-      ...tokens,
+      accessToken: tokens.accessToken,
+      refreshToken: tokens.refreshToken,
+      expiresIn: 86400, // 24 hours in seconds
     });
   } else {
-    res.status(401);
-    throw new Error('Invalid email or password');
+    return res.status(401).json({
+      success: false,
+      message: 'Invalid email or password',
+      error: 'INVALID_CREDENTIALS',
+    });
   }
 });
 
@@ -1061,6 +1077,766 @@ const rejectProviderSubmission = asyncHandler(async (req, res) => {
   });
 });
 
+// ===== NEW ADMIN PANEL ENDPOINTS =====
+
+// @desc    Admin logout
+// @route   POST /api/admin/auth/logout
+// @access  Private/Admin
+const adminLogout = asyncHandler(async (req, res) => {
+  const admin = req.user;
+  
+  admin.refreshToken = undefined;
+  admin.logActivity('logout', admin._id, 'Admin', 'Admin logged out');
+  await admin.save();
+  
+  res.json({
+    success: true,
+    message: 'Logged out successfully',
+  });
+});
+
+// @desc    Get admin profile
+// @route   GET /api/admin/profile
+// @access  Private/Admin
+const getAdminProfile = asyncHandler(async (req, res) => {
+  const admin = await Admin.findById(req.user._id);
+  
+  res.json({
+    success: true,
+    data: {
+      id: admin._id,
+      _id: admin._id,
+      email: admin.email,
+      fullName: admin.fullName,
+      role: admin.role,
+      avatar: admin.avatar || admin.profilePhoto,
+      permissions: admin.permissions,
+      isActive: admin.isActive,
+      lastLoginDate: admin.lastLoginDate,
+      createdAt: admin.createdAt,
+    },
+  });
+});
+
+// @desc    Update admin profile
+// @route   PUT /api/admin/profile
+// @access  Private/Admin
+const updateAdminProfile = asyncHandler(async (req, res) => {
+  const admin = await Admin.findById(req.user._id);
+  const { fullName, email, avatar } = req.body;
+  
+  if (fullName) admin.fullName = fullName;
+  if (email) {
+    // Check if email already exists
+    const emailExists = await Admin.findOne({ email, _id: { $ne: admin._id } });
+    if (emailExists) {
+      res.status(409);
+      throw new Error('Email already in use');
+    }
+    admin.email = email;
+  }
+  if (avatar) {
+    admin.avatar = avatar;
+    admin.profilePhoto = avatar;
+  }
+  
+  await admin.save();
+  
+  res.json({
+    success: true,
+    message: 'Profile updated successfully',
+    data: {
+      id: admin._id,
+      email: admin.email,
+      fullName: admin.fullName,
+      avatar: admin.avatar,
+    },
+  });
+});
+
+// @desc    Change admin password
+// @route   PUT /api/admin/change-password
+// @access  Private/Admin
+const changeAdminPassword = asyncHandler(async (req, res) => {
+  const { currentPassword, newPassword } = req.body;
+  
+  if (!currentPassword || !newPassword) {
+    res.status(400);
+    throw new Error('Please provide current and new password');
+  }
+  
+  const admin = await Admin.findById(req.user._id).select('+password');
+  
+  const isMatch = await admin.matchPassword(currentPassword);
+  if (!isMatch) {
+    res.status(401);
+    throw new Error('Current password is incorrect');
+  }
+  
+  admin.password = newPassword;
+  await admin.save();
+  
+  res.json({
+    success: true,
+    message: 'Password changed successfully',
+  });
+});
+
+// @desc    Get dashboard statistics (Enhanced)
+// @route   GET /api/admin/dashboard/stats
+// @access  Private/Admin
+const getDashboardStatsEnhanced = asyncHandler(async (req, res) => {
+  const now = new Date();
+  const lastMonth = new Date(now.getFullYear(), now.getMonth() - 1, 1);
+  const twoMonthsAgo = new Date(now.getFullYear(), now.getMonth() - 2, 1);
+  
+  // Provider stats
+  const [totalProviders, pendingProviders, approvedProviders, rejectedProviders, 
+         providersLastMonth, providersTwoMonthsAgo] = await Promise.all([
+    Provider.countDocuments(),
+    Provider.countDocuments({ adminVerified: 'pending' }),
+    Provider.countDocuments({ adminVerified: 'active' }),
+    Provider.countDocuments({ adminVerified: 'inactive' }),
+    Provider.countDocuments({ createdAt: { $gte: lastMonth } }),
+    Provider.countDocuments({ createdAt: { $gte: twoMonthsAgo, $lt: lastMonth } }),
+  ]);
+  
+  const providerGrowth = providersTwoMonthsAgo > 0 
+    ? ((providersLastMonth - providersTwoMonthsAgo) / providersTwoMonthsAgo * 100).toFixed(1)
+    : 0;
+  
+  // User stats
+  const [totalUsers, activeUsers, inactiveUsers, usersLastMonth, usersTwoMonthsAgo] = await Promise.all([
+    User.countDocuments(),
+    User.countDocuments({ isActive: true }),
+    User.countDocuments({ isActive: false }),
+    User.countDocuments({ createdAt: { $gte: lastMonth } }),
+    User.countDocuments({ createdAt: { $gte: twoMonthsAgo, $lt: lastMonth } }),
+  ]);
+  
+  const userGrowth = usersTwoMonthsAgo > 0 
+    ? ((usersLastMonth - usersTwoMonthsAgo) / usersTwoMonthsAgo * 100).toFixed(1)
+    : 0;
+  
+  // Post stats
+  const [totalPosts, postsThisMonth] = await Promise.all([
+    Post.countDocuments(),
+    Post.countDocuments({ createdAt: { $gte: lastMonth } }),
+  ]);
+  
+  // Provider distribution
+  const providerDistribution = await Provider.aggregate([
+    { $match: { adminVerified: 'active' } },
+    { $group: { _id: '$providerType', count: { $sum: 1 } } },
+  ]);
+  
+  const totalApproved = providerDistribution.reduce((sum, item) => sum + item.count, 0);
+  const distributionWithPercentage = providerDistribution.map(item => ({
+    _id: item._id,
+    count: item.count,
+    percentage: totalApproved > 0 ? Math.round((item.count / totalApproved) * 100) : 0,
+  }));
+  
+  // Recent registrations (last 5 providers)
+  const recentRegistrations = await Provider.find({ adminVerified: 'pending' })
+    .sort({ createdAt: -1 })
+    .limit(5)
+    .select('fullName email providerType providerSubType adminVerified createdAt profilePhoto');
+  
+  // Quick stats
+  const onlineProviders = await Provider.countDocuments({ isOnline: true, adminVerified: 'active' });
+  
+  res.json({
+    success: true,
+    stats: {
+      providers: {
+        total: totalProviders,
+        pending: pendingProviders,
+        approved: approvedProviders,
+        rejected: rejectedProviders,
+        growthPercentage: parseFloat(providerGrowth),
+      },
+      users: {
+        total: totalUsers,
+        active: activeUsers,
+        inactive: inactiveUsers,
+        growthPercentage: parseFloat(userGrowth),
+      },
+      posts: {
+        total: totalPosts,
+        thisMonth: postsThisMonth,
+      },
+      providerDistribution: distributionWithPercentage,
+      recentRegistrations: recentRegistrations.map(p => ({
+        id: p._id,
+        fullName: p.fullName,
+        email: p.email,
+        providerType: p.providerType,
+        providerSubType: p.providerSubType,
+        verificationStatus: p.adminVerified,
+        createdAt: p.createdAt,
+        avatar: p.profilePhoto,
+      })),
+      quickStats: {
+        online: onlineProviders,
+        pending: pendingProviders,
+      },
+    },
+  });
+});
+
+// @desc    Get quick stats (real-time)
+// @route   GET /api/admin/dashboard/quick-stats
+// @access  Private/Admin
+const getQuickStats = asyncHandler(async (req, res) => {
+  const [online, pending] = await Promise.all([
+    Provider.countDocuments({ isOnline: true, adminVerified: 'active' }),
+    Provider.countDocuments({ adminVerified: 'pending' }),
+  ]);
+  
+  res.json({
+    success: true,
+    data: {
+      online,
+      pending,
+    },
+  });
+});
+
+// @desc    Get all providers (Enhanced with filters)
+// @route   GET /api/admin/providers
+// @access  Private/Admin
+const getAllProvidersEnhanced = asyncHandler(async (req, res) => {
+  const {
+    page = 1,
+    limit = 15,
+    status = 'all',
+    providerType = 'all',
+    search = '',
+    city = '',
+    isActive = '',
+    sortBy = 'createdAt',
+    sortOrder = 'desc',
+  } = req.query;
+  
+  const query = {};
+  
+  // Status filter (map to adminVerified)
+  if (status && status !== 'all') {
+    if (status === 'pending') query.adminVerified = 'pending';
+    else if (status === 'approved') query.adminVerified = 'active';
+    else if (status === 'rejected') query.adminVerified = 'inactive';
+  }
+  
+  // Provider type filter
+  if (providerType && providerType !== 'all') {
+    query.providerType = providerType;
+  }
+  
+  // Search filter
+  if (search) {
+    query.$or = [
+      { fullName: { $regex: search, $options: 'i' } },
+      { email: { $regex: search, $options: 'i' } },
+      { phoneNumber: { $regex: search, $options: 'i' } },
+    ];
+  }
+  
+  // City filter
+  if (city) {
+    query.city = { $regex: city, $options: 'i' };
+  }
+  
+  // Active status filter
+  if (isActive !== '') {
+    query.isActive = isActive === 'true';
+  }
+  
+  const skip = (parseInt(page) - 1) * parseInt(limit);
+  const sort = { [sortBy]: sortOrder === 'asc' ? 1 : -1 };
+  
+  const [providers, total] = await Promise.all([
+    Provider.find(query)
+      .sort(sort)
+      .skip(skip)
+      .limit(parseInt(limit))
+      .select('-password -emailVerificationToken -refreshToken'),
+    Provider.countDocuments(query),
+  ]);
+  
+  res.json({
+    success: true,
+    providers: providers.map(p => ({
+      id: p._id,
+      _id: p._id,
+      email: p.email,
+      fullName: p.fullName,
+      phoneNumber: p.phoneNumber,
+      providerType: p.providerType,
+      providerSubType: p.providerSubType,
+      specialty: p.specialty,
+      experience: p.experience,
+      briefDescription: p.briefDescription,
+      rate: p.rate,
+      consultationFee: p.consultationFee,
+      professionalName: p.professionalName,
+      city: p.city,
+      address: p.address,
+      idNumber: p.idNumber,
+      documents: p.documents,
+      profileComplete: p.profileComplete,
+      emailVerified: p.emailVerified === 'active',
+      verificationStatus: p.adminVerified === 'active' ? 'approved' : p.adminVerified === 'inactive' ? 'rejected' : 'pending',
+      rejectionReason: p.rejectionReason,
+      isActive: p.isActive,
+      isOnline: p.isOnline,
+      ratings: p.ratings,
+      createdAt: p.createdAt,
+      updatedAt: p.updatedAt,
+    })),
+    pagination: {
+      page: parseInt(page),
+      limit: parseInt(limit),
+      total,
+      pages: Math.ceil(total / parseInt(limit)),
+    },
+  });
+});
+
+// @desc    Get pending providers
+// @route   GET /api/admin/providers/pending
+// @access  Private/Admin
+const getPendingProvidersEnhanced = asyncHandler(async (req, res) => {
+  const {
+    page = 1,
+    limit = 10,
+    providerType = 'all',
+  } = req.query;
+  
+  const query = { adminVerified: 'pending' };
+  
+  if (providerType && providerType !== 'all') {
+    query.providerType = providerType;
+  }
+  
+  const skip = (parseInt(page) - 1) * parseInt(limit);
+  
+  const [providers, total] = await Promise.all([
+    Provider.find(query)
+      .sort({ createdAt: -1 })
+      .skip(skip)
+      .limit(parseInt(limit))
+      .select('-password -emailVerificationToken -refreshToken'),
+    Provider.countDocuments(query),
+  ]);
+  
+  res.json({
+    success: true,
+    providers: providers.map(p => ({
+      id: p._id,
+      fullName: p.fullName,
+      email: p.email,
+      phoneNumber: p.phoneNumber,
+      providerType: p.providerType,
+      providerSubType: p.providerSubType,
+      experience: p.experience,
+      briefDescription: p.briefDescription,
+      rate: p.rate,
+      city: p.city,
+      idNumber: p.idNumber,
+      documents: p.documents,
+      verificationStatus: 'pending',
+      createdAt: p.createdAt,
+    })),
+    pagination: {
+      page: parseInt(page),
+      limit: parseInt(limit),
+      total,
+      pages: Math.ceil(total / parseInt(limit)),
+    },
+    count: total,
+  });
+});
+
+// @desc    Get provider details
+// @route   GET /api/admin/providers/:providerId
+// @access  Private/Admin
+const getProviderDetails = asyncHandler(async (req, res) => {
+  const provider = await Provider.findById(req.params.providerId)
+    .select('-password -emailVerificationToken -refreshToken');
+  
+  if (!provider) {
+    res.status(404);
+    throw new Error('Provider not found');
+  }
+  
+  res.json({
+    success: true,
+    data: {
+      id: provider._id,
+      email: provider.email,
+      fullName: provider.fullName,
+      phoneNumber: provider.phoneNumber,
+      providerType: provider.providerType,
+      providerSubType: provider.providerSubType,
+      specialty: provider.specialty,
+      experience: provider.experience,
+      briefDescription: provider.briefDescription,
+      consultationFee: provider.consultationFee,
+      rate: provider.rate,
+      city: provider.city,
+      address: provider.address,
+      idNumber: provider.idNumber,
+      documents: provider.documents,
+      verificationStatus: provider.adminVerified === 'active' ? 'approved' : provider.adminVerified === 'inactive' ? 'rejected' : 'pending',
+      rejectionReason: provider.rejectionReason,
+      isActive: provider.isActive,
+      createdAt: provider.createdAt,
+    },
+  });
+});
+
+// @desc    Approve provider (Updated)
+// @route   PUT /api/admin/providers/:providerId/approve
+// @access  Private/Admin
+const approveProviderEnhanced = asyncHandler(async (req, res) => {
+  const { adminNotes } = req.body;
+  const provider = await Provider.findById(req.params.providerId);
+  
+  if (!provider) {
+    res.status(404);
+    throw new Error('Provider not found');
+  }
+  
+  provider.adminVerified = 'active';
+  provider.verificationStatus = 'approved';
+  provider.isVerified = true;
+  provider.canLogin = true;
+  provider.approvedAt = new Date();
+  provider.approvedBy = req.user._id;
+  if (adminNotes) provider.adminNotes = adminNotes;
+  
+  await provider.save();
+  
+  // Log activity
+  req.user.logActivity('approve_provider', provider._id, 'Provider', 
+    `Approved provider: ${provider.fullName}`);
+  await req.user.save();
+  
+  // Send approval email
+  try {
+    await sendEmail({
+      email: provider.email,
+      subject: 'Application Approved - Welcome to MetroMatrix!',
+      html: `
+        <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto;">
+          <h2 style="color: #10b981;">Congratulations! Your Application is Approved</h2>
+          <p>Dear ${provider.fullName},</p>
+          <p>We're excited to inform you that your application has been approved! You can now log in and start using MetroMatrix.</p>
+          <p>You can now access all features and start offering your services to our users.</p>
+          <p>If you have any questions, please don't hesitate to contact our support team.</p>
+          <p>Best regards,<br/>The MetroMatrix Team</p>
+        </div>
+      `,
+    });
+  } catch (error) {
+    console.error('Error sending approval email:', error);
+  }
+  
+  res.json({
+    success: true,
+    message: 'Provider approved successfully',
+    data: {
+      id: provider._id,
+      verificationStatus: 'approved',
+      approvedAt: provider.approvedAt,
+      approvedBy: req.user._id,
+    },
+  });
+});
+
+// @desc    Reject provider (Updated)
+// @route   PUT /api/admin/providers/:providerId/reject
+// @access  Private/Admin
+const rejectProviderEnhanced = asyncHandler(async (req, res) => {
+  const { reason, adminNotes } = req.body;
+  
+  if (!reason) {
+    res.status(400);
+    throw new Error('Rejection reason is required');
+  }
+  
+  const provider = await Provider.findById(req.params.providerId);
+  
+  if (!provider) {
+    res.status(404);
+    throw new Error('Provider not found');
+  }
+  
+  provider.adminVerified = 'inactive';
+  provider.verificationStatus = 'rejected';
+  provider.rejectionReason = reason;
+  provider.rejectedAt = new Date();
+  provider.rejectedBy = req.user._id;
+  if (adminNotes) provider.adminNotes = adminNotes;
+  
+  await provider.save();
+  
+  // Log activity
+  req.user.logActivity('reject_provider', provider._id, 'Provider', 
+    `Rejected provider: ${provider.fullName}. Reason: ${reason}`);
+  await req.user.save();
+  
+  // Send rejection email
+  try {
+    await sendEmail({
+      email: provider.email,
+      subject: 'Application Update - MetroMatrix',
+      html: `
+        <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto;">
+          <h2 style="color: #ef4444;">Application Status Update</h2>
+          <p>Dear ${provider.fullName},</p>
+          <p>Thank you for your interest in joining MetroMatrix. After careful review, we are unable to approve your application at this time.</p>
+          <p><strong>Reason:</strong> ${reason}</p>
+          <p>You may resubmit your application after addressing the issues mentioned above.</p>
+          <p>If you have any questions, please contact our support team.</p>
+          <p>Best regards,<br/>The MetroMatrix Team</p>
+        </div>
+      `,
+    });
+  } catch (error) {
+    console.error('Error sending rejection email:', error);
+  }
+  
+  res.json({
+    success: true,
+    message: 'Provider rejected successfully',
+    data: {
+      id: provider._id,
+      verificationStatus: 'rejected',
+      rejectionReason: reason,
+      rejectedAt: provider.rejectedAt,
+      rejectedBy: req.user._id,
+    },
+  });
+});
+
+// @desc    Delete provider
+// @route   DELETE /api/admin/providers/:providerId
+// @access  Private/Admin
+const deleteProvider = asyncHandler(async (req, res) => {
+  const provider = await Provider.findById(req.params.providerId);
+  
+  if (!provider) {
+    res.status(404);
+    throw new Error('Provider not found');
+  }
+  
+  await Provider.deleteOne({ _id: provider._id });
+  
+  // Log activity
+  req.user.logActivity('delete_provider', provider._id, 'Provider', 
+    `Deleted provider: ${provider.fullName}`);
+  await req.user.save();
+  
+  res.json({
+    success: true,
+    message: 'Provider deleted successfully',
+  });
+});
+
+// @desc    Get all users (Enhanced)
+// @route   GET /api/admin/users
+// @access  Private/Admin
+const getAllUsersEnhanced = asyncHandler(async (req, res) => {
+  const {
+    page = 1,
+    limit = 15,
+    search = '',
+    isActive = '',
+    isVerified = '',
+    sortBy = 'createdAt',
+    sortOrder = 'desc',
+  } = req.query;
+  
+  const query = {};
+  
+  // Search filter
+  if (search) {
+    query.$or = [
+      { fullName: { $regex: search, $options: 'i' } },
+      { email: { $regex: search, $options: 'i' } },
+      { phoneNumber: { $regex: search, $options: 'i' } },
+    ];
+  }
+  
+  // Active status filter
+  if (isActive !== '') {
+    query.isActive = isActive === 'true';
+  }
+  
+  // Verified status filter
+  if (isVerified !== '') {
+    query.isVerified = isVerified === 'true';
+  }
+  
+  const skip = (parseInt(page) - 1) * parseInt(limit);
+  const sort = { [sortBy]: sortOrder === 'asc' ? 1 : -1 };
+  
+  const [users, total] = await Promise.all([
+    User.find(query)
+      .sort(sort)
+      .skip(skip)
+      .limit(parseInt(limit))
+      .select('-password -refreshToken'),
+    User.countDocuments(query),
+  ]);
+  
+  res.json({
+    success: true,
+    users: users.map(u => ({
+      id: u._id,
+      _id: u._id,
+      fullName: u.fullName,
+      email: u.email,
+      phoneNumber: u.phoneNumber,
+      profileImage: u.profileImage,
+      isActive: u.isActive,
+      isVerified: u.isVerified,
+      createdAt: u.createdAt,
+      updatedAt: u.updatedAt,
+      lastLogin: u.lastLoginDate,
+      address: u.address,
+    })),
+    pagination: {
+      page: parseInt(page),
+      limit: parseInt(limit),
+      total,
+      pages: Math.ceil(total / parseInt(limit)),
+    },
+  });
+});
+
+// @desc    Get user details
+// @route   GET /api/admin/users/:userId
+// @access  Private/Admin
+const getUserDetails = asyncHandler(async (req, res) => {
+  const user = await User.findById(req.params.userId)
+    .select('-password -refreshToken');
+  
+  if (!user) {
+    res.status(404);
+    throw new Error('User not found');
+  }
+  
+  // Get additional stats
+  const [bookingsCount, reviewsCount] = await Promise.all([
+    Post.countDocuments({ author: user._id }), // Using posts as bookings proxy
+    0, // Placeholder for reviews
+  ]);
+  
+  res.json({
+    success: true,
+    data: {
+      id: user._id,
+      fullName: user.fullName,
+      email: user.email,
+      phoneNumber: user.phoneNumber,
+      profileImage: user.profileImage,
+      isActive: user.isActive,
+      isVerified: user.isVerified,
+      createdAt: user.createdAt,
+      lastLogin: user.lastLoginDate,
+      address: user.address,
+      bookingsCount,
+      reviewsCount,
+    },
+  });
+});
+
+// @desc    Activate user
+// @route   PUT /api/admin/users/:userId/activate
+// @access  Private/Admin
+const activateUserEnhanced = asyncHandler(async (req, res) => {
+  const user = await User.findById(req.params.userId);
+  
+  if (!user) {
+    res.status(404);
+    throw new Error('User not found');
+  }
+  
+  user.isActive = true;
+  await user.save();
+  
+  // Log activity
+  req.user.logActivity('activate_user', user._id, 'User', 
+    `Activated user: ${user.fullName}`);
+  await req.user.save();
+  
+  res.json({
+    success: true,
+    message: 'User activated successfully',
+    data: {
+      id: user._id,
+      isActive: true,
+    },
+  });
+});
+
+// @desc    Deactivate user
+// @route   PUT /api/admin/users/:userId/deactivate
+// @access  Private/Admin
+const deactivateUserEnhanced = asyncHandler(async (req, res) => {
+  const { reason } = req.body;
+  const user = await User.findById(req.params.userId);
+  
+  if (!user) {
+    res.status(404);
+    throw new Error('User not found');
+  }
+  
+  user.isActive = false;
+  await user.save();
+  
+  // Log activity
+  req.user.logActivity('deactivate_user', user._id, 'User', 
+    `Deactivated user: ${user.fullName}${reason ? '. Reason: ' + reason : ''}`);
+  await req.user.save();
+  
+  res.json({
+    success: true,
+    message: 'User deactivated successfully',
+    data: {
+      id: user._id,
+      isActive: false,
+    },
+  });
+});
+
+// @desc    Delete user
+// @route   DELETE /api/admin/users/:userId
+// @access  Private/Admin
+const deleteUser = asyncHandler(async (req, res) => {
+  const user = await User.findById(req.params.userId);
+  
+  if (!user) {
+    res.status(404);
+    throw new Error('User not found');
+  }
+  
+  await User.deleteOne({ _id: user._id });
+  
+  // Log activity
+  req.user.logActivity('delete_user', user._id, 'User', 
+    `Deleted user: ${user.fullName}`);
+  await req.user.save();
+  
+  res.json({
+    success: true,
+    message: 'User deleted successfully',
+  });
+});
+
 module.exports = {
   adminLogin,
   getDashboardStats,
@@ -1081,4 +1857,22 @@ module.exports = {
   getProviderSubmissionById,
   approveProviderSubmission,
   rejectProviderSubmission,
+  // New enhanced endpoints
+  adminLogout,
+  getAdminProfile,
+  updateAdminProfile,
+  changeAdminPassword,
+  getDashboardStatsEnhanced,
+  getQuickStats,
+  getAllProvidersEnhanced,
+  getPendingProvidersEnhanced,
+  getProviderDetails,
+  approveProviderEnhanced,
+  rejectProviderEnhanced,
+  deleteProvider,
+  getAllUsersEnhanced,
+  getUserDetails,
+  activateUserEnhanced,
+  deactivateUserEnhanced,
+  deleteUser,
 };

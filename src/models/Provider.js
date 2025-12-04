@@ -64,6 +64,10 @@ const providerSchema = new mongoose.Schema(
       maxlength: 500,
     },
     rate: String,
+    consultationFee: {
+      type: Number,
+      default: 0,
+    },
 
     // Business Information
     professionalName: String, // For doctors - clinic name
@@ -202,7 +206,16 @@ const providerSchema = new mongoose.Schema(
       default: 0,
     },
     rejectionReason: String,
+    adminNotes: String,
     verifiedBy: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: 'Admin',
+    },
+    approvedBy: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: 'Admin',
+    },
+    rejectedBy: {
       type: mongoose.Schema.Types.ObjectId,
       ref: 'Admin',
     },
@@ -224,6 +237,14 @@ const providerSchema = new mongoose.Schema(
       default: false,
     },
     
+    // Online Status
+    isOnline: {
+      type: Boolean,
+      default: false,
+    },
+    lastSeen: {
+      type: Date,
+    },
 
     // Availability
     availability: {

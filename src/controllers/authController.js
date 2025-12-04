@@ -171,6 +171,10 @@ const registerProvider = asyncHandler(async (req, res) => {
       verificationStatus: 'pending',
     });
     
+    // 🔔 Create notification for admin panel
+    const NotificationService = require('../services/notificationService');
+    await NotificationService.notifyProviderRegistration(provider);
+    
     // Create verification URL
     const baseUrl = process.env.API_URL || process.env.CLIENT_URL || 'http://localhost:5000';
     const verificationUrl = `${baseUrl}/verify-email?token=${token}&type=provider`;
