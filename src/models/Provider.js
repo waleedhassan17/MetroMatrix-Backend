@@ -152,6 +152,17 @@ const providerSchema = new mongoose.Schema(
     facebookId: String,
 
     // Status & Onboarding (Updated Flow - Mirrors User Flow)
+    status: {
+      type: String,
+      enum: [
+        'pending_email_verification',  // Just signed up
+        'email_verified',              // Email verified, profile not submitted
+        'pending_review',              // Profile submitted, waiting for admin
+        'approved',                    // Admin approved
+        'rejected'                     // Admin rejected
+      ],
+      default: 'pending_email_verification',
+    },
     onboardingStatus: {
       type: String,
       enum: ['pending_email', 'pending_documents', 'pending_approval', 'approved', 'rejected'],
@@ -221,6 +232,7 @@ const providerSchema = new mongoose.Schema(
     },
     approvedAt: Date,
     rejectedAt: Date,
+    submittedAt: Date, // When profile was submitted for review
     
     // Legacy fields (kept for backward compatibility)
     verificationStatus: {

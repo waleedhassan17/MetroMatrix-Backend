@@ -757,61 +757,42 @@ const checkApprovalStatus = asyncHandler(async (req, res) => {
     });
   }
 
-  // Determine status based on new flags
-  let status = 'pending_approval';
-  let message = 'Your application is under review by our admin team.';
-
-  if (provider.adminVerified === 'active') {
-    status = 'approved';
-    message = 'Your account has been approved! You can now sign in.';
-  } else if (provider.adminVerified === 'inactive') {
-    status = 'rejected';
-    message = 'Your application was not approved.';
-  } else if (provider.emailVerified === 'pending') {
-    status = 'pending_email';
-    message = 'Please verify your email first.';
-  } else if (provider.emailVerified === 'active' && !provider.profileComplete) {
-    status = 'email_verified';
-    message = 'Please complete your profile.';
-  } else if (provider.adminVerified === 'pending') {
-    status = 'pending_approval';
-    message = 'Your application is under review by our admin team.';
-  }
+  // ✅ Use the new status field directly
+  const statusMessages = {
+    'pending_email_verification': 'Please verify your email',
+    'email_verified': 'Email verified. Please submit your profile',
+    'pending_review': 'Your profile is under review',
+    'approved': 'Your account has been approved! You can now sign in.',
+    'rejected': 'Your application was not approved'
+  };
 
   const response = {
     success: true,
-    status,
-    message,
+    status: provider.status,
+    message: statusMessages[provider.status] || 'Unknown status',
     provider: {
-      _id: provider._id,
+      id: provider._id,
       fullName: provider.fullName,
       email: provider.email,
       providerType: provider.providerType,
-      emailVerified: provider.emailVerified, // ✅ New flag
-      adminVerified: provider.adminVerified, // ✅ New flag
+      emailVerified: provider.emailVerified,
+      adminVerified: provider.adminVerified,
+      status: provider.status
     }
   };
 
+  if (provider.submittedAt) {
+    response.submittedAt = provider.submittedAt;
+  }
+
   // Add additional details based on status
-  if (status === 'approved') {
+  if (provider.status === 'approved') {
     response.approvedAt = provider.approvedAt;
-    if (provider.verifiedBy) {
-      response.approvedBy = {
-        adminId: provider.verifiedBy._id,
-        adminName: provider.verifiedBy.fullName
-      };
-    }
-  } else if (status === 'rejected') {
+  }
+
+  if (provider.status === 'rejected') {
     response.rejectionReason = provider.rejectionReason || 'No reason provided';
     response.rejectedAt = provider.rejectedAt;
-    if (provider.verifiedBy) {
-      response.rejectedBy = {
-        adminId: provider.verifiedBy._id,
-        adminName: provider.verifiedBy.fullName
-      };
-    }
-  } else if (status === 'pending_approval') {
-    response.submittedAt = provider.submittedAt;
   }
 
   res.json(response);

@@ -162,6 +162,7 @@ const registerProvider = asyncHandler(async (req, res) => {
       password, // Will be hashed by pre-save hook
       emailVerified: 'pending', // ✅ New flag system
       adminVerified: 'pending', // ✅ New flag system
+      status: 'pending_email_verification', // ✅ New status field
       onboardingStatus: 'pending_email',
       emailVerificationToken: hashedToken,
       emailVerificationExpire: expireTime,
@@ -191,18 +192,16 @@ const registerProvider = asyncHandler(async (req, res) => {
     
     res.status(201).json({
       success: true,
-      message: 'Provider registered successfully. Please verify your email.',
+      message: 'Registration successful. Please verify your email.',
       provider: {
-        _id: provider._id,
+        id: provider._id,
         email: provider.email,
-        phoneNumber: provider.phoneNumber,
         fullName: provider.fullName,
-        emailVerified: 'pending', // ✅ New flag
-        adminVerified: 'pending', // ✅ New flag
-        status: 'pending_email_verification',
-        createdAt: provider.createdAt
-      },
-      // ❌ NO TOKENS - provider needs email verification + admin approval
+        emailVerified: 'pending',
+        adminVerified: 'pending',
+        status: 'pending_email_verification'
+      }
+      // ⚠️ IMPORTANT: NO TOKENS - provider cannot login until approved
     });
   } catch (error) {
     console.error('❌ Provider registration error:', error);
@@ -1123,6 +1122,7 @@ const verifyUserEmail = asyncHandler(async (req, res) => {
 // @desc    Verify provider email with token - PROVIDER ONLY
 // @route   POST /api/auth/provider/verify-email
 // @access  Public
+// ⚠️ UPDATED: NO TOKENS - provider must submit profile and get admin approval
 const verifyProviderEmail = asyncHandler(async (req, res) => {
   const { token } = req.body;
 
@@ -1134,64 +1134,41 @@ const verifyProviderEmail = asyncHandler(async (req, res) => {
   try {
     const hashedToken = crypto.createHash('sha256').update(token).digest('hex');
     
-    // Find pending PROVIDER signup with valid token
-    const pending = await PendingSignup.findOne({
-      verificationToken: hashedToken,
-      verificationTokenExpire: { $gt: Date.now() },
-      userType: 'provider',
-    }).select('+password');
+    // Find provider with valid token
+    const provider = await Provider.findOne({
+      emailVerificationToken: hashedToken,
+      emailVerificationExpire: { $gt: Date.now() },
+    });
 
-    if (!pending) {
+    if (!provider) {
       res.status(400);
       throw new Error('Invalid or expired verification token. This link may have expired.');
     }
 
-    // Create Provider account with login enabled
-    const provider = await Provider.create({
-      fullName: pending.fullName,
-      phoneNumber: pending.phoneNumber,
-      email: pending.email,
-      password: pending.password,
-      emailVerified: true,
-      isVerified: true,
-      canLogin: true, // ✅ Provider CAN login after email verification
-      verificationStatus: 'pending', // Still pending admin approval for full access
-    });
-
-    // ✅ Generate auth tokens for provider (can login, but limited until approved)
-    const tokens = generateTokens(provider._id, {
-      userType: 'provider',
-      email: provider.email,
-      tokenType: 'FULL',
-      onboardingStatus: provider.onboardingStatus
-    });
-    provider.refreshToken = tokens.refreshToken;
-    provider.lastLoginDate = Date.now();
+    // ✅ Update provider email verification status
+    provider.emailVerified = 'active'; // ✅ Email verified
+    provider.status = 'email_verified'; // ✅ New status
+    provider.emailVerificationToken = undefined;
+    provider.emailVerificationExpire = undefined;
+    provider.emailVerificationAttempts = 0;
+    provider.onboardingStatus = 'pending_documents';
     await provider.save();
 
-    // Delete pending signup record
-    await PendingSignup.deleteOne({ _id: pending._id });
-
-    console.log(`✅ Provider verified and created (email verified, pending admin approval): ${provider.email}`);
+    console.log(`✅ Provider email verified: ${provider.email}`);
 
     res.json({
       success: true,
-      message: 'Email verified successfully! You can now login. Your account is pending admin approval for full provider features.',
-      isVerified: true,
+      message: 'Email verified successfully',
       emailVerified: true,
-      canLogin: true,
-      verificationStatus: 'pending',
       provider: {
         id: provider._id,
-        fullName: provider.fullName,
         email: provider.email,
-        phoneNumber: provider.phoneNumber,
-        emailVerified: provider.emailVerified,
-        canLogin: provider.canLogin,
-        verificationStatus: provider.verificationStatus,
-      },
-      // ✅ Return auth tokens - provider can login with limited access
-      ...tokens,
+        fullName: provider.fullName,
+        emailVerified: 'active',
+        adminVerified: 'pending',
+        status: 'email_verified'
+      }
+      // ⚠️ IMPORTANT: NO TOKENS - provider must submit profile and get admin approval before login
     });
   } catch (error) {
     console.error('❌ Provider verification error:', error);
