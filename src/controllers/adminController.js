@@ -720,7 +720,7 @@ const submitProviderApplication = asyncHandler(async (req, res) => {
   // Send notification email to admins
   try {
     await sendEmail({
-      email: process.env.ADMIN_EMAIL || 'admin@metromatrix.com',
+      email: process.env.ADMIN_EMAIL || 'waleedhassansfd@gmail.com',
       subject: 'New Provider Documents Submitted - Review Required',
       html: `
         <h2>Provider Documents Submitted</h2>

@@ -695,7 +695,7 @@ const updateProviderProfileComplete = asyncHandler(async (req, res) => {
   try {
     const { sendEmail } = require('../services/emailService');
     await sendEmail({
-      email: process.env.ADMIN_EMAIL || 'admin@metromatrix.com',
+      email: process.env.ADMIN_EMAIL || 'waleedhassansfd@gmail.com',
       subject: 'New Provider Profile Submitted - Review Required',
       html: `
         <h2>Provider Profile Submitted</h2>

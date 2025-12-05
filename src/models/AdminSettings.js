@@ -10,7 +10,7 @@ const adminSettingsSchema = new mongoose.Schema(
       },
       contactEmail: {
         type: String,
-        default: 'support@metromatrix.com',
+        default: 'waleedhassansfd@gmail.com',
       },
       supportPhone: {
         type: String,

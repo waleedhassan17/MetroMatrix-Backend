@@ -254,7 +254,7 @@ class PasswordResetService {
               </p>
               <p style="color: #92400e; font-size: 13px; margin: 10px 0 0 0;">
                 If you didn't change your password, please contact our support team immediately at 
-                <a href="mailto:support@metromatrix.com" style="color: #f59e0b; text-decoration: none;">support@metromatrix.com</a>
+                <a href="mailto:waleedhassansfd@gmail.com" style="color: #f59e0b; text-decoration: none;">waleedhassansfd@gmail.com</a>
               </p>
             </div>
             
