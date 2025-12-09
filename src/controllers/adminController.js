@@ -1227,10 +1227,12 @@ const changeAdminPassword = asyncHandler(async (req, res) => {
 // @desc    Get dashboard statistics (Enhanced)
 // @route   GET /api/admin/dashboard/stats
 // @access  Private/Admin
+// ✅ UPDATED: Match frontend expected format exactly
 const getDashboardStatsEnhanced = asyncHandler(async (req, res) => {
   const now = new Date();
   const lastMonth = new Date(now.getFullYear(), now.getMonth() - 1, 1);
   const twoMonthsAgo = new Date(now.getFullYear(), now.getMonth() - 2, 1);
+  const thisMonthStart = new Date(now.getFullYear(), now.getMonth(), 1);
   
   // Provider stats
   const [totalProviders, pendingProviders, approvedProviders, rejectedProviders, 
@@ -1248,12 +1250,13 @@ const getDashboardStatsEnhanced = asyncHandler(async (req, res) => {
     : 0;
   
   // User stats
-  const [totalUsers, activeUsers, inactiveUsers, usersLastMonth, usersTwoMonthsAgo] = await Promise.all([
+  const [totalUsers, activeUsers, inactiveUsers, usersLastMonth, usersTwoMonthsAgo, usersThisMonth] = await Promise.all([
     User.countDocuments(),
     User.countDocuments({ isActive: true }),
     User.countDocuments({ isActive: false }),
     User.countDocuments({ createdAt: { $gte: lastMonth } }),
     User.countDocuments({ createdAt: { $gte: twoMonthsAgo, $lt: lastMonth } }),
+    User.countDocuments({ createdAt: { $gte: thisMonthStart } }),
   ]);
   
   const userGrowth = usersTwoMonthsAgo > 0 
@@ -1261,35 +1264,66 @@ const getDashboardStatsEnhanced = asyncHandler(async (req, res) => {
     : 0;
   
   // Post stats
-  const [totalPosts, postsThisMonth] = await Promise.all([
+  const [totalPosts, postsThisMonth, postsLastMonth] = await Promise.all([
     Post.countDocuments(),
-    Post.countDocuments({ createdAt: { $gte: lastMonth } }),
+    Post.countDocuments({ createdAt: { $gte: thisMonthStart } }),
+    Post.countDocuments({ createdAt: { $gte: lastMonth, $lt: thisMonthStart } }),
   ]);
   
-  // Provider distribution
+  const postGrowth = postsLastMonth > 0 
+    ? ((postsThisMonth - postsLastMonth) / postsLastMonth * 100).toFixed(1)
+    : 0;
+  
+  // Provider distribution by type
   const providerDistribution = await Provider.aggregate([
     { $match: { adminVerified: 'active' } },
     { $group: { _id: '$providerType', count: { $sum: 1 } } },
   ]);
   
   const totalApproved = providerDistribution.reduce((sum, item) => sum + item.count, 0);
-  const distributionWithPercentage = providerDistribution.map(item => ({
-    _id: item._id,
+  const byType = providerDistribution.map(item => ({
+    type: item._id,
     count: item.count,
     percentage: totalApproved > 0 ? Math.round((item.count / totalApproved) * 100) : 0,
   }));
   
-  // Recent registrations (last 5 providers)
-  const recentRegistrations = await Provider.find({ adminVerified: 'pending' })
+  // Recent registrations (last 10 pending providers)
+  const recentRegistrations = await Provider.find()
     .sort({ createdAt: -1 })
-    .limit(5)
-    .select('fullName email providerType providerSubType adminVerified createdAt profilePhoto');
+    .limit(10)
+    .select('fullName email providerType providerSubType specialty adminVerified verificationStatus createdAt profilePhoto');
   
   // Quick stats
   const onlineProviders = await Provider.countDocuments({ isOnline: true, adminVerified: 'active' });
   
+  // ✅ Frontend expected format
   res.json({
     success: true,
+    data: {
+      totalUsers,
+      totalProviders,
+      pendingProviders,
+      totalPosts,
+      activeUsers,
+      growth: {
+        users: parseFloat(userGrowth),
+        providers: parseFloat(providerGrowth),
+        posts: parseFloat(postGrowth),
+      },
+      recentRegistrations: recentRegistrations.map(p => ({
+        id: p._id,
+        _id: p._id,
+        fullName: p.fullName,
+        email: p.email,
+        providerType: p.providerType,
+        specialty: p.specialty || null,
+        subType: p.providerSubType || null,
+        verificationStatus: p.verificationStatus || 'pending',
+        createdAt: p.createdAt,
+        avatar: p.profilePhoto || null,
+      })),
+    },
+    // Also include detailed stats for advanced dashboards
     stats: {
       providers: {
         total: totalProviders,
@@ -1297,31 +1331,22 @@ const getDashboardStatsEnhanced = asyncHandler(async (req, res) => {
         approved: approvedProviders,
         rejected: rejectedProviders,
         growthPercentage: parseFloat(providerGrowth),
+        byType,
       },
       users: {
         total: totalUsers,
         active: activeUsers,
         inactive: inactiveUsers,
+        newThisMonth: usersThisMonth,
         growthPercentage: parseFloat(userGrowth),
       },
       posts: {
         total: totalPosts,
         thisMonth: postsThisMonth,
       },
-      providerDistribution: distributionWithPercentage,
-      recentRegistrations: recentRegistrations.map(p => ({
-        id: p._id,
-        fullName: p.fullName,
-        email: p.email,
-        providerType: p.providerType,
-        providerSubType: p.providerSubType,
-        verificationStatus: p.adminVerified,
-        createdAt: p.createdAt,
-        avatar: p.profilePhoto,
-      })),
       quickStats: {
         online: onlineProviders,
-        pending: pendingProviders,
+        pendingReviews: pendingProviders,
       },
     },
   });
@@ -1331,16 +1356,23 @@ const getDashboardStatsEnhanced = asyncHandler(async (req, res) => {
 // @route   GET /api/admin/dashboard/quick-stats
 // @access  Private/Admin
 const getQuickStats = asyncHandler(async (req, res) => {
-  const [online, pending] = await Promise.all([
+  const today = new Date();
+  today.setHours(0, 0, 0, 0);
+  
+  const [online, pending, todayRegistrations, activeProviders] = await Promise.all([
     Provider.countDocuments({ isOnline: true, adminVerified: 'active' }),
     Provider.countDocuments({ adminVerified: 'pending' }),
+    Provider.countDocuments({ createdAt: { $gte: today } }),
+    Provider.countDocuments({ isActive: true, adminVerified: 'active' }),
   ]);
   
   res.json({
     success: true,
-    data: {
+    stats: {
       online,
-      pending,
+      pendingReviews: pending,
+      todayRegistrations,
+      activeProviders,
     },
   });
 });
@@ -1397,14 +1429,23 @@ const getAllProvidersEnhanced = asyncHandler(async (req, res) => {
   const skip = (parseInt(page) - 1) * parseInt(limit);
   const sort = { [sortBy]: sortOrder === 'asc' ? 1 : -1 };
   
-  const [providers, total] = await Promise.all([
+  // Get providers and total count
+  const [providers, total, totalActive, totalInactive, totalPending, totalApproved, totalRejected] = await Promise.all([
     Provider.find(query)
       .sort(sort)
       .skip(skip)
       .limit(parseInt(limit))
       .select('-password -emailVerificationToken -refreshToken'),
     Provider.countDocuments(query),
+    Provider.countDocuments({ isActive: true }),
+    Provider.countDocuments({ isActive: false }),
+    Provider.countDocuments({ adminVerified: 'pending' }),
+    Provider.countDocuments({ adminVerified: 'active' }),
+    Provider.countDocuments({ adminVerified: 'inactive' }),
   ]);
+  
+  const pages = Math.ceil(total / parseInt(limit));
+  const currentPage = parseInt(page);
   
   res.json({
     success: true,
@@ -1417,30 +1458,47 @@ const getAllProvidersEnhanced = asyncHandler(async (req, res) => {
       providerType: p.providerType,
       providerSubType: p.providerSubType,
       specialty: p.specialty,
+      profession: p.profession,
+      category: p.category,
       experience: p.experience,
       briefDescription: p.briefDescription,
       rate: p.rate,
       consultationFee: p.consultationFee,
       professionalName: p.professionalName,
+      businessName: p.businessName,
       city: p.city,
       address: p.address,
+      coordinates: p.coordinates,
       idNumber: p.idNumber,
       documents: p.documents,
       profileComplete: p.profileComplete,
       emailVerified: p.emailVerified === 'active',
       verificationStatus: p.adminVerified === 'active' ? 'approved' : p.adminVerified === 'inactive' ? 'rejected' : 'pending',
+      adminVerified: p.adminVerified,
       rejectionReason: p.rejectionReason,
       isActive: p.isActive,
       isOnline: p.isOnline,
       ratings: p.ratings,
       createdAt: p.createdAt,
       updatedAt: p.updatedAt,
+      approvedAt: p.approvedAt,
+      approvedBy: p.approvedBy,
     })),
     pagination: {
-      page: parseInt(page),
+      page: currentPage,
       limit: parseInt(limit),
       total,
-      pages: Math.ceil(total / parseInt(limit)),
+      pages,
+      hasNext: currentPage < pages,
+      hasPrev: currentPage > 1,
+    },
+    stats: {
+      total: totalApproved + totalPending + totalRejected,
+      pending: totalPending,
+      approved: totalApproved,
+      rejected: totalRejected,
+      active: totalActive,
+      inactive: totalInactive,
     },
   });
 });
@@ -1514,26 +1572,40 @@ const getProviderDetails = asyncHandler(async (req, res) => {
   
   res.json({
     success: true,
-    data: {
+    provider: {
       id: provider._id,
+      _id: provider._id,
       email: provider.email,
       fullName: provider.fullName,
       phoneNumber: provider.phoneNumber,
       providerType: provider.providerType,
       providerSubType: provider.providerSubType,
       specialty: provider.specialty,
+      profession: provider.profession,
+      category: provider.category,
       experience: provider.experience,
       briefDescription: provider.briefDescription,
       consultationFee: provider.consultationFee,
       rate: provider.rate,
+      professionalName: provider.professionalName,
+      businessName: provider.businessName,
       city: provider.city,
       address: provider.address,
+      coordinates: provider.coordinates,
       idNumber: provider.idNumber,
       documents: provider.documents,
+      ratings: provider.ratings,
+      profileComplete: provider.profileComplete,
+      emailVerified: provider.emailVerified === 'active',
       verificationStatus: provider.adminVerified === 'active' ? 'approved' : provider.adminVerified === 'inactive' ? 'rejected' : 'pending',
+      adminVerified: provider.adminVerified,
       rejectionReason: provider.rejectionReason,
       isActive: provider.isActive,
+      isOnline: provider.isOnline,
       createdAt: provider.createdAt,
+      updatedAt: provider.updatedAt,
+      approvedAt: provider.approvedAt,
+      approvedBy: provider.approvedBy,
     },
   });
 });
@@ -1727,14 +1799,20 @@ const getAllUsersEnhanced = asyncHandler(async (req, res) => {
   const skip = (parseInt(page) - 1) * parseInt(limit);
   const sort = { [sortBy]: sortOrder === 'asc' ? 1 : -1 };
   
-  const [users, total] = await Promise.all([
+  // Get users, total, and stats
+  const [users, total, totalActive, totalInactive] = await Promise.all([
     User.find(query)
       .sort(sort)
       .skip(skip)
       .limit(parseInt(limit))
       .select('-password -refreshToken'),
     User.countDocuments(query),
+    User.countDocuments({ isActive: true }),
+    User.countDocuments({ isActive: false }),
   ]);
+  
+  const pages = Math.ceil(total / parseInt(limit));
+  const currentPage = parseInt(page);
   
   res.json({
     success: true,
@@ -1744,19 +1822,27 @@ const getAllUsersEnhanced = asyncHandler(async (req, res) => {
       fullName: u.fullName,
       email: u.email,
       phoneNumber: u.phoneNumber,
-      profileImage: u.profileImage,
+      profileImage: u.profileImage || u.profilePhoto,
       isActive: u.isActive,
       isVerified: u.isVerified,
+      emailVerified: u.emailVerified,
+      address: u.address,
       createdAt: u.createdAt,
       updatedAt: u.updatedAt,
       lastLogin: u.lastLoginDate,
-      address: u.address,
     })),
     pagination: {
-      page: parseInt(page),
+      page: currentPage,
       limit: parseInt(limit),
       total,
-      pages: Math.ceil(total / parseInt(limit)),
+      pages,
+      hasNext: currentPage < pages,
+      hasPrev: currentPage > 1,
+    },
+    stats: {
+      total: totalActive + totalInactive,
+      active: totalActive,
+      inactive: totalInactive,
     },
   });
 });
@@ -1774,26 +1860,27 @@ const getUserDetails = asyncHandler(async (req, res) => {
   }
   
   // Get additional stats
-  const [bookingsCount, reviewsCount] = await Promise.all([
-    Post.countDocuments({ author: user._id }), // Using posts as bookings proxy
-    0, // Placeholder for reviews
+  const [postsCount] = await Promise.all([
+    Post.countDocuments({ author: user._id }),
   ]);
   
   res.json({
     success: true,
-    data: {
+    user: {
       id: user._id,
+      _id: user._id,
       fullName: user.fullName,
       email: user.email,
       phoneNumber: user.phoneNumber,
-      profileImage: user.profileImage,
+      profileImage: user.profileImage || user.profilePhoto,
       isActive: user.isActive,
       isVerified: user.isVerified,
-      createdAt: user.createdAt,
-      lastLogin: user.lastLoginDate,
+      emailVerified: user.emailVerified,
       address: user.address,
-      bookingsCount,
-      reviewsCount,
+      createdAt: user.createdAt,
+      updatedAt: user.updatedAt,
+      lastLogin: user.lastLoginDate,
+      postsCount,
     },
   });
 });

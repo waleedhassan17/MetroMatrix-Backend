@@ -43,6 +43,9 @@ const getNotifications = asyncHandler(async (req, res) => {
     Notification.getUnreadCount(req.user._id),
   ]);
   
+  const pages = Math.ceil(total / parseInt(limit));
+  const currentPage = parseInt(page);
+  
   res.json({
     success: true,
     notifications: notifications.map(n => ({
@@ -57,10 +60,12 @@ const getNotifications = asyncHandler(async (req, res) => {
       readAt: n.readAt,
     })),
     pagination: {
-      page: parseInt(page),
+      page: currentPage,
       limit: parseInt(limit),
       total,
-      pages: Math.ceil(total / parseInt(limit)),
+      pages,
+      hasNext: currentPage < pages,
+      hasPrev: currentPage > 1,
     },
     unreadCount,
   });
@@ -74,9 +79,7 @@ const getUnreadCount = asyncHandler(async (req, res) => {
   
   res.json({
     success: true,
-    data: {
-      count,
-    },
+    unreadCount: count,
   });
 });
 

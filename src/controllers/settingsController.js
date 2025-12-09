@@ -9,11 +9,48 @@ const getSettings = asyncHandler(async (req, res) => {
   
   res.json({
     success: true,
-    data: {
-      general: settings.general,
-      notifications: settings.notifications,
-      security: settings.security,
-      appearance: settings.appearance,
+    settings: {
+      general: {
+        appName: settings.general.platformName || 'MetroMatrix',
+        appVersion: '1.0.0',
+        platformName: settings.general.platformName,
+        contactEmail: settings.general.contactEmail,
+        supportPhone: settings.general.supportPhone,
+        autoApproveProviders: settings.general.autoApproveProviders,
+        requireEmailVerification: settings.general.requireEmailVerification,
+        maintenanceMode: settings.general.maintenanceMode,
+        maintenanceMessage: '',
+      },
+      notifications: {
+        emailNotifications: settings.notifications.emailNotifications,
+        pushNotifications: settings.notifications.pushNotifications,
+        smsNotifications: false,
+        notifyOnNewProvider: settings.notifications.providerRegistrations,
+        notifyOnNewUser: settings.notifications.userRegistrations,
+        dailyDigest: false,
+        providerRegistrations: settings.notifications.providerRegistrations,
+        userRegistrations: settings.notifications.userRegistrations,
+        systemAlerts: settings.notifications.systemAlerts,
+        weeklyReports: settings.notifications.weeklyReports,
+      },
+      providers: {
+        autoApproveProviders: settings.general.autoApproveProviders,
+        requireDocumentVerification: true,
+        maxPendingDays: 7,
+        allowedProviderTypes: ['doctor', 'home_service', 'vendor'],
+      },
+      security: {
+        sessionTimeout: settings.security.sessionTimeout,
+        maxLoginAttempts: settings.security.maxLoginAttempts,
+        requireTwoFactor: false,
+        twoFactorEnabled: settings.security.twoFactorEnabled,
+        passwordMinLength: 8,
+        passwordExpiry: settings.security.passwordExpiry,
+      },
+      appearance: {
+        theme: settings.appearance.theme,
+        primaryColor: settings.appearance.primaryColor,
+      },
     },
   });
 });
