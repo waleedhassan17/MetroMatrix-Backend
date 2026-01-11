@@ -198,11 +198,41 @@ class EmailVerificationService {
    */
   static async checkVerificationStatus(email, userType = 'user') {
     if (userType === 'provider') {
-      // ✅ For providers: Check EmailVerifications table (not Providers table)
-      // Providers don't exist in database until admin approves
+      // ✅ For providers: Check BOTH Provider table AND EmailVerification table
+      // Provider records are created during /provider/register with verification tokens
+      // EmailVerification records are created during /provider/send-verification-email
+      
+      // First, check if provider exists in Provider collection (main registration flow)
+      const provider = await Provider.findOne({ email: email.toLowerCase() });
+      
+      if (provider) {
+        // Provider found in main collection - check their verification status
+        console.log('✅ Provider found in database:', provider._id, provider.email);
+        const isVerified = provider.emailVerified === 'active' || provider.emailVerified === true;
+        return {
+          success: true,
+          emailVerified: isVerified,
+          isVerified: isVerified,
+          canLogin: provider.canLogin || false,
+          verificationPending: !isVerified,
+          message: isVerified
+            ? 'Email verified. Please complete your profile submission.'
+            : 'Email not verified yet. Please check your email.',
+          provider: {
+            _id: provider._id,
+            email: provider.email,
+            fullName: provider.fullName,
+            emailVerified: provider.emailVerified,
+            adminVerified: provider.adminVerified,
+            status: provider.status,
+          }
+        };
+      }
+      
+      // Fallback: Check EmailVerification collection (standalone verification flow)
       const EmailVerification = require('../models/EmailVerification');
       const verification = await EmailVerification.findOne({
-        email,
+        email: email.toLowerCase(),
         userType: 'provider'
       });
 

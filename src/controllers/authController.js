@@ -128,89 +128,149 @@ const loginUser = asyncHandler(async (req, res) => {
 // @route   POST /api/auth/provider/register
 // @access  Public
 // ✅ UPDATED: Creates Provider immediately with emailVerified=false, isApproved=false
+// Enhanced with robust error handling - email failure won't fail registration
 const registerProvider = asyncHandler(async (req, res) => {
   const { fullName, phoneNumber, email, password } = req.body;
   
-  // Check if provider already exists
-  const providerExists = await Provider.findOne({ email: email.toLowerCase() });
-  if (providerExists) {
+  // 1. Validate input first
+  if (!fullName || !phoneNumber || !email || !password) {
+    console.log('❌ Registration failed - missing fields:', { fullName: !!fullName, phoneNumber: !!phoneNumber, email: !!email, password: !!password });
     return res.status(400).json({
       success: false,
-      message: 'Email already registered',
+      message: 'All fields are required: fullName, email, phoneNumber, password',
+      error: 'MISSING_FIELDS'
+    });
+  }
+
+  const normalizedEmail = email.toLowerCase().trim();
+  console.log('📝 Provider registration attempt for:', normalizedEmail);
+  
+  // 2. Check if provider already exists
+  const providerExists = await Provider.findOne({ email: normalizedEmail });
+  if (providerExists) {
+    console.log('❌ Registration failed - email already exists:', normalizedEmail);
+    return res.status(409).json({
+      success: false,
+      message: 'An account with this email already exists',
       error: 'DUPLICATE_EMAIL'
     });
   }
   
-  // Validate input
-  if (!fullName || !phoneNumber || !email || !password) {
-    return res.status(400).json({
-      success: false,
-      message: 'Please provide all required fields',
-      error: 'MISSING_FIELDS'
-    });
-  }
-  
-  // Generate verification token
+  // 3. Generate verification token
   const { token, hashedToken, expireTime } = EmailVerificationService.generateVerificationToken();
   
+  let provider;
   try {
-    // ✅ Create provider immediately with pending flags
-    const provider = await Provider.create({
-      fullName,
-      phoneNumber,
-      email: email.toLowerCase(),
+    // 4. Create provider record FIRST (before sending email)
+    provider = await Provider.create({
+      fullName: fullName.trim(),
+      phoneNumber: phoneNumber.trim(),
+      email: normalizedEmail,
       password, // Will be hashed by pre-save hook
-      emailVerified: 'pending', // ✅ New flag system
-      adminVerified: 'pending', // ✅ New flag system
-      status: 'pending_email_verification', // ✅ New status field
+      emailVerified: 'pending',
+      adminVerified: 'pending',
+      status: 'pending_email_verification',
       onboardingStatus: 'pending_email',
       emailVerificationToken: hashedToken,
       emailVerificationExpire: expireTime,
-      // Legacy fields
+      // Legacy fields for backward compatibility
       isVerified: false,
       canLogin: false,
       verificationStatus: 'pending',
     });
     
-    // 🔔 Create notification for admin panel
+    // 5. Verify provider was saved successfully
+    if (!provider || !provider._id) {
+      console.error('❌ Provider save failed - no _id returned');
+      return res.status(500).json({
+        success: false,
+        message: 'Failed to create provider account. Please try again.',
+        error: 'SAVE_FAILED'
+      });
+    }
+    
+    console.log('✅ Provider created successfully:', provider._id, normalizedEmail);
+    
+  } catch (error) {
+    console.error('❌ Provider creation error:', error);
+    
+    // Handle duplicate key error (race condition)
+    if (error.code === 11000) {
+      return res.status(409).json({
+        success: false,
+        message: 'An account with this email or phone number already exists',
+        error: 'DUPLICATE_KEY'
+      });
+    }
+    
+    // Handle validation errors
+    if (error.name === 'ValidationError') {
+      const messages = Object.values(error.errors).map(e => e.message);
+      return res.status(400).json({
+        success: false,
+        message: messages.join(', '),
+        error: 'VALIDATION_ERROR'
+      });
+    }
+    
+    return res.status(500).json({
+      success: false,
+      message: 'Registration failed. Please try again later.',
+      error: error.message || 'UNKNOWN_ERROR'
+    });
+  }
+  
+  // 6. Try to create admin notification (non-critical)
+  try {
     const NotificationService = require('../services/notificationService');
     await NotificationService.notifyProviderRegistration(provider);
-    
-    // Create verification URL
+    console.log('✅ Admin notification created');
+  } catch (notifyError) {
+    console.error('⚠️ Failed to create admin notification:', notifyError.message);
+    // Don't fail registration for notification errors
+  }
+  
+  // 7. Try to send verification email (non-critical - provider can resend)
+  let emailSent = false;
+  try {
     const baseUrl = process.env.API_URL || process.env.CLIENT_URL || 'http://localhost:5000';
     const verificationUrl = `${baseUrl}/verify-email?token=${token}&type=provider`;
     
-    console.log('📧 Sending provider signup verification email to:', email);
+    console.log('📧 Sending provider signup verification email to:', normalizedEmail);
     console.log('🔗 Verification URL:', verificationUrl);
     
-    // Send verification email
     await sendEmail({
-      email: email.toLowerCase(),
+      email: normalizedEmail,
       subject: 'Verify Your Email - MetroMatrix Provider Registration',
       html: EmailVerificationService.getVerificationEmailTemplate(fullName, verificationUrl, 'provider'),
     });
     
-    res.status(201).json({
-      success: true,
-      message: 'Registration successful. Please verify your email.',
-      provider: {
-        id: provider._id,
-        email: provider.email,
-        fullName: provider.fullName,
-        emailVerified: 'pending',
-        adminVerified: 'pending',
-        status: 'pending_email_verification'
-      }
-      // ⚠️ IMPORTANT: NO TOKENS - provider cannot login until approved
-    });
-  } catch (error) {
-    console.error('❌ Provider registration error:', error);
-    return res.status(500).json({
-      success: false,
-      message: 'Registration failed',
-      error: error.message || 'Failed to complete signup. Please try again.'
-    });
+    emailSent = true;
+    console.log('✅ Verification email sent successfully');
+  } catch (emailError) {
+    console.error('⚠️ Failed to send verification email:', emailError.message);
+    // Don't fail registration - provider can request resend
   }
+  
+  // 8. Return success response
+  res.status(201).json({
+    success: true,
+    message: emailSent 
+      ? 'Registration successful. Please check your email to verify your account.'
+      : 'Registration successful. Please request a new verification email.',
+    emailSent: emailSent,
+    provider: {
+      _id: provider._id,
+      id: provider._id,
+      email: provider.email,
+      fullName: provider.fullName,
+      phoneNumber: provider.phoneNumber,
+      emailVerified: 'pending',
+      adminVerified: 'pending',
+      status: 'pending_email_verification'
+    }
+    // ⚠️ IMPORTANT: NO TOKENS - provider cannot login until approved
+  });
 });
 
 // @desc    Login provider

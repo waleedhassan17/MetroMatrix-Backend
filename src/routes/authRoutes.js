@@ -30,6 +30,34 @@ const {
 const { protect } = require('../middleware/authMiddleware');
 const { validate } = require('../middleware/validate');
 
+// ===== LOGGING MIDDLEWARE FOR DEBUGGING =====
+// Logs all auth requests with timestamp, method, URL, and body (excluding password)
+router.use((req, res, next) => {
+  const sanitizedBody = { ...req.body };
+  if (sanitizedBody.password) sanitizedBody.password = '[REDACTED]';
+  
+  console.log(`\n📥 ${new Date().toISOString()} - ${req.method} /api/auth${req.path}`);
+  console.log('📋 Body:', JSON.stringify(sanitizedBody, null, 2));
+  
+  // Track response status
+  const originalSend = res.send;
+  res.send = function(body) {
+    try {
+      const parsed = typeof body === 'string' ? JSON.parse(body) : body;
+      console.log(`📤 Response [${res.statusCode}]:`, JSON.stringify({
+        success: parsed.success,
+        message: parsed.message,
+        error: parsed.error
+      }));
+    } catch (e) {
+      console.log(`📤 Response [${res.statusCode}]: (non-JSON response)`);
+    }
+    return originalSend.call(this, body);
+  };
+  
+  next();
+});
+
 // Validation rules
 const userRegistrationRules = [
   body('fullName').notEmpty().withMessage('Full name is required'),

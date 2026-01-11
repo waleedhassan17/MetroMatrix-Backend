@@ -343,6 +343,10 @@ providerSchema.index({ providerType: 1 });
 providerSchema.index({ city: 1 });
 providerSchema.index({ 'ratings.average': -1 });
 providerSchema.index({ verificationStatus: 1 });
+providerSchema.index({ status: 1 });
+providerSchema.index({ emailVerified: 1 });
+providerSchema.index({ adminVerified: 1 });
+providerSchema.index({ onboardingStatus: 1 });
 
 // Hash password before saving
 providerSchema.pre('save', async function (next) {
