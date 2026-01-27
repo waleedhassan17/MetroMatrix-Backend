@@ -10,7 +10,9 @@ const {
   googleAuth,
   facebookAuth,
   googleLogin,
+  googleSignup,
   facebookLogin,
+  facebookSignup,
   refreshToken,
   forgotPassword,
   resetPassword,
@@ -141,7 +143,7 @@ router.get('/facebook/callback',
 // These endpoints are for mobile apps that handle OAuth client-side
 // and send the tokens to the backend for verification
 
-// Google Login (Firebase ID Token verification)
+// Google Login (Firebase ID Token verification) - Login or auto-signup
 router.post('/google-login',
   [
     body('idToken').notEmpty().withMessage('Google ID token is required'),
@@ -151,7 +153,17 @@ router.post('/google-login',
   googleLogin
 );
 
-// Facebook Login (Access Token verification)
+// Google Signup (Firebase ID Token verification) - Creates new user only
+router.post('/google-signup',
+  [
+    body('idToken').notEmpty().withMessage('Google ID token is required'),
+    body('userType').optional().isIn(['user', 'provider']).withMessage('userType must be "user" or "provider"'),
+  ],
+  validate,
+  googleSignup
+);
+
+// Facebook Login (Access Token verification) - Login or auto-signup
 router.post('/facebook-login',
   [
     body('accessToken').notEmpty().withMessage('Facebook access token is required'),
@@ -159,6 +171,16 @@ router.post('/facebook-login',
   ],
   validate,
   facebookLogin
+);
+
+// Facebook Signup (Access Token verification) - Creates new user only
+router.post('/facebook-signup',
+  [
+    body('accessToken').notEmpty().withMessage('Facebook access token is required'),
+    body('userType').optional().isIn(['user', 'provider']).withMessage('userType must be "user" or "provider"'),
+  ],
+  validate,
+  facebookSignup
 );
 
 // Token management

@@ -564,6 +564,127 @@ const googleLogin = asyncHandler(async (req, res) => {
   }
 });
 
+// @desc    Google signup for mobile apps (Firebase ID Token verification) - Creates new user only
+// @route   POST /api/auth/google-signup
+// @access  Public
+const googleSignup = asyncHandler(async (req, res) => {
+  const { idToken, userType = 'user' } = req.body;
+
+  // Validate input
+  if (!idToken) {
+    res.status(400);
+    throw new Error('Google ID token is required');
+  }
+
+  if (!['user', 'provider'].includes(userType)) {
+    res.status(400);
+    throw new Error('Invalid userType. Must be "user" or "provider"');
+  }
+
+  try {
+    // Verify the ID token with Firebase
+    const decodedToken = await verifyGoogleIdToken(idToken);
+    const { uid, email, name, picture } = decodedToken;
+
+    if (!email) {
+      res.status(400);
+      throw new Error('Email not provided by Google. Please ensure email permission is granted.');
+    }
+
+    console.log(`📝 Google signup attempt for ${userType}: ${email}`);
+
+    // Determine model based on userType
+    const Model = userType === 'provider' ? Provider : User;
+
+    // Check if user/provider already exists
+    const existingUser = await Model.findOne({
+      $or: [{ googleId: uid }, { email: email.toLowerCase() }]
+    });
+
+    if (existingUser) {
+      res.status(409);
+      throw new Error('An account with this email already exists. Please use login instead.');
+    }
+
+    // Create new user/provider
+    const userData = {
+      email: email.toLowerCase(),
+      fullName: name || email.split('@')[0],
+      profilePhoto: picture,
+      googleId: uid,
+      authProvider: 'google',
+      isVerified: true, // Google accounts are pre-verified
+      emailVerified: true,
+      phoneNumber: '', // Required field - user needs to complete profile
+      lastLoginDate: new Date(),
+    };
+
+    // Add provider-specific fields
+    if (userType === 'provider') {
+      userData.providerType = 'pending';
+      userData.canLogin = true;
+      userData.isApproved = false;
+    }
+
+    const user = await Model.create(userData);
+    console.log(`✅ New ${userType} created via Google signup: ${email}`);
+
+    // Generate tokens
+    const tokens = generateTokens(user._id, {
+      userType,
+      email: user.email,
+      authProvider: 'google',
+    });
+
+    // Update refresh token
+    user.refreshToken = tokens.refreshToken;
+    await user.save();
+
+    // Build response based on userType
+    const userResponse = {
+      id: user._id,
+      email: user.email,
+      fullName: user.fullName,
+      profilePhoto: user.profilePhoto,
+      isVerified: user.isVerified,
+      phoneNumber: user.phoneNumber,
+      profileComplete: user.profileComplete || false,
+    };
+
+    // Add provider-specific fields
+    if (userType === 'provider') {
+      userResponse.providerType = user.providerType;
+      userResponse.isApproved = user.isApproved;
+      userResponse.onboardingComplete = user.onboardingComplete;
+    }
+
+    res.status(201).json({
+      success: true,
+      message: 'Account created successfully via Google',
+      isNewUser: true,
+      userType,
+      user: userResponse,
+      accessToken: tokens.accessToken,
+      refreshToken: tokens.refreshToken,
+      expiresIn: tokens.expiresIn,
+    });
+
+  } catch (error) {
+    console.error('❌ Google signup error:', error.message);
+    
+    // Handle specific Firebase errors
+    if (error.message.includes('Firebase') || error.message.includes('token')) {
+      res.status(401);
+      throw new Error('Invalid or expired Google token. Please try again.');
+    }
+    
+    if (error.statusCode) {
+      res.status(error.statusCode);
+    }
+    throw error;
+  }
+});
+
 // @desc    Facebook login for mobile apps (Access Token verification)
 // @route   POST /api/auth/facebook-login
 // @access  Public
@@ -704,6 +825,141 @@ const facebookLogin = asyncHandler(async (req, res) => {
 
     res.status(error.statusCode || 500);
     throw new Error(error.message || 'Facebook login failed. Please try again.');
+  }
+});
+
+// @desc    Facebook signup for mobile apps (Access Token verification) - Creates new user only
+// @route   POST /api/auth/facebook-signup
+// @access  Public
+const facebookSignup = asyncHandler(async (req, res) => {
+  const { accessToken, userType = 'user' } = req.body;
+
+  // Validate input
+  if (!accessToken) {
+    res.status(400);
+    throw new Error('Facebook access token is required');
+  }
+
+  if (!['user', 'provider'].includes(userType)) {
+    res.status(400);
+    throw new Error('Invalid userType. Must be "user" or "provider"');
+  }
+
+  try {
+    // Verify token with Facebook Graph API
+    const fbResponse = await axios.get(
+      `https://graph.facebook.com/me`,
+      {
+        params: {
+          fields: 'id,name,email,picture.type(large)',
+          access_token: accessToken,
+        },
+      }
+    );
+
+    const { id: facebookId, name, email, picture } = fbResponse.data;
+
+    if (!email) {
+      res.status(400);
+      throw new Error('Email permission is required. Please grant email access in Facebook settings and try again.');
+    }
+
+    console.log(`📝 Facebook signup attempt for ${userType}: ${email}`);
+
+    // Determine model based on userType
+    const Model = userType === 'provider' ? Provider : User;
+
+    // Check if user/provider already exists
+    const existingUser = await Model.findOne({
+      $or: [{ facebookId }, { email: email.toLowerCase() }]
+    });
+
+    if (existingUser) {
+      res.status(409);
+      throw new Error('An account with this email already exists. Please use login instead.');
+    }
+
+    const profilePhotoUrl = picture?.data?.url || null;
+
+    // Create new user/provider
+    const userData = {
+      email: email.toLowerCase(),
+      fullName: name || email.split('@')[0],
+      profilePhoto: profilePhotoUrl,
+      facebookId,
+      authProvider: 'facebook',
+      isVerified: true, // Facebook accounts are pre-verified
+      emailVerified: true,
+      phoneNumber: '', // Required field - user needs to complete profile
+      lastLoginDate: new Date(),
+    };
+
+    // Add provider-specific fields
+    if (userType === 'provider') {
+      userData.providerType = 'pending';
+      userData.canLogin = true;
+      userData.isApproved = false;
+    }
+
+    const user = await Model.create(userData);
+    console.log(`✅ New ${userType} created via Facebook signup: ${email}`);
+
+    // Generate tokens
+    const tokens = generateTokens(user._id, {
+      userType,
+      email: user.email,
+      authProvider: 'facebook',
+    });
+
+    // Update refresh token
+    user.refreshToken = tokens.refreshToken;
+    await user.save();
+
+    // Build response based on userType
+    const userResponse = {
+      id: user._id,
+      email: user.email,
+      fullName: user.fullName,
+      profilePhoto: user.profilePhoto,
+      isVerified: user.isVerified,
+      phoneNumber: user.phoneNumber,
+      profileComplete: user.profileComplete || false,
+    };
+
+    // Add provider-specific fields
+    if (userType === 'provider') {
+      userResponse.providerType = user.providerType;
+      userResponse.isApproved = user.isApproved;
+      userResponse.onboardingComplete = user.onboardingComplete;
+    }
+
+    res.status(201).json({
+      success: true,
+      message: 'Account created successfully via Facebook',
+      isNewUser: true,
+      userType,
+      user: userResponse,
+      accessToken: tokens.accessToken,
+      refreshToken: tokens.refreshToken,
+      expiresIn: tokens.expiresIn,
+    });
+
+  } catch (error) {
+    console.error('❌ Facebook signup error:', error.message);
+
+    // Handle Facebook API errors
+    if (error.response?.data?.error) {
+      const fbError = error.response.data.error;
+      console.error('Facebook API Error:', fbError);
+      
+      res.status(401);
+      throw new Error(fbError.message || 'Invalid Facebook token. Please try again.');
+    }
+
+    if (error.statusCode) {
+      res.status(error.statusCode);
+    }
+    throw error;
   }
 });
 
@@ -1741,8 +1997,10 @@ module.exports = {
   loginProvider,
   googleAuth,
   facebookAuth,
-  googleLogin,                // ✅ NEW - Mobile Google login (Firebase ID Token)
-  facebookLogin,              // ✅ NEW - Mobile Facebook login (Access Token)
+  googleLogin,                // ✅ Mobile Google login (Firebase ID Token)
+  googleSignup,               // ✅ Mobile Google signup (Firebase ID Token) - Creates new user only
+  facebookLogin,              // ✅ Mobile Facebook login (Access Token)
+  facebookSignup,             // ✅ Mobile Facebook signup (Access Token) - Creates new user only
   refreshToken,
   forgotPassword,
   resetPassword,
