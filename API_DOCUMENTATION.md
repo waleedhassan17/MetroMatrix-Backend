@@ -203,6 +203,162 @@ POST /auth/reset-password
 
 ---
 
+### 1.8 Google Login (Mobile)
+```
+POST /auth/google-login
+```
+
+**Description:** Authenticate users/providers using Google Sign-In from mobile apps. The client app handles Google OAuth and sends the Firebase ID token to this endpoint for verification.
+
+**Request Body:**
+```json
+{
+  "idToken": "eyJhbGciOiJSUzI1NiIsImtpZCI6...",
+  "userType": "user"
+}
+```
+
+| Field | Type | Required | Description |
+|-------|------|----------|-------------|
+| idToken | string | ✅ | Firebase ID token from Google Sign-In |
+| userType | string | ❌ | "user" (default) or "provider" |
+
+**Response (200) - Existing User:**
+```json
+{
+  "success": true,
+  "message": "Logged in successfully via Google",
+  "isNewUser": false,
+  "userType": "user",
+  "user": {
+    "id": "user_id",
+    "email": "john@gmail.com",
+    "fullName": "John Doe",
+    "profilePhoto": "https://lh3.googleusercontent.com/...",
+    "isVerified": true,
+    "phoneNumber": "03001234567",
+    "profileComplete": true
+  },
+  "accessToken": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...",
+  "refreshToken": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...",
+  "expiresIn": 2592000000
+}
+```
+
+**Response (201) - New User:**
+```json
+{
+  "success": true,
+  "message": "Account created successfully via Google",
+  "isNewUser": true,
+  "userType": "user",
+  "user": {
+    "id": "new_user_id",
+    "email": "john@gmail.com",
+    "fullName": "John Doe",
+    "profilePhoto": "https://lh3.googleusercontent.com/...",
+    "isVerified": true,
+    "phoneNumber": "",
+    "profileComplete": false
+  },
+  "accessToken": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...",
+  "refreshToken": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...",
+  "expiresIn": 2592000000
+}
+```
+
+**Error Response (401):**
+```json
+{
+  "success": false,
+  "message": "Invalid or expired Google token. Please try signing in again."
+}
+```
+
+---
+
+### 1.9 Facebook Login (Mobile)
+```
+POST /auth/facebook-login
+```
+
+**Description:** Authenticate users/providers using Facebook Login from mobile apps. The client app handles Facebook OAuth and sends the access token to this endpoint for verification.
+
+**Request Body:**
+```json
+{
+  "accessToken": "EAABsbCS1iHgBO7rZC...",
+  "userType": "user"
+}
+```
+
+| Field | Type | Required | Description |
+|-------|------|----------|-------------|
+| accessToken | string | ✅ | Facebook access token from Facebook Login |
+| userType | string | ❌ | "user" (default) or "provider" |
+
+**Response (200) - Existing User:**
+```json
+{
+  "success": true,
+  "message": "Logged in successfully via Facebook",
+  "isNewUser": false,
+  "userType": "user",
+  "user": {
+    "id": "user_id",
+    "email": "john@example.com",
+    "fullName": "John Doe",
+    "profilePhoto": "https://platform-lookaside.fbsbx.com/...",
+    "isVerified": true,
+    "phoneNumber": "03001234567",
+    "profileComplete": true
+  },
+  "accessToken": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...",
+  "refreshToken": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...",
+  "expiresIn": 2592000000
+}
+```
+
+**Response (201) - New User:**
+```json
+{
+  "success": true,
+  "message": "Account created successfully via Facebook",
+  "isNewUser": true,
+  "userType": "user",
+  "user": {
+    "id": "new_user_id",
+    "email": "john@example.com",
+    "fullName": "John Doe",
+    "profilePhoto": "https://platform-lookaside.fbsbx.com/...",
+    "isVerified": true,
+    "phoneNumber": "",
+    "profileComplete": false
+  },
+  "accessToken": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...",
+  "refreshToken": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...",
+  "expiresIn": 2592000000
+}
+```
+
+**Error Response (400) - Missing Email Permission:**
+```json
+{
+  "success": false,
+  "message": "Email permission is required. Please grant email access in Facebook settings and try again."
+}
+```
+
+**Error Response (401):**
+```json
+{
+  "success": false,
+  "message": "Invalid Facebook token. Please try signing in again."
+}
+```
+
+---
+
 ## 2. Provider Registration Flow
 
 ### ⚠️ IMPORTANT: Provider Registration Flow

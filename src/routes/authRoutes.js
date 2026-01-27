@@ -9,6 +9,8 @@ const {
   loginProvider,
   googleAuth,
   facebookAuth,
+  googleLogin,
+  facebookLogin,
   refreshToken,
   forgotPassword,
   resetPassword,
@@ -133,6 +135,30 @@ router.get('/facebook/callback',
     })(req, res, next);
   },
   facebookAuth
+);
+
+// ===== MOBILE SOCIAL LOGIN ENDPOINTS =====
+// These endpoints are for mobile apps that handle OAuth client-side
+// and send the tokens to the backend for verification
+
+// Google Login (Firebase ID Token verification)
+router.post('/google-login',
+  [
+    body('idToken').notEmpty().withMessage('Google ID token is required'),
+    body('userType').optional().isIn(['user', 'provider']).withMessage('userType must be "user" or "provider"'),
+  ],
+  validate,
+  googleLogin
+);
+
+// Facebook Login (Access Token verification)
+router.post('/facebook-login',
+  [
+    body('accessToken').notEmpty().withMessage('Facebook access token is required'),
+    body('userType').optional().isIn(['user', 'provider']).withMessage('userType must be "user" or "provider"'),
+  ],
+  validate,
+  facebookLogin
 );
 
 // Token management
