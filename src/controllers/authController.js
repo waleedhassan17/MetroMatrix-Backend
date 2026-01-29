@@ -438,51 +438,79 @@ const facebookAuth = asyncHandler(async (req, res) => {
 // @route   POST /api/auth/google-login
 // @access  Public
 const googleLogin = asyncHandler(async (req, res) => {
+  console.log('============ GOOGLE LOGIN DEBUG ============');
+  console.log('Request received at:', new Date().toISOString());
+  console.log('Request body:', JSON.stringify(req.body, null, 2));
+  console.log('===========================================');
+  
   const { idToken, userType = 'user' } = req.body;
 
   // Validate input
   if (!idToken) {
-    res.status(400);
-    throw new Error('Google ID token is required');
+    console.error('❌ No idToken provided');
+    return res.status(400).json({ 
+      success: false, 
+      message: 'Google ID token is required' 
+    });
   }
 
   if (!['user', 'provider'].includes(userType)) {
-    res.status(400);
-    throw new Error('Invalid userType. Must be "user" or "provider"');
+    console.error('❌ Invalid userType:', userType);
+    return res.status(400).json({ 
+      success: false, 
+      message: 'Invalid userType. Must be "user" or "provider"' 
+    });
   }
 
   try {
+    console.log('🔍 Verifying Firebase ID token...');
+    
     // Verify the ID token with Firebase
     const decodedToken = await verifyGoogleIdToken(idToken);
-    const { uid, email, name, picture, emailVerified } = decodedToken;
+    
+    if (!decodedToken) {
+      console.error('❌ Token verification returned null');
+      return res.status(401).json({ 
+        success: false, 
+        message: 'Invalid ID token' 
+      });
+    }
+    
+    const { uid, email, name, picture } = decodedToken;
 
     if (!email) {
-      res.status(400);
-      throw new Error('Email not provided by Google. Please ensure email permission is granted.');
+      console.error('❌ No email in decoded token');
+      return res.status(400).json({ 
+        success: false, 
+        message: 'Email not provided by Google' 
+      });
     }
 
-    console.log(`🔐 Google login attempt for ${userType}: ${email}`);
+    console.log(`✅ Token verified for ${userType}: ${email}`);
 
     // Determine model based on userType
     const Model = userType === 'provider' ? Provider : User;
 
-    // Check if user/provider exists
+    // Find or create user/provider
     let user = await Model.findOne({
       $or: [{ googleId: uid }, { email: email.toLowerCase() }]
     });
 
-    const isNewUser = !user;
+    let isNewUser = false;
 
     if (!user) {
       // Create new user/provider
+      console.log(`📝 Creating new ${userType}: ${email}`);
+      
       const userData = {
         email: email.toLowerCase(),
         fullName: name || email.split('@')[0],
         profilePhoto: picture,
         googleId: uid,
-        isVerified: true, // Google accounts are pre-verified
+        authProvider: 'google',
+        isVerified: true,
         emailVerified: true,
-        phoneNumber: '', // Required field - user needs to complete profile
+        phoneNumber: '',
         lastLoginDate: new Date(),
       };
 
@@ -491,26 +519,32 @@ const googleLogin = asyncHandler(async (req, res) => {
         userData.providerType = 'pending';
         userData.canLogin = true;
         userData.isApproved = false;
+        userData.emailVerified = 'active';
+        userData.adminVerified = 'pending';
+        userData.status = 'email_verified';
+        userData.onboardingStatus = 'email_verified';
       }
 
       user = await Model.create(userData);
+      isNewUser = true;
       console.log(`✅ New ${userType} created via Google: ${email}`);
     } else {
-      // Update existing user
+      // Update existing user login info
+      console.log(`✅ Existing ${userType} found: ${email}`);
+      
       if (!user.googleId) {
         user.googleId = uid;
       }
-      if (!user.profilePhoto && picture) {
-        user.profilePhoto = picture;
+      if (userType === 'provider' && !user.canLogin) {
+        user.canLogin = true;
       }
       user.lastLoginDate = new Date();
-      user.isVerified = true;
-      user.emailVerified = true;
       await user.save();
       console.log(`✅ Existing ${userType} logged in via Google: ${email}`);
     }
 
     // Generate tokens
+    console.log('🔑 Generating JWT tokens...');
     const tokens = generateTokens(user._id, {
       userType,
       email: user.email,
@@ -537,11 +571,18 @@ const googleLogin = asyncHandler(async (req, res) => {
       userResponse.providerType = user.providerType;
       userResponse.isApproved = user.isApproved;
       userResponse.onboardingComplete = user.onboardingComplete;
+      userResponse.canLogin = user.canLogin;
+      userResponse.emailVerified = user.emailVerified;
+      userResponse.adminVerified = user.adminVerified;
     }
 
+    console.log('✅ Google login successful!');
+    
     res.json({
       success: true,
-      message: isNewUser ? 'Account created successfully via Google' : 'Logged in successfully via Google',
+      message: isNewUser 
+        ? 'Account created successfully via Google' 
+        : 'Logged in successfully via Google',
       isNewUser,
       userType,
       user: userResponse,
@@ -551,18 +592,26 @@ const googleLogin = asyncHandler(async (req, res) => {
     });
 
   } catch (error) {
-    console.error('❌ Google login error:', error.message);
+    console.error('❌ Error in google-login:', error);
+    console.error('Error stack:', error.stack);
     
-    // Handle specific Firebase errors
-    if (error.message.includes('Firebase') || error.message.includes('token')) {
-      res.status(401);
-      throw new Error('Invalid or expired Google token. Please try signing in again.');
+    // More specific error messages
+    if (error.message?.includes('Firebase')) {
+      return res.status(401).json({ 
+        success: false, 
+        message: 'Invalid Google token. Please try signing in again.',
+        error: error.message 
+      });
     }
     
-    res.status(error.statusCode || 500);
-    throw new Error(error.message || 'Google login failed. Please try again.');
+    res.status(500).json({ 
+      success: false, 
+      message: 'Google login failed. Please try again.',
+      error: error.message
+    });
   }
 });
+
 
 // @desc    Google signup for mobile apps (Firebase ID Token verification) - Creates new user only
 // @route   POST /api/auth/google-signup
