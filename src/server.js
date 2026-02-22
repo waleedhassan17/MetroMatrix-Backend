@@ -13,6 +13,11 @@ console.log('Requiring connectDB...'.cyan);
 const app = require('./app');
 console.log('Requiring app...'.cyan);
 
+// ── NEW: mount chat REST routes ────────────────────────────────────────────────
+const chatRoutes = require('./routes/chatRoutes');
+app.use('/api/chat', chatRoutes);
+// ──────────────────────────────────────────────────────────────────────────────
+
 console.log('Calling connectDB()...'.cyan);
 connectDB();
 
@@ -25,6 +30,22 @@ const server = app.listen(PORT, () => {
   );
   console.log('✅ Server is listening!'.green);
 });
+
+// ── NEW: attach Socket.IO to the SAME existing server ─────────────────────────
+const { Server } = require('socket.io');
+const { initSocketService } = require('./services/socketService');
+
+const io = new Server(server, {
+  cors: {
+    origin: '*',           // tighten to your frontend URL in production
+    methods: ['GET', 'POST'],
+  },
+  transports: ['websocket', 'polling'],
+});
+
+initSocketService(io);
+console.log('🔌 Socket.IO attached to server'.green);
+// ──────────────────────────────────────────────────────────────────────────────
 
 // Handle unhandled promise rejections
 process.on('unhandledRejection', (err, promise) => {
