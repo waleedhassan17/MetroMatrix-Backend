@@ -348,6 +348,12 @@ providerSchema.index({ emailVerified: 1 });
 providerSchema.index({ adminVerified: 1 });
 providerSchema.index({ onboardingStatus: 1 });
 
+// Track if document is new for post-save hook
+providerSchema.pre('save', function (next) {
+  this.wasNew = this.isNew;
+  next();
+});
+
 // Hash password before saving
 providerSchema.pre('save', async function (next) {
   if (!this.isModified('password')) {
@@ -356,6 +362,19 @@ providerSchema.pre('save', async function (next) {
 
   const salt = await bcrypt.genSalt(10);
   this.password = await bcrypt.hash(this.password, salt);
+});
+
+// Create wallet for new providers
+providerSchema.post('save', async function (doc, next) {
+  if (doc.wasNew) {
+    const Wallet = require('./Wallet');
+    await Wallet.findOneAndUpdate(
+      { owner: doc._id, ownerType: 'Provider' },
+      { $setOnInsert: { owner: doc._id, ownerType: 'Provider', balance: 0 } },
+      { upsert: true, new: true }
+    );
+  }
+  next();
 });
 
 // Match passwords

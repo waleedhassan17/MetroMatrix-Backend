@@ -18,6 +18,7 @@ const userRoutes = require('./routes/userRoutes');
 const providerRoutes = require('./routes/providerRoutes');
 const postRoutes = require('./routes/postRoutes');
 const adminRoutes = require('./routes/adminRoutes');
+const walletRoutes = require('./routes/walletRoutes');
 
 // Import models and utils for verification page
 const User = require('./models/User');
@@ -1534,6 +1535,7 @@ app.use('/api/users', userRoutes);
 app.use('/api/providers', providerRoutes);
 app.use('/api/posts', postRoutes);
 app.use('/api/admin', adminRoutes);
+app.use('/api/wallet', walletRoutes);
 
 // ✅ UPDATED: Provider profile endpoints with proper authentication
 const { uploadMultipleDocuments } = require('./middleware/uploadMiddleware');
@@ -1556,6 +1558,7 @@ app.get('/', (req, res) => {
       providers: '/api/providers',
       posts: '/api/posts',
       admin: '/api/admin',
+      wallet: '/api/wallet',
       verifyEmail: '/verify-email?token=xxx&type=user',
     },
   });

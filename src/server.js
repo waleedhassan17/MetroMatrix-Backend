@@ -16,6 +16,8 @@ console.log('Requiring app...'.cyan);
 console.log('Calling connectDB()...'.cyan);
 connectDB();
 
+const stripe = require('./config/stripe');
+
 const PORT = process.env.PORT || 5000;
 
 console.log('Starting server...'.cyan);

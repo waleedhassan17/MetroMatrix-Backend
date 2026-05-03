@@ -164,6 +164,12 @@ userSchema.virtual('age').get(function () {
   return null;
 });
 
+// Track if document is new for post-save hook
+userSchema.pre('save', function (next) {
+  this.wasNew = this.isNew;
+  next();
+});
+
 // Hash password before saving
 userSchema.pre('save', async function (next) {
   if (!this.isModified('password')) {
@@ -172,6 +178,19 @@ userSchema.pre('save', async function (next) {
 
   const salt = await bcrypt.genSalt(10);
   this.password = await bcrypt.hash(this.password, salt);
+});
+
+// Create wallet for new users
+userSchema.post('save', async function (doc, next) {
+  if (doc.wasNew) {
+    const Wallet = require('./Wallet');
+    await Wallet.findOneAndUpdate(
+      { owner: doc._id, ownerType: 'User' },
+      { $setOnInsert: { owner: doc._id, ownerType: 'User', balance: 0 } },
+      { upsert: true, new: true }
+    );
+  }
+  next();
 });
 
 // Match passwords

@@ -10,7 +10,8 @@
     "test:watch": "jest --watch",
     "lint": "eslint src/",
     "lint:fix": "eslint src/ --fix",
-    "seed": "node scripts/seed.js"
+    "seed": "node scripts/seed.js",
+    "smoke:wallet": "node scripts/smoke-wallet.js"
   },
   "keywords": [
     "metromatrix",
@@ -47,7 +48,8 @@
     "passport": "^0.6.0",
     "passport-facebook": "^3.0.0",
     "passport-google-oauth20": "^2.0.0",
-    "passport-jwt": "^4.0.1"
+    "passport-jwt": "^4.0.1",
+    "stripe": "^22.1.0"
   },
   "devDependencies": {
     "eslint": "^8.40.0",
