@@ -2,6 +2,8 @@ const asyncHandler = require('express-async-handler');
 const WalletService = require('../services/walletService');
 const stripe = require('../config/stripe');
 const WalletTransaction = require('../models/WalletTransaction');
+const User = require('../models/User');
+const Provider = require('../models/Provider');
 
 // @desc    Get user's wallet with transaction history
 // @route   GET /api/wallet/me
@@ -333,27 +335,376 @@ const stripeWebhook = asyncHandler(async (req, res) => {
   }
 
   // Handle the event
-  switch (event.type) {
-    case 'checkout.session.completed':
-      // Apply the top-up to the wallet
-      await WalletService.applyTopUp(event.data.object);
-      break;
+  try {
+    switch (event.type) {
+      case 'checkout.session.completed':
+        await WalletService.applyTopUp(event.data.object);
+        break;
 
-    case 'checkout.session.expired':
-    case 'checkout.session.async_payment_failed':
-      // Mark the pending transaction as failed
-      const session = event.data.object;
-      await WalletTransaction.findOneAndUpdate(
-        { stripeSessionId: session.id },
-        { status: 'failed' }
-      );
-      break;
+      case 'checkout.session.expired':
+      case 'checkout.session.async_payment_failed': {
+        const session = event.data.object;
+        await WalletTransaction.findOneAndUpdate(
+          { stripeSessionId: session.id },
+          { status: 'failed' }
+        );
+        break;
+      }
 
-    default:
-      console.log(`Unhandled event type: ${event.type}`);
+      // ===== Stripe Connect events (from connected accounts) =====
+      case 'account.updated': {
+        const account = event.data.object;
+        const provider = await Provider.findOne({ stripeConnectAccountId: account.id });
+        if (provider) {
+          provider.stripeChargesEnabled = !!account.charges_enabled;
+          provider.stripePayoutsEnabled = !!account.payouts_enabled;
+          provider.stripeDetailsSubmitted = !!account.details_submitted;
+          if (account.charges_enabled && account.payouts_enabled && account.details_submitted) {
+            provider.stripeConnectStatus = 'active';
+          } else if (account.requirements && (account.requirements.disabled_reason || (account.requirements.currently_due || []).length > 0)) {
+            provider.stripeConnectStatus = account.details_submitted ? 'restricted' : 'pending';
+          } else {
+            provider.stripeConnectStatus = 'pending';
+          }
+          await provider.save({ validateBeforeSave: false });
+        }
+        break;
+      }
+
+      case 'payout.paid': {
+        const payout = event.data.object;
+        await WalletService.markPayoutSucceeded(payout.id);
+        break;
+      }
+
+      case 'payout.failed':
+      case 'payout.canceled': {
+        const payout = event.data.object;
+        await WalletService.markPayoutFailedAndRefund(
+          payout.id,
+          payout.failure_message || event.type
+        );
+        break;
+      }
+
+      default:
+        // Unhandled event type - log and move on
+        // console.log(`Unhandled Stripe event type: ${event.type}`);
+        break;
+    }
+  } catch (err) {
+    console.error('Error handling Stripe event', event.type, err.message);
+    return res.status(500).json({ success: false, error: err.message });
   }
 
   res.status(200).json({ received: true });
+});
+
+// @desc    Transfer funds to another user or provider
+// @route   POST /api/wallet/transfer
+// @access  Private
+const transferToWallet = asyncHandler(async (req, res) => {
+  const {
+    receiverId,
+    receiverType,
+    amount,
+    description,
+    idempotencyKey,
+  } = req.body;
+
+  if (!receiverId || !receiverType) {
+    res.status(400);
+    throw new Error('receiverId and receiverType are required');
+  }
+  if (!['User', 'Provider'].includes(receiverType)) {
+    res.status(400);
+    throw new Error("receiverType must be 'User' or 'Provider'");
+  }
+
+  // Confirm receiver exists
+  const Model = receiverType === 'User' ? User : Provider;
+  const receiver = await Model.findById(receiverId).select('_id fullName email');
+  if (!receiver) {
+    res.status(404);
+    throw new Error(`${receiverType} not found`);
+  }
+
+  const senderId = req.user._id;
+  const senderType = req.isProvider ? 'Provider' : 'User';
+
+  const feePercent = parseFloat(process.env.WALLET_TRANSFER_FEE_PERCENT || '0');
+
+  try {
+    const result = await WalletService.transferFunds({
+      senderOwnerId: senderId,
+      senderOwnerType: senderType,
+      receiverOwnerId: receiverId,
+      receiverOwnerType: receiverType,
+      amount: Number(amount),
+      description: description || `Transfer to ${receiver.fullName || receiverType}`,
+      idempotencyKey,
+      feePercent,
+    });
+
+    return res.status(200).json({
+      success: true,
+      alreadyProcessed: result.alreadyProcessed,
+      transferGroupId: result.transferGroupId,
+      senderWallet: result.senderWallet
+        ? { balance: result.senderWallet.balance, currency: result.senderWallet.currency }
+        : undefined,
+      senderTransaction: result.senderTransaction,
+      receiverTransaction: result.receiverTransaction,
+      feeTransaction: result.feeTransaction,
+    });
+  } catch (err) {
+    const message = err.message || 'Transfer failed';
+    const status = /insufficient|invalid|same wallet|positive/i.test(message) ? 400 : 500;
+    return res.status(status).json({ success: false, error: message });
+  }
+});
+
+// @desc    Start (or refresh) Stripe Connect onboarding for a provider
+// @route   POST /api/wallet/connect/onboard
+// @access  Private (Provider only)
+const startConnectOnboarding = asyncHandler(async (req, res) => {
+  if (!req.isProvider) {
+    res.status(403);
+    throw new Error('Only providers can onboard for payouts');
+  }
+
+  const provider = await Provider.findById(req.user._id);
+  if (!provider) {
+    res.status(404);
+    throw new Error('Provider not found');
+  }
+
+  // Create Connect account if not exists
+  if (!provider.stripeConnectAccountId) {
+    const account = await stripe.accounts.create({
+      type: 'express',
+      email: provider.email,
+      capabilities: {
+        transfers: { requested: true },
+      },
+      business_type: 'individual',
+      metadata: {
+        providerId: String(provider._id),
+      },
+    });
+    provider.stripeConnectAccountId = account.id;
+    provider.stripeConnectStatus = 'pending';
+    await provider.save({ validateBeforeSave: false });
+  }
+
+  const backendUrl = process.env.STRIPE_BACKEND_URL || `${req.protocol}://${req.get('host')}`;
+
+  const accountLink = await stripe.accountLinks.create({
+    account: provider.stripeConnectAccountId,
+    refresh_url: `${backendUrl}/api/wallet/connect/refresh`,
+    return_url: `${backendUrl}/api/wallet/connect/return`,
+    type: 'account_onboarding',
+  });
+
+  res.status(200).json({
+    success: true,
+    url: accountLink.url,
+    accountId: provider.stripeConnectAccountId,
+    status: provider.stripeConnectStatus,
+  });
+});
+
+// @desc    Get Stripe Connect account status for the current provider
+// @route   GET /api/wallet/connect/status
+// @access  Private (Provider only)
+const getConnectStatus = asyncHandler(async (req, res) => {
+  if (!req.isProvider) {
+    res.status(403);
+    throw new Error('Only providers can check payout status');
+  }
+
+  const provider = await Provider.findById(req.user._id);
+  if (!provider) {
+    res.status(404);
+    throw new Error('Provider not found');
+  }
+
+  let live = null;
+  if (provider.stripeConnectAccountId) {
+    try {
+      const account = await stripe.accounts.retrieve(provider.stripeConnectAccountId);
+      // Sync local flags from live state
+      provider.stripeChargesEnabled = !!account.charges_enabled;
+      provider.stripePayoutsEnabled = !!account.payouts_enabled;
+      provider.stripeDetailsSubmitted = !!account.details_submitted;
+      if (account.charges_enabled && account.payouts_enabled && account.details_submitted) {
+        provider.stripeConnectStatus = 'active';
+      } else if (!account.details_submitted) {
+        provider.stripeConnectStatus = 'pending';
+      } else {
+        provider.stripeConnectStatus = 'restricted';
+      }
+      await provider.save({ validateBeforeSave: false });
+
+      live = {
+        chargesEnabled: account.charges_enabled,
+        payoutsEnabled: account.payouts_enabled,
+        detailsSubmitted: account.details_submitted,
+        requirementsDue: account.requirements ? account.requirements.currently_due : [],
+      };
+    } catch (err) {
+      console.error('Failed to retrieve Stripe account:', err.message);
+    }
+  }
+
+  res.status(200).json({
+    success: true,
+    status: provider.stripeConnectStatus,
+    accountId: provider.stripeConnectAccountId || null,
+    chargesEnabled: provider.stripeChargesEnabled,
+    payoutsEnabled: provider.stripePayoutsEnabled,
+    detailsSubmitted: provider.stripeDetailsSubmitted,
+    live,
+  });
+});
+
+// Public pages for Connect onboarding redirects
+const connectRefresh = asyncHandler(async (req, res) => {
+  const deepLinkUrl = `${process.env.APP_DEEP_LINK_SCHEME}://wallet/connect-refresh`;
+  res.send(`<!DOCTYPE html><html><head><title>Refresh Required</title><meta http-equiv="refresh" content="1;url=${deepLinkUrl}"/></head><body style="font-family:sans-serif;text-align:center;padding:40px;">Redirecting back to app… <a href="${deepLinkUrl}">Tap here if not redirected</a></body></html>`);
+});
+
+const connectReturn = asyncHandler(async (req, res) => {
+  const deepLinkUrl = `${process.env.APP_DEEP_LINK_SCHEME}://wallet/connect-return`;
+  res.send(`<!DOCTYPE html><html><head><title>Onboarding Complete</title><meta http-equiv="refresh" content="1;url=${deepLinkUrl}"/></head><body style="font-family:sans-serif;text-align:center;padding:40px;">Onboarding complete. Redirecting back to app… <a href="${deepLinkUrl}">Tap here if not redirected</a></body></html>`);
+});
+
+// @desc    Request a payout from wallet to bank account (Stripe Connect)
+// @route   POST /api/wallet/payout
+// @access  Private (Provider only)
+const requestPayout = asyncHandler(async (req, res) => {
+  if (!req.isProvider) {
+    res.status(403);
+    throw new Error('Only providers can request payouts');
+  }
+
+  const { amount, idempotencyKey, description } = req.body;
+  const numAmount = Number(amount);
+
+  if (!Number.isFinite(numAmount) || numAmount <= 0) {
+    res.status(400);
+    throw new Error('Amount must be a positive number');
+  }
+
+  const provider = await Provider.findById(req.user._id);
+  if (!provider || !provider.stripeConnectAccountId) {
+    res.status(400);
+    throw new Error('Stripe Connect account not set up. Please complete onboarding first.');
+  }
+  if (!provider.stripePayoutsEnabled) {
+    res.status(400);
+    throw new Error('Payouts are not yet enabled on your Stripe account. Complete onboarding.');
+  }
+
+  const currency = (process.env.STRIPE_CURRENCY || 'usd').toLowerCase();
+  const amountCents = Math.round(numAmount * 100);
+
+  // 1. Reserve funds in local wallet (debit pending)
+  const { wallet, transaction, alreadyProcessed } = await WalletService.initiatePayout({
+    providerId: provider._id,
+    amount: numAmount,
+    description: description || 'Payout to bank account',
+    idempotencyKey,
+  });
+
+  if (alreadyProcessed) {
+    return res.status(200).json({
+      success: true,
+      alreadyProcessed: true,
+      wallet: { balance: wallet.balance, currency: wallet.currency },
+      transaction,
+    });
+  }
+
+  try {
+    // 2. Transfer funds from platform balance to connected account
+    const transfer = await stripe.transfers.create(
+      {
+        amount: amountCents,
+        currency,
+        destination: provider.stripeConnectAccountId,
+        description: description || 'Wallet payout',
+        metadata: {
+          providerId: String(provider._id),
+          walletTransactionId: String(transaction._id),
+        },
+      },
+      { idempotencyKey: `transfer_${transaction._id}` }
+    );
+
+    // 3. Create a payout on the connected account (to their bank)
+    const payout = await stripe.payouts.create(
+      {
+        amount: amountCents,
+        currency,
+        metadata: {
+          providerId: String(provider._id),
+          walletTransactionId: String(transaction._id),
+        },
+      },
+      {
+        stripeAccount: provider.stripeConnectAccountId,
+        idempotencyKey: `payout_${transaction._id}`,
+      }
+    );
+
+    await WalletService.attachStripePayoutIds(transaction._id, {
+      stripeTransferId: transfer.id,
+      stripePayoutId: payout.id,
+      stripeConnectAccountId: provider.stripeConnectAccountId,
+    });
+
+    const freshWallet = await WalletService.getOrCreateWallet(provider._id, 'Provider');
+    const freshTx = await WalletTransaction.findById(transaction._id);
+
+    return res.status(200).json({
+      success: true,
+      wallet: { balance: freshWallet.balance, currency: freshWallet.currency },
+      transaction: freshTx,
+      stripe: {
+        transferId: transfer.id,
+        payoutId: payout.id,
+        status: payout.status,
+        arrivalDate: payout.arrival_date,
+      },
+    });
+  } catch (err) {
+    // Refund the wallet if Stripe call failed
+    try {
+      await WalletService.markPayoutFailedAndRefund(
+        transaction.stripePayoutId || `local_${transaction._id}`,
+        err.message || 'Stripe error'
+      );
+      // Fallback: refund by transaction id if no stripe id was attached yet
+      const reloaded = await WalletTransaction.findById(transaction._id);
+      if (reloaded && reloaded.status === 'pending') {
+        const w = await WalletService.getOrCreateWallet(provider._id, 'Provider');
+        await w.credit(numAmount);
+        reloaded.status = 'failed';
+        reloaded.metadata = {
+          ...(reloaded.metadata || {}),
+          failureReason: err.message,
+          refundedAt: new Date(),
+        };
+        await reloaded.save();
+      }
+    } catch (refundErr) {
+      console.error('Failed to refund wallet after payout error:', refundErr.message);
+    }
+
+    res.status(400);
+    throw new Error(`Payout failed: ${err.message}`);
+  }
 });
 
 module.exports = {
@@ -362,4 +713,10 @@ module.exports = {
   topUpSuccess,
   topUpCancel,
   stripeWebhook,
+  transferToWallet,
+  startConnectOnboarding,
+  getConnectStatus,
+  connectRefresh,
+  connectReturn,
+  requestPayout,
 };

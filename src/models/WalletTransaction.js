@@ -84,9 +84,68 @@ const walletTransactionSchema = new mongoose.Schema(
     source: {
       type: String,
       enum: {
-        values: ['stripe_topup', 'service_payment', 'refund', 'admin_adjustment', 'payout'],
-        message: 'Source must be one of: stripe_topup, service_payment, refund, admin_adjustment, payout',
+        values: [
+          'stripe_topup',
+          'service_payment',
+          'refund',
+          'admin_adjustment',
+          'payout',
+          'transfer_in',
+          'transfer_out',
+          'transfer_fee',
+        ],
+        message:
+          'Source must be one of: stripe_topup, service_payment, refund, admin_adjustment, payout, transfer_in, transfer_out, transfer_fee',
       },
+    },
+
+    /**
+     * Counterparty for transfer-related transactions
+     * Points to the other party involved (sender or receiver)
+     */
+    counterparty: {
+      id: {
+        type: mongoose.Schema.Types.ObjectId,
+        refPath: 'counterparty.type',
+      },
+      type: {
+        type: String,
+        enum: ['User', 'Provider'],
+      },
+    },
+
+    /**
+     * Transfer group ID - links the two legs (debit + credit) of a transfer
+     */
+    transferGroupId: {
+      type: String,
+      index: true,
+      sparse: true,
+    },
+
+    /**
+     * Client-supplied idempotency key for transfers (sparse + unique)
+     */
+    idempotencyKey: {
+      type: String,
+      sparse: true,
+      unique: true,
+    },
+
+    /**
+     * Stripe Connect / payout related identifiers
+     */
+    stripePayoutId: {
+      type: String,
+      sparse: true,
+    },
+    stripeTransferId: {
+      type: String,
+      sparse: true,
+    },
+    stripeConnectAccountId: {
+      type: String,
+      sparse: true,
     },
 
     /**

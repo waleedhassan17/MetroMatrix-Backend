@@ -331,6 +331,17 @@ const providerSchema = new mongoose.Schema(
     resetPasswordToken: String,
     resetPasswordExpire: Date,
     approvedAt: Date,
+
+    // Stripe Connect (for wallet payouts to bank)
+    stripeConnectAccountId: { type: String, sparse: true, index: true },
+    stripeConnectStatus: {
+      type: String,
+      enum: ['not_started', 'pending', 'active', 'restricted'],
+      default: 'not_started',
+    },
+    stripeChargesEnabled: { type: Boolean, default: false },
+    stripePayoutsEnabled: { type: Boolean, default: false },
+    stripeDetailsSubmitted: { type: Boolean, default: false },
   },
   {
     timestamps: true,
