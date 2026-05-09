@@ -17,6 +17,17 @@ const {
   unblockSlot,
   setAvailability,
   getAvailability,
+  getMyAppointments,
+  getAppointmentDetail,
+  confirmAppointment,
+  completeAppointment,
+  cancelAppointment,
+  createPrescription,
+  updatePrescription,
+  getMyPrescriptions,
+  getDashboard,
+  getEarnings,
+  getMyReviews,
 } = require('../controllers/healthcareDoctorController');
 const { protect, providerOnly } = require('../middleware/authMiddleware');
 const { uploadMultipleDocuments, uploadProfilePhoto } = require('../middleware/uploadMiddleware');
@@ -48,5 +59,23 @@ router.delete('/doctors/me/slots/block/:slotId', protect, providerOnly, unblockS
 // Availability
 router.patch('/doctors/me/availability', protect, providerOnly, setAvailability);
 router.get('/doctors/me/availability', protect, providerOnly, getAvailability);
+
+router.get('/doctors/me/appointments', protect, providerOnly, getMyAppointments);
+router.get('/doctors/me/appointments/:appointmentId', protect, providerOnly, getAppointmentDetail);
+router.patch('/doctors/me/appointments/:id/confirm', protect, providerOnly, confirmAppointment);
+router.patch('/doctors/me/appointments/:id/complete', protect, providerOnly, completeAppointment);
+router.patch('/doctors/me/appointments/:id/cancel', protect, providerOnly, cancelAppointment);
+
+// Prescriptions
+router.post('/doctors/me/prescriptions', protect, providerOnly, createPrescription);
+router.patch('/doctors/me/prescriptions/:id', protect, providerOnly, updatePrescription);
+router.get('/doctors/me/prescriptions', protect, providerOnly, getMyPrescriptions);
+
+// Dashboard & earnings
+router.get('/doctors/me/dashboard', protect, providerOnly, getDashboard);
+router.get('/doctors/me/earnings', protect, providerOnly, getEarnings);
+
+// Reviews
+router.get('/doctors/me/reviews', protect, providerOnly, getMyReviews);
 
 module.exports = router;

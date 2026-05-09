@@ -29,9 +29,19 @@ const { generateTokens } = require('./utils/generateToken');
 
 const healthcareDoctorRoutes = require('./routes/healthcareDoctorRoutes');
 
+const adminDoctorRoutes = require('./routes/adminDoctorRoutes');
+
+const adminSpecialtyRoutes = require('./routes/adminSpecialtyRoutes');
+const adminAnalyticsRoutes = require('./routes/adminAnalyticsRoutes');
+
 // Initialize express
 const app = express();
 
+app.use('/api/v1/healthcare', healthcareDoctorRoutes);
+app.use('/api/v1/admin', adminDoctorRoutes);
+
+app.use('/api/v1/admin', adminSpecialtyRoutes);
+app.use('/api/v1/admin', adminAnalyticsRoutes);
 
 // Trust proxy
 app.set('trust proxy', 1);
@@ -456,8 +466,6 @@ app.get('/verify-email', async (req, res) => {
     return res.send(getVerificationHTML('error', 'Something went wrong. Please try again or contact support.', null, null, type));
   }
 });
-
-app.use('/api/v1/healthcare', healthcareDoctorRoutes);
 
 // HTML template helper function for verification page
 function getVerificationHTML(status, message, deepLinkUrl = null, accessToken = null, userType = 'user') {

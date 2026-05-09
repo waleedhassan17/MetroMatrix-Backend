@@ -8,6 +8,8 @@ const Appointment = require('../models/Appointment');
 const TimeSlot = require('../models/TimeSlot');
 const Notification = require('../models/Notification');
 const { generateTokens } = require('../utils/generateToken');
+const User = require('../models/User');
+const mongoose = require('mongoose');
 
 // @desc    Register a new doctor
 // @route   POST /api/v1/healthcare/doctors/register
@@ -775,6 +777,696 @@ const getAvailability = asyncHandler(async (req, res) => {
   });
 });
 
+// @desc    Get my appointments (filtered)
+// @route   GET /api/v1/healthcare/doctors/me/appointments
+// @access  Private (Provider)
+const getMyAppointments = asyncHandler(async (req, res) => {
+  const doctor = await Doctor.findOne({ providerId: req.user._id });
+  if (!doctor) {
+    res.status(404);
+    throw new Error('Doctor profile not found');
+  }
+
+  const { status, date, page = 1, limit = 10 } = req.query;
+  const pageNum = parseInt(page);
+  const limitNum = parseInt(limit);
+  const query = { doctorId: doctor._id };
+
+  // Status filter
+  if (status) {
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+    if (status === 'upcoming') {
+      query.status = { $in: ['pending', 'confirmed'] };
+      // Only upcoming means slot date >= today
+      // We'll filter after populating slot date – we need a virtual or aggregation.
+      // But easier: we'll fetch all matching and filter in memory after populate, or we can use aggregation with $lookup. 
+      // Let's use aggregation for proper date filtering.
+      // For simplicity, we'll skip date filter in DB and do post-filter (not optimal but works).
+    } else if (status === 'past') {
+      query.$or = [{ status: 'completed' }];
+      // Also appointments with date < today
+      // We'll do similar workaround.
+    } else if (status === 'cancelled') {
+      query.status = 'cancelled';
+    }
+  }
+
+  // For proper date filtering we'll use aggregation. But to avoid complexity, we'll use .find and populate, then filter.
+  let appointments = await Appointment.find(query)
+    .populate('patientId', 'fullName profilePhoto')
+    .populate('slotId', 'startTime endTime date') // slotId is TimeSlot
+    .populate('clinicId', 'name')
+    .sort({ createdAt: -1 });
+
+  // Filter by date if provided (exact date match)
+  if (date) {
+    const filterDate = new Date(date);
+    appointments = appointments.filter(appt => {
+      if (!appt.slotId) return false;
+      const slotDate = new Date(appt.slotId.date);
+      return slotDate.toDateString() === filterDate.toDateString();
+    });
+  }
+
+  // Further filter based on status category
+  const today = new Date();
+  today.setHours(0, 0, 0, 0);
+  const filtered = appointments.filter(appt => {
+    const slotDate = appt.slotId ? new Date(appt.slotId.date) : null;
+    if (status === 'upcoming') {
+      return slotDate && slotDate >= today;
+    } else if (status === 'past') {
+      return (appt.status === 'completed') || (slotDate && slotDate < today);
+    } else {
+      return true; // cancelled or all
+    }
+  });
+
+  // Pagination
+  const total = filtered.length;
+  const start = (pageNum - 1) * limitNum;
+  const paged = filtered.slice(start, start + limitNum);
+
+  // Counts
+  const todayAppointments = filtered.filter(appt => {
+    const d = appt.slotId && new Date(appt.slotId.date);
+    return d && d.toDateString() === today.toDateString();
+  }).length;
+  const upcomingCount = filtered.filter(appt => 
+    ((appt.status === 'pending' || appt.status === 'confirmed') && appt.slotId && new Date(appt.slotId.date) >= today)
+  ).length;
+
+  res.json({
+    success: true,
+    data: {
+      appointments: paged,
+      todayCount: todayAppointments,
+      upcomingCount,
+      pagination: {
+        page: pageNum,
+        limit: limitNum,
+        total,
+        pages: Math.ceil(total / limitNum),
+      },
+    },
+  });
+});
+
+// @desc    Get a single appointment detail with patient history
+// @route   GET /api/v1/healthcare/doctors/me/appointments/:appointmentId
+// @access  Private (Provider)
+const getAppointmentDetail = asyncHandler(async (req, res) => {
+  const doctor = await Doctor.findOne({ providerId: req.user._id });
+  if (!doctor) {
+    res.status(404);
+    throw new Error('Doctor profile not found');
+  }
+
+  const appointment = await Appointment.findOne({
+    _id: req.params.appointmentId,
+    doctorId: doctor._id,
+  })
+    .populate('patientId', 'fullName profilePhoto phone')
+    .populate('slotId', 'startTime endTime date')
+    .populate('clinicId', 'name address')
+    .populate('doctorId', 'specialtyId'); // populate for doctor info? Not necessary but can.
+
+  if (!appointment) {
+    res.status(404);
+    throw new Error('Appointment not found');
+  }
+
+  // Find previous appointments of this patient with this doctor (completed/cancelled)
+  const previousAppointments = await Appointment.find({
+    patientId: appointment.patientId._id,
+    doctorId: doctor._id,
+    _id: { $ne: appointment._id },
+    status: { $in: ['completed', 'cancelled'] },
+  })
+    .populate('slotId', 'date startTime endTime')
+    .sort({ 'slotId.date': -1 })
+    .limit(5);
+
+  res.json({
+    success: true,
+    data: {
+      appointment,
+      patientHistory: previousAppointments,
+    },
+  });
+});
+
+// @desc    Confirm a pending appointment
+// @route   PATCH /api/v1/healthcare/doctors/me/appointments/:id/confirm
+// @access  Private (Provider)
+const confirmAppointment = asyncHandler(async (req, res) => {
+  const doctor = await Doctor.findOne({ providerId: req.user._id });
+  if (!doctor) {
+    res.status(404);
+    throw new Error('Doctor profile not found');
+  }
+
+  const appointment = await Appointment.findOne({
+    _id: req.params.id,
+    doctorId: doctor._id,
+  });
+
+  if (!appointment) {
+    res.status(404);
+    throw new Error('Appointment not found');
+  }
+
+  if (appointment.status !== 'pending') {
+    res.status(400);
+    throw new Error('Only pending appointments can be confirmed');
+  }
+
+  appointment.status = 'confirmed';
+  await appointment.save();
+
+  // Notify patient
+  await Notification.create({
+    recipientType: 'user',
+    userId: appointment.patientId,
+    type: 'appointment_confirmed',
+    title: 'Appointment Confirmed',
+    message: `Your appointment with Dr. ${req.user.fullName || 'your doctor'} has been confirmed.`,
+    data: { appointmentId: appointment._id },
+  });
+
+  const updatedAppointment = await Appointment.findById(appointment._id)
+    .populate('patientId', 'fullName profilePhoto')
+    .populate('slotId', 'startTime endTime date');
+
+  res.json({
+    success: true,
+    data: { appointment: updatedAppointment },
+  });
+});
+
+// @desc    Complete a confirmed appointment
+// @route   PATCH /api/v1/healthcare/doctors/me/appointments/:id/complete
+// @access  Private (Provider)
+const completeAppointment = asyncHandler(async (req, res) => {
+  const doctor = await Doctor.findOne({ providerId: req.user._id });
+  if (!doctor) {
+    res.status(404);
+    throw new Error('Doctor profile not found');
+  }
+
+  const appointment = await Appointment.findOne({
+    _id: req.params.id,
+    doctorId: doctor._id,
+  });
+
+  if (!appointment) {
+    res.status(404);
+    throw new Error('Appointment not found');
+  }
+
+  if (appointment.status !== 'confirmed') {
+    res.status(400);
+    throw new Error('Only confirmed appointments can be completed');
+  }
+
+  // Verify appointment date is today or in the past
+  const slot = await TimeSlot.findById(appointment.slotId);
+  if (!slot) {
+    res.status(400);
+    throw new Error('Associated time slot not found');
+  }
+
+  const slotDate = new Date(slot.date);
+  const today = new Date();
+  today.setHours(0, 0, 0, 0);
+  if (slotDate > today) {
+    res.status(400);
+    throw new Error('Cannot complete a future appointment');
+  }
+
+  appointment.status = 'completed';
+  appointment.completedAt = new Date();
+  await appointment.save();
+
+  // Notify patient
+  await Notification.create({
+    recipientType: 'user',
+    userId: appointment.patientId,
+    type: 'appointment_completed',
+    title: 'Appointment Completed',
+    message: 'Please share your feedback by leaving a review.',
+    data: { appointmentId: appointment._id },
+  });
+
+  const updatedAppointment = await Appointment.findById(appointment._id)
+    .populate('patientId', 'fullName profilePhoto')
+    .populate('slotId', 'startTime endTime date');
+
+  res.json({
+    success: true,
+    data: { appointment: updatedAppointment },
+  });
+});
+
+// @desc    Cancel an appointment (doctor)
+// @route   PATCH /api/v1/healthcare/doctors/me/appointments/:id/cancel
+// @access  Private (Provider)
+const cancelAppointment = asyncHandler(async (req, res) => {
+  const doctor = await Doctor.findOne({ providerId: req.user._id });
+  if (!doctor) {
+    res.status(404);
+    throw new Error('Doctor profile not found');
+  }
+
+  const { reason } = req.body;
+  if (!reason) {
+    res.status(400);
+    throw new Error('Cancellation reason is required');
+  }
+
+  const appointment = await Appointment.findOne({
+    _id: req.params.id,
+    doctorId: doctor._id,
+  });
+
+  if (!appointment) {
+    res.status(404);
+    throw new Error('Appointment not found');
+  }
+
+  if (!['pending', 'confirmed'].includes(appointment.status)) {
+    res.status(400);
+    throw new Error('Can only cancel pending or confirmed appointments');
+  }
+
+  // Update appointment
+  appointment.status = 'cancelled';
+  appointment.cancellationReason = reason;
+  appointment.cancelledBy = 'doctor';
+  await appointment.save();
+
+  // Update time slot
+  const slot = await TimeSlot.findById(appointment.slotId);
+  if (slot) {
+    if (slot.bookedCount > 0) {
+      slot.bookedCount -= 1;
+    }
+    if (slot.bookedCount === 0 && slot.status !== 'blocked') {
+      slot.status = 'available';
+    }
+    await slot.save();
+  }
+
+  // Notify patient
+  await Notification.create({
+    recipientType: 'user',
+    userId: appointment.patientId,
+    type: 'appointment_cancelled',
+    title: 'Appointment Cancelled',
+    message: `Your appointment has been cancelled by the doctor. Reason: ${reason}`,
+    data: { appointmentId: appointment._id },
+  });
+
+  const updatedAppointment = await Appointment.findById(appointment._id)
+    .populate('patientId', 'fullName profilePhoto')
+    .populate('slotId', 'startTime endTime date');
+
+  res.json({
+    success: true,
+    data: { appointment: updatedAppointment },
+  });
+});
+
+// @desc    Create prescription for completed appointment
+// @route   POST /api/v1/healthcare/doctors/me/prescriptions
+// @access  Private (Provider)
+const createPrescription = asyncHandler(async (req, res) => {
+  const doctor = await Doctor.findOne({ providerId: req.user._id });
+  if (!doctor) {
+    res.status(404);
+    throw new Error('Doctor profile not found');
+  }
+
+  const { appointmentId, diagnosis, symptoms, medications, tests, advice, followUpDate } = req.body;
+
+  if (!appointmentId || !diagnosis) {
+    res.status(400);
+    throw new Error('appointmentId and diagnosis are required');
+  }
+
+  // Verify appointment belongs to doctor and is completed
+  const appointment = await Appointment.findOne({
+    _id: appointmentId,
+    doctorId: doctor._id,
+  });
+  if (!appointment) {
+    res.status(404);
+    throw new Error('Appointment not found');
+  }
+  if (appointment.status !== 'completed') {
+    res.status(400);
+    throw new Error('Prescription can only be created for completed appointments');
+  }
+
+  // Check uniqueness
+  const existing = await Prescription.findOne({ appointmentId });
+  if (existing) {
+    res.status(400);
+    throw new Error('A prescription already exists for this appointment');
+  }
+
+  const prescription = await Prescription.create({
+    appointmentId,
+    doctorId: doctor._id,
+    patientId: appointment.patientId,
+    diagnosis,
+    symptoms: symptoms || [],
+    medications: medications || [],
+    tests: tests || [],
+    advice: advice || '',
+    followUpDate: followUpDate ? new Date(followUpDate) : undefined,
+  });
+
+  // Notify patient
+  await Notification.create({
+    recipientType: 'user',
+    userId: appointment.patientId,
+    type: 'prescription_ready',
+    title: 'Your Prescription is Ready',
+    message: `Dr. ${req.user.fullName || 'your doctor'} has issued a prescription.`,
+    data: { prescriptionId: prescription._id },
+  });
+
+  res.status(201).json({
+    success: true,
+    data: { prescription },
+  });
+});
+
+// @desc    Update prescription (within 24 hours)
+// @route   PATCH /api/v1/healthcare/doctors/me/prescriptions/:id
+// @access  Private (Provider)
+const updatePrescription = asyncHandler(async (req, res) => {
+  const doctor = await Doctor.findOne({ providerId: req.user._id });
+  if (!doctor) {
+    res.status(404);
+    throw new Error('Doctor profile not found');
+  }
+
+  const prescription = await Prescription.findOne({
+    _id: req.params.id,
+    doctorId: doctor._id,
+  });
+  if (!prescription) {
+    res.status(404);
+    throw new Error('Prescription not found');
+  }
+
+  // 24-hour window check
+  const createdTime = new Date(prescription.createdAt).getTime();
+  if (Date.now() - createdTime > 24 * 60 * 60 * 1000) {
+    res.status(400);
+    throw new Error('Prescription can only be updated within 24 hours of creation');
+  }
+
+  // Allowed fields
+  const allowed = ['diagnosis', 'symptoms', 'medications', 'tests', 'advice'];
+  for (const field of allowed) {
+    if (req.body[field] !== undefined) {
+      prescription[field] = req.body[field];
+    }
+  }
+  if (req.body.followUpDate) {
+    prescription.followUpDate = new Date(req.body.followUpDate);
+  }
+
+  await prescription.save();
+
+  res.status(200).json({
+    success: true,
+    data: { prescription },
+  });
+});
+
+// @desc    List my prescriptions
+// @route   GET /api/v1/healthcare/doctors/me/prescriptions
+// @access  Private (Provider)
+const getMyPrescriptions = asyncHandler(async (req, res) => {
+  const doctor = await Doctor.findOne({ providerId: req.user._id });
+  if (!doctor) {
+    res.status(404);
+    throw new Error('Doctor profile not found');
+  }
+
+  const { patientName, startDate, endDate, page = 1, limit = 10 } = req.query;
+
+  // Find all prescriptions for this doctor, populate patient and appointment with slot
+  let prescriptions = await Prescription.find({ doctorId: doctor._id })
+    .populate({
+      path: 'patientId',
+      select: 'fullName',
+    })
+    .populate({
+      path: 'appointmentId',
+      populate: { path: 'slotId', select: 'date' },
+      select: 'slotId',
+    })
+    .sort({ createdAt: -1 });
+
+  // Client-side filtering (acceptable for FYP scale)
+  if (patientName) {
+    const regex = new RegExp(patientName, 'i');
+    prescriptions = prescriptions.filter(p =>
+      p.patientId && p.patientId.fullName && regex.test(p.patientId.fullName)
+    );
+  }
+
+  if (startDate || endDate) {
+    const s = startDate ? new Date(startDate) : new Date(0);
+    const e = endDate ? new Date(endDate) : new Date('2100-01-01');
+    e.setHours(23, 59, 59, 999);
+    prescriptions = prescriptions.filter(p => {
+      const date = p.appointmentId && p.appointmentId.slotId ? new Date(p.appointmentId.slotId.date) : null;
+      return date && date >= s && date <= e;
+    });
+  }
+
+  // Paginate
+  const total = prescriptions.length;
+  const pageNum = parseInt(page);
+  const limitNum = parseInt(limit);
+  const start = (pageNum - 1) * limitNum;
+  const paged = prescriptions.slice(start, start + limitNum);
+
+  res.status(200).json({
+    success: true,
+    data: {
+      prescriptions: paged,
+      pagination: {
+        page: pageNum,
+        limit: limitNum,
+        total,
+        pages: Math.ceil(total / limitNum),
+      },
+    },
+  });
+});
+
+// @desc    Doctor dashboard statistics
+// @route   GET /api/v1/healthcare/doctors/me/dashboard
+// @access  Private (Provider)
+const getDashboard = asyncHandler(async (req, res) => {
+  const doctor = await Doctor.findOne({ providerId: req.user._id });
+  if (!doctor) {
+    res.status(404);
+    throw new Error('Doctor profile not found');
+  }
+
+  const now = new Date();
+  const todayStart = new Date(now); todayStart.setHours(0, 0, 0, 0);
+  const todayEnd = new Date(todayStart); todayEnd.setDate(todayEnd.getDate() + 1);
+
+  // Compute start/end for week and month
+  const weekStart = new Date(todayStart); weekStart.setDate(weekStart.getDate() - weekStart.getDay()); // Sunday
+  const monthStart = new Date(todayStart.getFullYear(), todayStart.getMonth(), 1);
+
+  const stats = await Appointment.aggregate([
+    { $match: { doctorId: doctor._id } },
+    { $lookup: { from: 'timeslots', localField: 'slotId', foreignField: '_id', as: 'slot' } },
+    { $unwind: '$slot' },
+    { $facet: {
+      today: [
+        { $match: { 'slot.date': { $gte: todayStart, $lt: todayEnd } } },
+        { $group: {
+          _id: null,
+          appointments: { $sum: 1 },
+          completed: { $sum: { $cond: [{ $eq: ['$status', 'completed'] }, 1, 0] } },
+          upcoming: { $sum: { $cond: [{ $in: ['$status', ['pending', 'confirmed']] }, 1, 0] } },
+          earnings: { $sum: { $cond: [{ $eq: ['$status', 'completed'] }, '$totalAmount', 0] } },
+        } },
+      ],
+      thisWeek: [
+        { $match: { 'slot.date': { $gte: weekStart, $lt: todayEnd } } },
+        { $group: {
+          _id: null,
+          appointments: { $sum: 1 },
+          completed: { $sum: { $cond: [{ $eq: ['$status', 'completed'] }, 1, 0] } },
+          upcoming: { $sum: { $cond: [{ $in: ['$status', ['pending', 'confirmed']] }, 1, 0] } },
+          earnings: { $sum: { $cond: [{ $eq: ['$status', 'completed'] }, '$totalAmount', 0] } },
+        } },
+      ],
+      thisMonth: [
+        { $match: { 'slot.date': { $gte: monthStart, $lt: todayEnd } } },
+        { $group: {
+          _id: null,
+          appointments: { $sum: 1 },
+          completed: { $sum: { $cond: [{ $eq: ['$status', 'completed'] }, 1, 0] } },
+          upcoming: { $sum: { $cond: [{ $in: ['$status', ['pending', 'confirmed']] }, 1, 0] } },
+          earnings: { $sum: { $cond: [{ $eq: ['$status', 'completed'] }, '$totalAmount', 0] } },
+        } },
+      ],
+    } },
+  ]);
+
+  // Extract facet results
+  const todayStats = stats[0].today[0] || { appointments: 0, completed: 0, upcoming: 0, earnings: 0 };
+  const weekStats = stats[0].thisWeek[0] || { appointments: 0, completed: 0, upcoming: 0, earnings: 0 };
+  const monthStats = stats[0].thisMonth[0] || { appointments: 0, completed: 0, upcoming: 0, earnings: 0 };
+
+  // Next upcoming appointment today (or future)
+  const nextAppointment = await Appointment.findOne({
+    doctorId: doctor._id,
+    status: { $in: ['pending', 'confirmed'] },
+  })
+    .populate({ path: 'slotId', match: { date: { $gte: todayStart } }, select: 'date startTime endTime' })
+    .sort({ 'slot.date': 1, 'slot.startTime': 1 })
+    .lean();
+
+  // If slot doesn't match, nextAppointment may have slotId=null due to match filter; better to filter separately.
+  // Alternative: we can fetch closest appointment with slot date >= todayStart.
+  let next = null;
+  if (nextAppointment && nextAppointment.slotId) {
+    next = {
+      appointmentId: nextAppointment._id,
+      patientName: nextAppointment.patientName,
+      date: nextAppointment.slotId.date,
+      startTime: nextAppointment.slotId.startTime,
+    };
+  }
+
+  res.json({
+    success: true,
+    data: {
+      today: todayStats,
+      thisWeek: weekStats,
+      thisMonth: monthStats,
+      rating: doctor.rating,
+      totalReviews: doctor.totalReviews,
+      nextAppointment: next,
+    },
+  });
+});
+
+// @desc    Earnings report
+// @route   GET /api/v1/healthcare/doctors/me/earnings
+// @access  Private (Provider)
+const getEarnings = asyncHandler(async (req, res) => {
+  const doctor = await Doctor.findOne({ providerId: req.user._id });
+  if (!doctor) {
+    res.status(404);
+    throw new Error('Doctor profile not found');
+  }
+
+  const { period = 'daily', startDate, endDate } = req.query;
+  const start = startDate ? new Date(startDate) : new Date('1970-01-01');
+  const end = endDate ? new Date(endDate) : new Date('2100-01-01');
+  end.setHours(23, 59, 59, 999);
+
+  const match = {
+    doctorId: doctor._id,
+    status: 'completed',
+  };
+
+  const earnings = await Appointment.aggregate([
+    { $match: match },
+    { $lookup: { from: 'timeslots', localField: 'slotId', foreignField: '_id', as: 'slot' } },
+    { $unwind: '$slot' },
+    { $match: { 'slot.date': { $gte: start, $lte: end } } },
+    {
+      $group: {
+        _id: {
+          date: { $dateToString: { format: period === 'weekly' ? '%Y-W%V' : period === 'monthly' ? '%Y-%m' : '%Y-%m-%d', date: '$slot.date' } },
+          type: '$type',
+        },
+        total: { $sum: '$totalAmount' },
+        count: { $sum: 1 },
+      },
+    },
+    {
+      $group: {
+        _id: '$_id.date',
+        types: {
+          $push: { type: '$_id.type', total: '$total', count: '$count' },
+        },
+        totalAmount: { $sum: '$total' },
+      },
+    },
+    { $sort: { _id: 1 } },
+  ]);
+
+  res.json({
+    success: true,
+    data: {
+      period,
+      breakdown: earnings,
+    },
+  });
+});
+
+// @desc    Get my reviews (from Provider.reviews[])
+// @route   GET /api/v1/healthcare/doctors/me/reviews
+// @access  Private (Provider)
+const getMyReviews = asyncHandler(async (req, res) => {
+  // req.user is the provider
+  const provider = await Provider.findById(req.user._id).select('reviews ratings');
+  if (!provider) {
+    res.status(404);
+    throw new Error('Provider not found');
+  }
+
+  const { rating: ratingFilter, page = 1, limit = 10 } = req.query;
+  let reviews = provider.reviews || [];
+
+  // Filter by rating if provided
+  if (ratingFilter) {
+    const r = parseInt(ratingFilter);
+    reviews = reviews.filter(review => review.rating === r);
+  }
+
+  // Paginate
+  const total = reviews.length;
+  const pageNum = parseInt(page);
+  const limitNum = parseInt(limit);
+  const start = (pageNum - 1) * limitNum;
+  const paged = reviews.slice(start, start + limitNum);
+
+  res.json({
+    success: true,
+    data: {
+      reviews: paged,
+      averageRating: provider.ratings.average,
+      totalReviews: provider.ratings.count,
+      pagination: {
+        page: pageNum,
+        limit: limitNum,
+        total,
+        pages: Math.ceil(total / limitNum),
+      },
+    },
+  });
+});
+
 module.exports = {
   registerDoctor,
   signinDoctor,
@@ -792,4 +1484,15 @@ module.exports = {
   unblockSlot,
   setAvailability,
   getAvailability,
+  getMyAppointments,
+  getAppointmentDetail,
+  confirmAppointment,
+  completeAppointment,
+  cancelAppointment,
+  createPrescription,
+  updatePrescription,
+  getMyPrescriptions,
+  getDashboard,
+  getEarnings,
+  getMyReviews,
 };
