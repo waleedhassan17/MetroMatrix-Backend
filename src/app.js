@@ -27,8 +27,11 @@ const PendingSignup = require('./models/PendingSignup');
 const EmailVerification = require('./models/EmailVerification');
 const { generateTokens } = require('./utils/generateToken');
 
+const healthcareDoctorRoutes = require('./routes/healthcareDoctorRoutes');
+
 // Initialize express
 const app = express();
+
 
 // Trust proxy
 app.set('trust proxy', 1);
@@ -36,6 +39,7 @@ app.set('trust proxy', 1);
 // Body parser middleware
 app.use(express.json({ limit: '10mb' }));
 app.use(express.urlencoded({ extended: true, limit: '10mb' }));
+
 
 // CORS configuration
 const corsOptions = {
@@ -452,6 +456,8 @@ app.get('/verify-email', async (req, res) => {
     return res.send(getVerificationHTML('error', 'Something went wrong. Please try again or contact support.', null, null, type));
   }
 });
+
+app.use('/api/v1/healthcare', healthcareDoctorRoutes);
 
 // HTML template helper function for verification page
 function getVerificationHTML(status, message, deepLinkUrl = null, accessToken = null, userType = 'user') {
