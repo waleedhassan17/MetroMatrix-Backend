@@ -120,7 +120,7 @@ app.get('/health', (req, res) => {
 // ✅ NEW: Verify email via API and return JSON response with tokens
 app.get('/api/verify-email', async (req, res) => {
   const { token, type = 'user' } = req.query;
-  
+
   if (!token) {
     return res.status(400).json({
       success: false,
@@ -131,7 +131,7 @@ app.get('/api/verify-email', async (req, res) => {
 
   try {
     const hashedToken = crypto.createHash('sha256').update(token).digest('hex');
-    
+
     // ✅ UPDATED: Check if provider email verification (provider already exists)
     if (type === 'provider') {
       const provider = await Provider.findOne({
@@ -175,7 +175,7 @@ app.get('/api/verify-email', async (req, res) => {
         });
       }
     }
-    
+
     // Check if this is a PendingSignup verification (USER only)
     const pending = await PendingSignup.findOne({
       verificationToken: hashedToken,
@@ -195,12 +195,12 @@ app.get('/api/verify-email', async (req, res) => {
           emailVerified: true,
           isVerified: true,
         });
-        
+
         // Delete pending signup
         await PendingSignup.deleteOne({ _id: pending._id });
-        
+
         console.log(`✅ ${type} verified via API: ${user.email}`);
-        
+
         // User flow: Full access immediately
         const tokens = generateTokens(user._id, {
           userType: 'user',
@@ -209,7 +209,7 @@ app.get('/api/verify-email', async (req, res) => {
         user.refreshToken = tokens.refreshToken;
         user.lastLoginDate = Date.now();
         await user.save();
-        
+
         return res.json({
           success: true,
           message: 'User email verified successfully!',
@@ -236,7 +236,7 @@ app.get('/api/verify-email', async (req, res) => {
         });
       }
     }
-    
+
     // Token not found or expired
     return res.status(400).json({
       success: false,
@@ -257,14 +257,14 @@ app.get('/api/verify-email', async (req, res) => {
 // ✅ UPDATED: Handles signup verification - creates User/Provider AFTER email verification
 app.get('/verify-email', async (req, res) => {
   const { token, type = 'user' } = req.query;
-  
+
   if (!token) {
     return res.send(getVerificationHTML('error', 'No verification token provided.', null, null, type));
   }
 
   try {
     const hashedToken = crypto.createHash('sha256').update(token).digest('hex');
-    
+
     // ✅ NEW FLOW: Provider already exists, just verify email
     // Check if this is a Provider's email verification (created during signup)
     if (type === 'provider') {
@@ -279,7 +279,7 @@ app.get('/verify-email', async (req, res) => {
         provider.onboardingStatus = 'pending_documents';
         provider.emailVerificationToken = undefined;
         provider.emailVerificationExpire = undefined;
-        
+
         // Generate tokens for profile completion
         const tokens = generateTokens(provider._id, {
           userType: 'provider',
@@ -292,7 +292,7 @@ app.get('/verify-email', async (req, res) => {
         console.log(`✅ Provider email verified: ${provider.email}`);
 
         const successMessage = 'Email verified successfully! Please return to the MetroMatrix app to complete your profile.';
-        
+
         const deepLinkParams = new URLSearchParams({
           verified: 'true',
           accessToken: tokens.accessToken,
@@ -302,13 +302,13 @@ app.get('/verify-email', async (req, res) => {
           email: provider.email,
           fullName: provider.fullName,
         });
-        
+
         const deepLinkUrl = `metromatrix://verify-success?${deepLinkParams}`;
-        
+
         return res.send(getVerificationHTML('success', successMessage, deepLinkUrl, null, type));
       }
     }
-    
+
     // Check if this is a PendingSignup (USER signup verification only)
     const pending = await PendingSignup.findOne({
       verificationToken: hashedToken,
@@ -319,11 +319,11 @@ app.get('/verify-email', async (req, res) => {
     if (pending) {
       // This is a new USER signup verification - create the user
       console.log(`✅ Verifying new ${type} signup: ${pending.email}`);
-      
+
       let user;
       let successMessage = '';
       let deepLinkParams;
-      
+
       try {
         // ✅ USER FLOW ONLY: Create and enable full access immediately
         user = await User.create({
@@ -334,7 +334,7 @@ app.get('/verify-email', async (req, res) => {
           emailVerified: true,
           isVerified: true,
         });
-        
+
         // Generate auth tokens for user (immediate login)
         const tokens = generateTokens(user._id, {
           userType: 'user',
@@ -343,9 +343,9 @@ app.get('/verify-email', async (req, res) => {
         user.refreshToken = tokens.refreshToken;
         user.lastLoginDate = Date.now();
         await user.save();
-        
+
         successMessage = 'Your email has been verified successfully! Welcome to MetroMatrix.';
-        
+
         deepLinkParams = new URLSearchParams({
           verified: 'true',
           accessToken: tokens.accessToken,
@@ -355,14 +355,14 @@ app.get('/verify-email', async (req, res) => {
           email: user.email,
           fullName: user.fullName,
         });
-        
+
         // Delete pending signup record
         await PendingSignup.deleteOne({ _id: pending._id });
-        
+
         const deepLinkUrl = `metromatrix://verify-success?${deepLinkParams}`;
         // ✅ IMPROVED: Return HTML with immediate auto-redirect
         return res.send(getVerificationHTML('success', successMessage, deepLinkUrl, null, type));
-        
+
       } catch (createError) {
         console.error(`Error creating ${type} from pending signup:`, createError);
         // Clean up pending record on failure
@@ -370,7 +370,7 @@ app.get('/verify-email', async (req, res) => {
         return res.send(getVerificationHTML('error', 'Failed to complete signup. Please try again.', null, null, type));
       }
     }
-    
+
     // ✅ NEW: Check EmailVerification table for standalone provider verification (v60)
     if (type === 'provider') {
       const emailVerification = await EmailVerification.findOne({
@@ -398,11 +398,11 @@ app.get('/verify-email', async (req, res) => {
         // Return success page WITHOUT tokens (provider hasn't submitted profile yet)
         const successMessage = 'Email verified successfully! Please return to the MetroMatrix app to complete your profile.';
         const deepLinkUrl = `metromatrix://verified?email=${encodeURIComponent(emailVerification.email)}&type=provider`;
-        
+
         return res.send(getVerificationHTML('success', successMessage, deepLinkUrl, null, type));
       }
     }
-    
+
     // Otherwise, check if this is an existing user's email verification (legacy flow)
     const Model = type === 'provider' ? Provider : User;
     const user = await Model.findOne({
@@ -420,7 +420,7 @@ app.get('/verify-email', async (req, res) => {
     user.emailVerificationToken = undefined;
     user.emailVerificationExpire = undefined;
     user.emailVerificationAttempts = 0;
-    
+
     if (type === 'provider') {
       user.canLogin = true;
     }
@@ -446,7 +446,7 @@ app.get('/verify-email', async (req, res) => {
 
     const deepLinkUrl = `metromatrix://verify-success?${deepLinkParams}`;
     return res.send(getVerificationHTML('success', 'Your email has been verified successfully!', deepLinkUrl, tokens.accessToken, type));
-    
+
   } catch (error) {
     console.error('Verification error:', error);
     return res.send(getVerificationHTML('error', 'Something went wrong. Please try again or contact support.', null, null, type));
@@ -457,9 +457,9 @@ app.get('/verify-email', async (req, res) => {
 function getVerificationHTML(status, message, deepLinkUrl = null, accessToken = null, userType = 'user') {
   const isSuccess = status === 'success';
   const isExpired = status === 'expired';
-  
+
   let iconContent, iconBg, titleColor, title;
-  
+
   if (isSuccess) {
     iconContent = '✓';
     iconBg = '#d1fae5';
@@ -476,7 +476,7 @@ function getVerificationHTML(status, message, deepLinkUrl = null, accessToken = 
     titleColor = '#dc2626';
     title = 'Verification Failed';
   }
-  
+
   return `
 <!DOCTYPE html>
 <html lang="en">
@@ -1119,7 +1119,7 @@ app.get('/terms-of-service', (req, res) => {
 // ✅ NEW: Reset password via API and return JSON response
 app.get('/api/reset-password', async (req, res) => {
   const { token, type = 'user' } = req.query;
-  
+
   if (!token) {
     return res.status(400).json({
       success: false,
@@ -1130,7 +1130,7 @@ app.get('/api/reset-password', async (req, res) => {
 
   try {
     const hashedToken = crypto.createHash('sha256').update(token).digest('hex');
-    
+
     // Check if token is valid for either user or provider
     const Model = type === 'provider' ? Provider : User;
     const user = await Model.findOne({
@@ -1169,14 +1169,14 @@ app.get('/api/reset-password', async (req, res) => {
 // ✅ NEW: Password reset page with auto-redirect
 app.get('/reset-password', async (req, res) => {
   const { token, type = 'user' } = req.query;
-  
+
   if (!token) {
     return res.send(getPasswordResetHTML('error', 'No reset token provided.', null, type));
   }
 
   try {
     const hashedToken = crypto.createHash('sha256').update(token).digest('hex');
-    
+
     // Verify token
     const Model = type === 'provider' ? Provider : User;
     const user = await Model.findOne({
@@ -1189,7 +1189,7 @@ app.get('/reset-password', async (req, res) => {
     }
 
     console.log(`✅ Password reset link valid for ${type}: ${user.email}`);
-    
+
     const deepLinkParams = new URLSearchParams({
       resetToken: token,
       userType: type,
@@ -1197,9 +1197,9 @@ app.get('/reset-password', async (req, res) => {
     });
 
     const deepLinkUrl = `metromatrix://reset-password?${deepLinkParams}`;
-    
+
     return res.send(getPasswordResetHTML('valid', `You can now reset your password. Redirecting to MetroMatrix app...`, deepLinkUrl, type, token));
-    
+
   } catch (error) {
     console.error('Password reset page error:', error);
     return res.send(getPasswordResetHTML('error', 'Something went wrong. Please try again or contact support.', null, type));
@@ -1210,9 +1210,9 @@ app.get('/reset-password', async (req, res) => {
 function getPasswordResetHTML(status, message, deepLinkUrl = null, userType = 'user', resetToken = null) {
   const isValid = status === 'valid';
   const isExpired = status === 'expired';
-  
+
   let iconContent, iconBg, titleColor, title;
-  
+
   if (isValid) {
     iconContent = '🔐';
     iconBg = '#e0e7ff';
@@ -1229,7 +1229,7 @@ function getPasswordResetHTML(status, message, deepLinkUrl = null, userType = 'u
     titleColor = '#dc2626';
     title = 'Reset Failed';
   }
-  
+
   return `
 <!DOCTYPE html>
 <html lang="en">
@@ -1531,6 +1531,7 @@ function getPasswordResetHTML(status, message, deepLinkUrl = null, userType = 'u
 
 // API Routes
 app.use('/api/auth', authRoutes);
+app.use('/api/v1/healthcare', require('./modules/healthcare/routes/index'));
 app.use('/api/users', userRoutes);
 app.use('/api/providers', providerRoutes);
 app.use('/api/posts', postRoutes);

@@ -1,3 +1,8 @@
+const dns = require('dns');
+// Use Google DNS to resolve MongoDB Atlas SRV records
+// (fixes ECONNREFUSED on routers that block SRV lookups)
+dns.setServers(['8.8.8.8', '8.8.4.4']);
+
 const dotenv = require('dotenv');
 const colors = require('colors');
 
@@ -26,6 +31,9 @@ const server = app.listen(PORT, () => {
     `Server running in ${process.env.NODE_ENV} mode on port ${PORT}`.yellow.bold
   );
   console.log('✅ Server is listening!'.green);
+
+  // Register healthcare scheduled jobs (after server + DB are ready)
+  require('./modules/healthcare/jobs/appointmentReminders');
 });
 
 // Handle unhandled promise rejections
