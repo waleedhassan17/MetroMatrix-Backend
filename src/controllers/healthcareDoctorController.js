@@ -9,6 +9,7 @@ const Appointment = require('../modules/healthcare/models/Appointment');
 const Slot = require('../modules/healthcare/models/Slot');
 const Review = require('../modules/healthcare/models/Review');
 const Prescription = require('../modules/healthcare/models/Prescription');
+const MedicalNote = require('../modules/healthcare/models/MedicalNote');
 const Notification = require('../models/Notification');
 const hcNotificationService = require('../modules/healthcare/services/notificationService');
 const { generateTokens } = require('../utils/generateToken');
@@ -1476,6 +1477,170 @@ const getMyReviews = asyncHandler(async (req, res) => {
   });
 });
 
+// ═══════════════════════════════════════════
+//  MEDICAL NOTES (doctor's private notes per patient)
+// ═══════════════════════════════════════════
+
+// @desc    Get a patient's summary + this doctor's notes for them
+// @route   GET /api/v1/healthcare/doctors/me/patients/:patientId/notes
+const getPatientNotes = asyncHandler(async (req, res) => {
+  const doctor = await Doctor.findOne({ providerId: req.user._id });
+  if (!doctor) { res.status(404); throw new Error('Doctor profile not found'); }
+
+  const { patientId } = req.params;
+  const [user, notes, lastAppt] = await Promise.all([
+    User.findById(patientId).select('fullName'),
+    MedicalNote.find({ doctorId: doctor._id, patientId }).sort({ createdAt: -1 }),
+    Appointment.findOne({ doctorId: doctor._id, patientId }).sort({ createdAt: -1 }),
+  ]);
+
+  const patient = {
+    patientId,
+    patientName: user?.fullName || lastAppt?.patientInfo?.name || '',
+    age: lastAppt?.patientInfo?.age || 0,
+    gender: lastAppt?.patientInfo?.gender || '',
+    bloodGroup: '',
+    allergies: [],
+    chronicConditions: [],
+  };
+
+  res.json({ success: true, data: { patient, notes } });
+});
+
+// @desc    Create a medical note
+// @route   POST /api/v1/healthcare/doctors/me/notes
+const createNote = asyncHandler(async (req, res) => {
+  const doctor = await Doctor.findOne({ providerId: req.user._id });
+  if (!doctor) { res.status(404); throw new Error('Doctor profile not found'); }
+
+  const { patientId, appointmentId, title, content, tags, attachments } = req.body;
+  if (!patientId) { res.status(400); throw new Error('patientId is required'); }
+
+  const note = await MedicalNote.create({
+    doctorId: doctor._id,
+    patientId,
+    appointmentId: appointmentId || null,
+    title: title || '',
+    content: content || '',
+    tags: tags || [],
+    attachments: attachments || [],
+  });
+
+  res.status(201).json({ success: true, data: { note } });
+});
+
+// @desc    Update a medical note (owner doctor only)
+// @route   PATCH /api/v1/healthcare/doctors/me/notes/:noteId
+const updateNote = asyncHandler(async (req, res) => {
+  const doctor = await Doctor.findOne({ providerId: req.user._id });
+  if (!doctor) { res.status(404); throw new Error('Doctor profile not found'); }
+
+  const note = await MedicalNote.findOne({ _id: req.params.noteId, doctorId: doctor._id });
+  if (!note) { res.status(404); throw new Error('Note not found'); }
+
+  ['title', 'content', 'tags', 'attachments'].forEach((f) => {
+    if (req.body[f] !== undefined) note[f] = req.body[f];
+  });
+  await note.save();
+
+  res.json({ success: true, data: { note } });
+});
+
+// @desc    Delete a medical note (owner doctor only)
+// @route   DELETE /api/v1/healthcare/doctors/me/notes/:noteId
+const deleteNote = asyncHandler(async (req, res) => {
+  const doctor = await Doctor.findOne({ providerId: req.user._id });
+  if (!doctor) { res.status(404); throw new Error('Doctor profile not found'); }
+
+  const note = await MedicalNote.findOneAndDelete({ _id: req.params.noteId, doctorId: doctor._id });
+  if (!note) { res.status(404); throw new Error('Note not found'); }
+
+  res.json({ success: true, message: 'Note deleted' });
+});
+
+// ═══════════════════════════════════════════
+//  PATIENT HISTORY (doctor viewing a patient's record with this doctor)
+// ═══════════════════════════════════════════
+
+// @desc    Get a patient's visit history with this doctor
+// @route   GET /api/v1/healthcare/doctors/me/patients/:patientId/history
+const getPatientHistory = asyncHandler(async (req, res) => {
+  const doctor = await Doctor.findOne({ providerId: req.user._id });
+  if (!doctor) { res.status(404); throw new Error('Doctor profile not found'); }
+
+  const { patientId } = req.params;
+  const [user, appts] = await Promise.all([
+    User.findById(patientId).select('fullName phoneNumber'),
+    Appointment.find({ doctorId: doctor._id, patientId })
+      .populate('slotId', 'date startTime endTime')
+      .sort({ createdAt: -1 }),
+  ]);
+
+  const apptIds = appts.map((a) => a._id);
+  const prescriptions = await Prescription.find({ appointmentId: { $in: apptIds } });
+  const presByAppt = {};
+  prescriptions.forEach((p) => { presByAppt[p.appointmentId.toString()] = p; });
+
+  const visits = appts.map((a) => {
+    const pres = presByAppt[a._id.toString()];
+    return {
+      visitId: a._id,
+      date: a.slotId?.date || a.createdAt,
+      type: a.type,
+      diagnosis: pres?.diagnosis || '',
+      symptoms: a.symptoms ? [a.symptoms] : [],
+      prescriptionId: pres?._id,
+      notes: a.cancellationReason || '',
+      followUp: pres?.followUpDate || '',
+    };
+  });
+
+  const last = appts[0];
+  res.json({
+    success: true,
+    data: {
+      patientId,
+      patientName: user?.fullName || last?.patientInfo?.name || '',
+      age: last?.patientInfo?.age || 0,
+      gender: last?.patientInfo?.gender || '',
+      bloodGroup: '',
+      phone: user?.phoneNumber || last?.patientInfo?.phone || '',
+      allergies: [],
+      chronicConditions: [],
+      visits,
+    },
+  });
+});
+
+// ═══════════════════════════════════════════
+//  TRANSACTIONS LEDGER (completed appointments)
+// ═══════════════════════════════════════════
+
+// @desc    Get this doctor's transaction ledger
+// @route   GET /api/v1/healthcare/doctors/me/transactions
+const getTransactions = asyncHandler(async (req, res) => {
+  const doctor = await Doctor.findOne({ providerId: req.user._id });
+  if (!doctor) { res.status(404); throw new Error('Doctor profile not found'); }
+
+  const appts = await Appointment.find({ doctorId: doctor._id, status: 'completed' })
+    .populate('patientId', 'fullName')
+    .populate('slotId', 'date')
+    .sort({ completedAt: -1, createdAt: -1 });
+
+  const transactions = appts.map((a) => ({
+    transactionId: a._id,
+    patientName: a.patientId?.fullName || a.patientInfo?.name || '',
+    appointmentId: a._id,
+    type: a.type,
+    amount: a.totalAmount || a.fee || 0,
+    method: 'cash',
+    status: 'completed',
+    date: a.completedAt || a.slotId?.date || a.createdAt,
+  }));
+
+  res.json({ success: true, data: { transactions } });
+});
+
 module.exports = {
   registerDoctor,
   signinDoctor,
@@ -1504,4 +1669,10 @@ module.exports = {
   getDashboard,
   getEarnings,
   getMyReviews,
+  getPatientNotes,
+  createNote,
+  updateNote,
+  deleteNote,
+  getPatientHistory,
+  getTransactions,
 };
