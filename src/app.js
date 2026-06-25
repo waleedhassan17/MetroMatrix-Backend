@@ -27,8 +27,21 @@ const PendingSignup = require('./models/PendingSignup');
 const EmailVerification = require('./models/EmailVerification');
 const { generateTokens } = require('./utils/generateToken');
 
+const healthcareDoctorRoutes = require('./routes/healthcareDoctorRoutes');
+
+const adminDoctorRoutes = require('./routes/adminDoctorRoutes');
+
+const adminSpecialtyRoutes = require('./routes/adminSpecialtyRoutes');
+const adminAnalyticsRoutes = require('./routes/adminAnalyticsRoutes');
+
 // Initialize express
 const app = express();
+
+app.use('/api/v1/healthcare', healthcareDoctorRoutes);
+app.use('/api/v1/admin', adminDoctorRoutes);
+
+app.use('/api/v1/admin', adminSpecialtyRoutes);
+app.use('/api/v1/admin', adminAnalyticsRoutes);
 
 // Trust proxy
 app.set('trust proxy', 1);
@@ -36,6 +49,7 @@ app.set('trust proxy', 1);
 // Body parser middleware
 app.use(express.json({ limit: '10mb' }));
 app.use(express.urlencoded({ extended: true, limit: '10mb' }));
+
 
 // CORS configuration
 const corsOptions = {
