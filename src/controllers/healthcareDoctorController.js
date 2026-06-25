@@ -1513,8 +1513,15 @@ const createNote = asyncHandler(async (req, res) => {
   const doctor = await Doctor.findOne({ providerId: req.user._id });
   if (!doctor) { res.status(404); throw new Error('Doctor profile not found'); }
 
-  const { patientId, appointmentId, title, content, tags, attachments } = req.body;
-  if (!patientId) { res.status(400); throw new Error('patientId is required'); }
+  const { appointmentId, title, content, tags, attachments } = req.body;
+  let { patientId } = req.body;
+
+  // Derive the patient from the appointment if not explicitly provided.
+  if (!patientId && appointmentId) {
+    const appt = await Appointment.findOne({ _id: appointmentId, doctorId: doctor._id }).select('patientId');
+    if (appt) patientId = appt.patientId;
+  }
+  if (!patientId) { res.status(400); throw new Error('patientId (or a valid appointmentId) is required'); }
 
   const note = await MedicalNote.create({
     doctorId: doctor._id,
