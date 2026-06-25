@@ -16,6 +16,10 @@ const specialtySchema = new mongoose.Schema(
       type: String,
       default: '',
     },
+    commonConditions: {
+      type: [String],
+      default: [],
+    },
     isActive: {
       type: Boolean,
       default: true,

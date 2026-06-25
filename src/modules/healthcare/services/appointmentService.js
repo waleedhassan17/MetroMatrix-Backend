@@ -8,7 +8,7 @@ const PATIENT_POPULATE = [
   {
     path: 'doctorId',
     populate: [
-      { path: 'userId', select: 'fullName displayName avatar' },
+      { path: 'providerId', select: 'fullName profilePhoto' },
       { path: 'specialtyId', select: 'name icon' },
     ],
   },
@@ -20,7 +20,7 @@ const DETAIL_POPULATE = [
   {
     path: 'doctorId',
     populate: [
-      { path: 'userId', select: 'fullName displayName avatar email' },
+      { path: 'providerId', select: 'fullName profilePhoto email' },
       { path: 'specialtyId', select: 'name icon description' },
     ],
   },
@@ -157,7 +157,7 @@ const getAppointmentDetail = async (appointmentId, patientId) => {
     .populate({
       path: 'doctorId',
       populate: [
-        { path: 'userId', select: 'fullName' },
+        { path: 'providerId', select: 'fullName profilePhoto' },
         { path: 'specialtyId', select: 'name' },
       ],
     })

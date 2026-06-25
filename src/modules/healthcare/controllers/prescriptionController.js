@@ -33,7 +33,7 @@ const getAppointmentPrescription = async (req, res, next) => {
         path: 'doctorId',
         select: 'qualifications experience specialtyId',
         populate: [
-          { path: 'userId', select: 'fullName displayName avatar' },
+          { path: 'providerId', select: 'fullName profilePhoto' },
           { path: 'specialtyId', select: 'name' },
         ],
       })
@@ -76,7 +76,7 @@ const downloadPrescriptionPDF = async (req, res, next) => {
         path: 'doctorId',
         select: 'qualifications experience specialtyId consultationFee',
         populate: [
-          { path: 'userId', select: 'fullName displayName' },
+          { path: 'providerId', select: 'fullName profilePhoto' },
           { path: 'specialtyId', select: 'name' },
         ],
       })
@@ -108,8 +108,7 @@ const downloadPrescriptionPDF = async (req, res, next) => {
 
     doc.pipe(res);
 
-    const doctorName = prescription.doctorId?.userId?.displayName
-      || prescription.doctorId?.userId?.fullName
+    const doctorName = prescription.doctorId?.providerId?.fullName
       || 'Doctor';
     const specialtyName = prescription.doctorId?.specialtyId?.name || '';
     const qualifications = (prescription.doctorId?.qualifications || []).join(', ');
@@ -314,7 +313,7 @@ const getMyPrescriptions = async (req, res, next) => {
         .populate({
           path: 'doctorId',
           populate: [
-            { path: 'userId', select: 'fullName displayName' },
+            { path: 'providerId', select: 'fullName profilePhoto' },
             { path: 'specialtyId', select: 'name' },
           ],
         })

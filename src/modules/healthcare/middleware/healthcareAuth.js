@@ -27,7 +27,8 @@ const requireUser = [
 const requireDoctor = async (req, res, next) => {
   try {
     const Doctor = require('../models/Doctor');
-    const doctor = await Doctor.findOne({ userId: req.user._id });
+    // A doctor is a Provider with providerType 'doctor' and a linked Doctor profile.
+    const doctor = await Doctor.findOne({ providerId: req.user._id });
 
     if (!doctor) {
       return res.status(403).json({

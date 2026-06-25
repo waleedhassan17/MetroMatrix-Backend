@@ -96,60 +96,6 @@ const getDoctor = async (req, res, next) => {
   }
 };
 
-// @desc    Register as a doctor
-// @route   POST /api/v1/healthcare/doctors/register
-// @access  Private
-const registerDoctor = async (req, res, next) => {
-  try {
-    const existing = await doctorService.findDoctorByUserId(req.user._id);
-    if (existing) {
-      return res.status(400).json({
-        success: false,
-        error: 'Doctor profile already exists for this account',
-      });
-    }
-
-    const {
-      specialtyId,
-      pmcNumber,
-      qualifications,
-      experience,
-      about,
-      consultationFee,
-      videoConsultationFee,
-    } = req.body;
-
-    if (!specialtyId || !pmcNumber) {
-      return res.status(400).json({
-        success: false,
-        error: 'Specialty and PMC number are required',
-      });
-    }
-
-    const doctor = await doctorService.createDoctor({
-      userId: req.user._id,
-      specialtyId,
-      pmcNumber,
-      qualifications: qualifications || [],
-      experience: experience || 0,
-      about: about || '',
-      consultationFee: consultationFee || 0,
-      videoConsultationFee: videoConsultationFee || 0,
-    });
-
-    res.status(201).json({ success: true, data: doctor });
-  } catch (error) {
-    if (error.code === 11000) {
-      const field = Object.keys(error.keyPattern)[0];
-      return res.status(400).json({
-        success: false,
-        error: `A doctor with this ${field === 'pmcNumber' ? 'PMC number' : 'account'} already exists`,
-      });
-    }
-    next(error);
-  }
-};
-
 // @desc    Update doctor profile
 // @route   PUT /api/v1/healthcare/doctors/profile
 // @access  Private/Doctor
@@ -165,25 +111,6 @@ const updateDoctorProfile = async (req, res, next) => {
     });
 
     const doctor = await doctorService.updateDoctor(req.doctor._id, updates);
-    res.json({ success: true, data: doctor });
-  } catch (error) {
-    next(error);
-  }
-};
-
-// @desc    Get my doctor profile
-// @route   GET /api/v1/healthcare/doctors/me
-// @access  Private
-const getMyProfile = async (req, res, next) => {
-  try {
-    const doctor = await doctorService.getDoctorById(
-      (await doctorService.findDoctorByUserId(req.user._id))?._id
-    );
-
-    if (!doctor) {
-      return res.status(404).json({ success: false, error: 'Doctor profile not found' });
-    }
-
     res.json({ success: true, data: doctor });
   } catch (error) {
     next(error);
@@ -312,9 +239,7 @@ module.exports = {
   searchDoctors,
   getFeaturedDoctors,
   getDoctor,
-  registerDoctor,
   updateDoctorProfile,
-  getMyProfile,
   addClinic,
   updateClinic,
   setClinicTimings,

@@ -175,7 +175,7 @@ const cancelAppointment = async (req, res, next) => {
       const doctor = await Doctor.findById(result.appointment.doctorId);
       if (doctor) {
         await notificationService.createNotification({
-          userId: doctor.userId,
+          userId: doctor.providerId,
           title: 'Appointment Cancelled',
           message: `An appointment has been cancelled. Reason: ${reason}`,
           type: 'appointment_cancelled',
@@ -236,7 +236,7 @@ const rescheduleAppointment = async (req, res, next) => {
       const doctor = await Doctor.findById(result.appointment.doctorId);
       if (doctor) {
         await notificationService.createNotification({
-          userId: doctor.userId,
+          userId: doctor.providerId,
           title: 'Appointment Rescheduled',
           message: `An appointment has been rescheduled to a new time slot.`,
           type: 'appointment_booked', // reuse type, as it's a re-booking
@@ -373,7 +373,7 @@ const bookAppointment = async (req, res, next) => {
     try {
       await notificationService.notifyAppointmentBooked(
         req.user._id,
-        doctor.userId,
+        doctor.providerId,
         {
           appointmentId: appointment._id,
           patientName: patientInfo.name,

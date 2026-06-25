@@ -21,6 +21,7 @@ const hcNotificationSchema = new mongoose.Schema(
         'appointment_booked',
         'appointment_confirmed',
         'appointment_cancelled',
+        'appointment_completed',
         'appointment_reminder',
         'prescription_ready',
         'video_call_starting',

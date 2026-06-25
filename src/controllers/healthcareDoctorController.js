@@ -1,15 +1,28 @@
 const asyncHandler = require('express-async-handler');
 const bcrypt = require('bcryptjs');
 const Provider = require('../models/Provider');
-const Doctor = require('../models/Doctor');
-const Specialty = require('../models/Specialty');
-const Clinic = require('../models/Clinic');
-const Appointment = require('../models/Appointment');
-const TimeSlot = require('../models/TimeSlot');
+// Canonical healthcare models live in the healthcare module.
+const Doctor = require('../modules/healthcare/models/Doctor');
+const Specialty = require('../modules/healthcare/models/Specialty');
+const Clinic = require('../modules/healthcare/models/Clinic');
+const Appointment = require('../modules/healthcare/models/Appointment');
+const Slot = require('../modules/healthcare/models/Slot');
+const Review = require('../modules/healthcare/models/Review');
+const Prescription = require('../modules/healthcare/models/Prescription');
 const Notification = require('../models/Notification');
+const hcNotificationService = require('../modules/healthcare/services/notificationService');
 const { generateTokens } = require('../utils/generateToken');
 const User = require('../models/User');
 const mongoose = require('mongoose');
+
+// Best-effort patient notification (never breaks the request).
+const notifyPatient = async (userId, type, title, message, data = {}) => {
+  try {
+    await hcNotificationService.createNotification({ userId, type, title, message, data });
+  } catch (err) {
+    console.error('notifyPatient failed:', err.message);
+  }
+};
 
 // @desc    Register a new doctor
 // @route   POST /api/v1/healthcare/doctors/register
@@ -189,17 +202,17 @@ const submitVerification = asyncHandler(async (req, res) => {
 
   await doctor.save();
 
-  // 5. Create admin notification
-  await Notification.create({
-    recipientType: 'admin',
-    type: 'doctor_verification',
-    title: 'New Doctor Verification',
-    message: `Dr. ${req.user.fullName || 'Unknown'} has submitted verification documents.`,
-    data: {
-      doctorId: doctor._id,
-      providerId,
-    },
-  });
+  // 5. Create admin notification (broadcast to admins; best-effort)
+  try {
+    await Notification.create({
+      type: 'doctor_verification',
+      title: 'New Doctor Verification',
+      message: `Dr. ${req.user.fullName || 'Unknown'} has submitted verification documents.`,
+      data: { providerId },
+    });
+  } catch (err) {
+    console.error('admin notification failed:', err.message);
+  }
 
   res.json({
     success: true,
@@ -457,7 +470,7 @@ const getMySchedule = asyncHandler(async (req, res) => {
     throw new Error('Date range cannot exceed 30 days');
   }
 
-  const slots = await TimeSlot.find({
+  const slots = await Slot.find({
     doctorId: doctor._id,
     date: { $gte: start, $lte: end },
   }).populate('clinicId', 'name');
@@ -555,7 +568,7 @@ const createSlots = asyncHandler(async (req, res) => {
         const slotEnd = toTimeStr(currentMin + slotDuration);
 
         // Check overlapping slots for this doctor on this date
-        const overlapping = await TimeSlot.findOne({
+        const overlapping = await Slot.findOne({
           doctorId: doctor._id,
           date,
           $or: [
@@ -586,7 +599,7 @@ const createSlots = asyncHandler(async (req, res) => {
     throw new Error('No slots could be created. Check for overlapping slots or invalid parameters.');
   }
 
-  await TimeSlot.insertMany(createdSlots);
+  await Slot.insertMany(createdSlots);
 
   res.status(201).json({
     success: true,
@@ -614,7 +627,7 @@ const blockSlots = asyncHandler(async (req, res) => {
   const targetDate = new Date(date);
 
   // Find overlapping slots for this doctor on that date
-  const slots = await TimeSlot.find({
+  const slots = await Slot.find({
     doctorId: doctor._id,
     date: targetDate,
     startTime: { $lt: endTime },
@@ -634,7 +647,7 @@ const blockSlots = asyncHandler(async (req, res) => {
   }
 
   // Block all found slots (status = 'blocked')
-  await TimeSlot.updateMany(
+  await Slot.updateMany(
     { _id: { $in: slots.map(s => s._id) } },
     { status: 'blocked' }
   );
@@ -656,7 +669,7 @@ const unblockSlot = asyncHandler(async (req, res) => {
     throw new Error('Doctor profile not found');
   }
 
-  const slot = await TimeSlot.findOne({ _id: req.params.slotId, doctorId: doctor._id });
+  const slot = await Slot.findOne({ _id: req.params.slotId, doctorId: doctor._id });
   if (!slot) {
     res.status(404);
     throw new Error('Slot not found');
@@ -697,7 +710,7 @@ const setAvailability = asyncHandler(async (req, res) => {
     const to = doctor.unavailableTo;
 
     // Find all slots in range (any status)
-    const slotsInRange = await TimeSlot.find({
+    const slotsInRange = await Slot.find({
       doctorId: doctor._id,
       date: { $gte: from, $lte: to },
     });
@@ -727,19 +740,18 @@ const setAvailability = asyncHandler(async (req, res) => {
         await appt.save();
 
         // Create notification for patient
-        await Notification.create({
-          recipientType: 'user',
-          userId: appt.patientId,
-          type: 'appointment_cancelled',
-          title: 'Appointment Cancelled',
-          message: `Your appointment on ${appt.scheduledAt || 'selected date'} has been cancelled. Doctor is unavailable.`,
-          data: { appointmentId: appt._id },
-        });
+        await notifyPatient(
+          appt.patientId,
+          'appointment_cancelled',
+          'Appointment Cancelled',
+          'Your appointment has been cancelled because the doctor is unavailable.',
+          { appointmentId: appt._id }
+        );
       }
     }
 
     // Block all slots (both booked and non-booked)
-    await TimeSlot.updateMany(
+    await Slot.updateMany(
       { _id: { $in: [...bookedSlotIds, ...nonBookedSlotIds] } },
       { status: 'blocked' }
     );
@@ -815,7 +827,7 @@ const getMyAppointments = asyncHandler(async (req, res) => {
   // For proper date filtering we'll use aggregation. But to avoid complexity, we'll use .find and populate, then filter.
   let appointments = await Appointment.find(query)
     .populate('patientId', 'fullName profilePhoto')
-    .populate('slotId', 'startTime endTime date') // slotId is TimeSlot
+    .populate('slotId', 'startTime endTime date') // slotId is Slot
     .populate('clinicId', 'name')
     .sort({ createdAt: -1 });
 
@@ -946,14 +958,13 @@ const confirmAppointment = asyncHandler(async (req, res) => {
   await appointment.save();
 
   // Notify patient
-  await Notification.create({
-    recipientType: 'user',
-    userId: appointment.patientId,
-    type: 'appointment_confirmed',
-    title: 'Appointment Confirmed',
-    message: `Your appointment with Dr. ${req.user.fullName || 'your doctor'} has been confirmed.`,
-    data: { appointmentId: appointment._id },
-  });
+  await notifyPatient(
+    appointment.patientId,
+    'appointment_confirmed',
+    'Appointment Confirmed',
+    `Your appointment with Dr. ${req.user.fullName || 'your doctor'} has been confirmed.`,
+    { appointmentId: appointment._id }
+  );
 
   const updatedAppointment = await Appointment.findById(appointment._id)
     .populate('patientId', 'fullName profilePhoto')
@@ -991,7 +1002,7 @@ const completeAppointment = asyncHandler(async (req, res) => {
   }
 
   // Verify appointment date is today or in the past
-  const slot = await TimeSlot.findById(appointment.slotId);
+  const slot = await Slot.findById(appointment.slotId);
   if (!slot) {
     res.status(400);
     throw new Error('Associated time slot not found');
@@ -1010,14 +1021,13 @@ const completeAppointment = asyncHandler(async (req, res) => {
   await appointment.save();
 
   // Notify patient
-  await Notification.create({
-    recipientType: 'user',
-    userId: appointment.patientId,
-    type: 'appointment_completed',
-    title: 'Appointment Completed',
-    message: 'Please share your feedback by leaving a review.',
-    data: { appointmentId: appointment._id },
-  });
+  await notifyPatient(
+    appointment.patientId,
+    'appointment_completed',
+    'Appointment Completed',
+    'Please share your feedback by leaving a review.',
+    { appointmentId: appointment._id }
+  );
 
   const updatedAppointment = await Appointment.findById(appointment._id)
     .populate('patientId', 'fullName profilePhoto')
@@ -1067,7 +1077,7 @@ const cancelAppointment = asyncHandler(async (req, res) => {
   await appointment.save();
 
   // Update time slot
-  const slot = await TimeSlot.findById(appointment.slotId);
+  const slot = await Slot.findById(appointment.slotId);
   if (slot) {
     if (slot.bookedCount > 0) {
       slot.bookedCount -= 1;
@@ -1079,14 +1089,13 @@ const cancelAppointment = asyncHandler(async (req, res) => {
   }
 
   // Notify patient
-  await Notification.create({
-    recipientType: 'user',
-    userId: appointment.patientId,
-    type: 'appointment_cancelled',
-    title: 'Appointment Cancelled',
-    message: `Your appointment has been cancelled by the doctor. Reason: ${reason}`,
-    data: { appointmentId: appointment._id },
-  });
+  await notifyPatient(
+    appointment.patientId,
+    'appointment_cancelled',
+    'Appointment Cancelled',
+    `Your appointment has been cancelled by the doctor. Reason: ${reason}`,
+    { appointmentId: appointment._id }
+  );
 
   const updatedAppointment = await Appointment.findById(appointment._id)
     .populate('patientId', 'fullName profilePhoto')
@@ -1149,14 +1158,13 @@ const createPrescription = asyncHandler(async (req, res) => {
   });
 
   // Notify patient
-  await Notification.create({
-    recipientType: 'user',
-    userId: appointment.patientId,
-    type: 'prescription_ready',
-    title: 'Your Prescription is Ready',
-    message: `Dr. ${req.user.fullName || 'your doctor'} has issued a prescription.`,
-    data: { prescriptionId: prescription._id },
-  });
+  await notifyPatient(
+    appointment.patientId,
+    'prescription_ready',
+    'Your Prescription is Ready',
+    `Dr. ${req.user.fullName || 'your doctor'} has issued a prescription.`,
+    { prescriptionId: prescription._id, appointmentId }
+  );
 
   res.status(201).json({
     success: true,
@@ -1293,7 +1301,7 @@ const getDashboard = asyncHandler(async (req, res) => {
 
   const stats = await Appointment.aggregate([
     { $match: { doctorId: doctor._id } },
-    { $lookup: { from: 'timeslots', localField: 'slotId', foreignField: '_id', as: 'slot' } },
+    { $lookup: { from: 'slots', localField: 'slotId', foreignField: '_id', as: 'slot' } },
     { $unwind: '$slot' },
     { $facet: {
       today: [
@@ -1390,7 +1398,7 @@ const getEarnings = asyncHandler(async (req, res) => {
 
   const earnings = await Appointment.aggregate([
     { $match: match },
-    { $lookup: { from: 'timeslots', localField: 'slotId', foreignField: '_id', as: 'slot' } },
+    { $lookup: { from: 'slots', localField: 'slotId', foreignField: '_id', as: 'slot' } },
     { $unwind: '$slot' },
     { $match: { 'slot.date': { $gte: start, $lte: end } } },
     {
@@ -1424,39 +1432,40 @@ const getEarnings = asyncHandler(async (req, res) => {
   });
 });
 
-// @desc    Get my reviews (from Provider.reviews[])
+// @desc    Get my reviews (from the healthcare Review collection)
 // @route   GET /api/v1/healthcare/doctors/me/reviews
 // @access  Private (Provider)
 const getMyReviews = asyncHandler(async (req, res) => {
-  // req.user is the provider
-  const provider = await Provider.findById(req.user._id).select('reviews ratings');
-  if (!provider) {
+  const doctor = await Doctor.findOne({ providerId: req.user._id });
+  if (!doctor) {
     res.status(404);
-    throw new Error('Provider not found');
+    throw new Error('Doctor profile not found');
   }
 
   const { rating: ratingFilter, page = 1, limit = 10 } = req.query;
-  let reviews = provider.reviews || [];
-
-  // Filter by rating if provided
-  if (ratingFilter) {
-    const r = parseInt(ratingFilter);
-    reviews = reviews.filter(review => review.rating === r);
-  }
-
-  // Paginate
-  const total = reviews.length;
   const pageNum = parseInt(page);
   const limitNum = parseInt(limit);
-  const start = (pageNum - 1) * limitNum;
-  const paged = reviews.slice(start, start + limitNum);
+  const skip = (pageNum - 1) * limitNum;
+
+  const query = { doctorId: doctor._id };
+  if (ratingFilter) query.rating = parseInt(ratingFilter);
+
+  const [reviews, total] = await Promise.all([
+    Review.find(query)
+      .populate('patientId', 'fullName profilePhoto')
+      .sort({ createdAt: -1 })
+      .skip(skip)
+      .limit(limitNum)
+      .lean(),
+    Review.countDocuments(query),
+  ]);
 
   res.json({
     success: true,
     data: {
-      reviews: paged,
-      averageRating: provider.ratings.average,
-      totalReviews: provider.ratings.count,
+      reviews,
+      averageRating: doctor.rating,
+      totalReviews: doctor.totalReviews,
       pagination: {
         page: pageNum,
         limit: limitNum,

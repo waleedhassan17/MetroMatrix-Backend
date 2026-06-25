@@ -1,7 +1,7 @@
 const asyncHandler = require('express-async-handler');
-const Doctor = require('../models/Doctor');
-const Appointment = require('../models/Appointment');
-const Specialty = require('../models/Specialty');
+const Doctor = require('../modules/healthcare/models/Doctor');
+const Appointment = require('../modules/healthcare/models/Appointment');
+const Specialty = require('../modules/healthcare/models/Specialty');
 const mongoose = require('mongoose');
 
 // @desc    Get overall platform stats
@@ -27,19 +27,19 @@ const getStats = asyncHandler(async (req, res) => {
     lastMonthRevenue,
   ] = await Promise.all([
     Doctor.countDocuments(),
-    Doctor.countDocuments({ verificationStatus: 'approved' }),
+    Doctor.countDocuments({ verificationStatus: 'verified' }),
     Doctor.countDocuments({ verificationStatus: 'pending' }),
     Appointment.countDocuments(),
     Appointment.aggregate([
       { $match: { status: 'completed' } },
-      { $lookup: { from: 'timeslots', localField: 'slotId', foreignField: '_id', as: 'slot' } },
+      { $lookup: { from: 'slots', localField: 'slotId', foreignField: '_id', as: 'slot' } },
       { $unwind: '$slot' },
       { $match: { 'slot.date': { $gte: startOfThisMonth, $lt: new Date() } } },
       { $group: { _id: null, total: { $sum: '$totalAmount' } } },
     ]).then(r => (r[0]?.total || 0)),
     Appointment.aggregate([
       { $match: { status: 'completed' } },
-      { $lookup: { from: 'timeslots', localField: 'slotId', foreignField: '_id', as: 'slot' } },
+      { $lookup: { from: 'slots', localField: 'slotId', foreignField: '_id', as: 'slot' } },
       { $unwind: '$slot' },
       { $match: { 'slot.date': { $gte: startOfLastMonth, $lt: startOfThisMonth } } },
       { $group: { _id: null, total: { $sum: '$totalAmount' } } },
@@ -89,7 +89,7 @@ const getAppointmentAnalytics = asyncHandler(async (req, res) => {
 
   const pipeline = [
     { $match: { status: { $in: ['pending', 'confirmed', 'completed', 'cancelled'] } } },
-    { $lookup: { from: 'timeslots', localField: 'slotId', foreignField: '_id', as: 'slot' } },
+    { $lookup: { from: 'slots', localField: 'slotId', foreignField: '_id', as: 'slot' } },
     { $unwind: '$slot' },
     { $match: { 'slot.date': { $gte: start, $lte: end } } },
     {
@@ -154,25 +154,10 @@ const getRevenueAnalytics = asyncHandler(async (req, res) => {
   const end = endDate ? new Date(endDate) : new Date('2100-01-01');
   end.setHours(23, 59, 59, 999);
 
-  let groupField;
-  let projectFields;
-  if (groupBy === 'doctor') {
-    groupField = '$doctorId';
-    projectFields = { doctorId: '$_id', totalRevenue: 1, appointmentCount: 1 };
-  } else {
-    // group by specialty – need to lookup doctor to get specialtyId
-    groupField = '$doctor.specialtyId'; // we'll pipeline that
-    // We need to join doctor first, then specialty
-    return res.status(400).json({ success: false, error: 'For specialty grouping please use /admin/analytics/revenue-specialty endpoint.' });
-    // Actually we can implement inside this controller, but simpler: I'll handle both.
-    // Let's just do one generic pipeline: join doctor, then group by doctorId or specialtyId depending.
-    // I'll adjust to inline it.
-  }
-
-  // For simplicity, I'll handle both by building separate pipelines.
+  // Build separate pipelines for doctor vs specialty grouping.
   const commonBeforeLookup = [
     { $match: { status: 'completed' } },
-    { $lookup: { from: 'timeslots', localField: 'slotId', foreignField: '_id', as: 'slot' } },
+    { $lookup: { from: 'slots', localField: 'slotId', foreignField: '_id', as: 'slot' } },
     { $unwind: '$slot' },
     { $match: { 'slot.date': { $gte: start, $lte: end } } },
   ];

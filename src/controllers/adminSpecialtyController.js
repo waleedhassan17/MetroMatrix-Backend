@@ -1,7 +1,7 @@
 const asyncHandler = require('express-async-handler');
-const Specialty = require('../models/Specialty');
-const Doctor = require('../models/Doctor');
-const Appointment = require('../models/Appointment');
+const Specialty = require('../modules/healthcare/models/Specialty');
+const Doctor = require('../modules/healthcare/models/Doctor');
+const Appointment = require('../modules/healthcare/models/Appointment');
 
 // @desc    Get all specialties with doctor/appointment counts
 // @route   GET /api/v1/admin/specialties
@@ -14,7 +14,7 @@ const getSpecialties = asyncHandler(async (req, res) => {
     specialties.map(async (specialty) => {
       const approvedDoctors = await Doctor.find({
         specialtyId: specialty._id,
-        verificationStatus: 'approved',
+        verificationStatus: 'verified',
         isActive: true,
       }).select('_id');
       const doctorCount = approvedDoctors.length;
@@ -115,7 +115,7 @@ const deleteSpecialty = asyncHandler(async (req, res) => {
   // Check for active doctors in this specialty
   const activeDoctorsCount = await Doctor.countDocuments({
     specialtyId: specialty._id,
-    verificationStatus: 'approved',
+    verificationStatus: 'verified',
     isActive: true,
   });
 

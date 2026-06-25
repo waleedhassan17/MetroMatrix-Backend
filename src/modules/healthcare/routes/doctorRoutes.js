@@ -5,9 +5,7 @@ const {
   searchDoctors,
   getFeaturedDoctors,
   getDoctor,
-  registerDoctor,
   updateDoctorProfile,
-  getMyProfile,
   addClinic,
   updateClinic,
   setClinicTimings,
@@ -29,9 +27,9 @@ router.get('/:doctorId/clinics', getDoctorClinics);
 router.get('/:doctorId/reviews', getDoctorReviews);
 router.get('/:doctorId', getDoctor);
 
-// ─── Private — authenticated user ───────────────────
-router.post('/register', requireUser, registerDoctor);
-router.get('/me', requireUser, getMyProfile);
+// NOTE: Doctor self-service auth (register/signin/me) is handled by the
+// provider-based healthcareDoctorRoutes. These routes cover clinic & timing
+// management for an already-verified doctor (a Provider).
 
 // ─── Private — verified doctor only ─────────────────
 router.put('/profile', requireUser, requireDoctor, updateDoctorProfile);

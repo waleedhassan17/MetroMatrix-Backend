@@ -9,8 +9,7 @@ router.use('/appointments', require('./appointmentRoutes'));
 router.use('/reviews', require('./reviewRoutes'));
 router.use('/prescriptions', require('./prescriptionRoutes'));
 router.use('/health-records', require('./healthRecordRoutes'));
-router.use('/video-calls', require('./videoCallRoutes'));
-router.use('/coupons', require('./couponRoutes'));
+// Video calls & coupons are out of scope for now (telemedicine/payment excluded).
 router.use('/notifications', require('./notificationRoutes'));
 
 module.exports = router;

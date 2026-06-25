@@ -1,7 +1,16 @@
 const asyncHandler = require('express-async-handler');
-const Doctor = require('../models/Doctor');
+const Doctor = require('../modules/healthcare/models/Doctor');
 const Provider = require('../models/Provider');
 const Notification = require('../models/Notification');
+
+// Best-effort notification (never breaks the request).
+const notifyAdmin = async (type, title, message, data = {}) => {
+  try {
+    await Notification.create({ type, title, message, data });
+  } catch (err) {
+    console.error('notifyAdmin failed:', err.message);
+  }
+};
 
 // @desc    Get all pending/under_review doctors
 // @route   GET /api/v1/admin/doctors/pending
@@ -32,7 +41,7 @@ const approveDoctor = asyncHandler(async (req, res) => {
     throw new Error('Doctor not found');
   }
 
-  if (doctor.verificationStatus === 'approved') {
+  if (doctor.verificationStatus === 'verified') {
     res.status(400);
     throw new Error('Doctor is already approved');
   }
@@ -40,7 +49,7 @@ const approveDoctor = asyncHandler(async (req, res) => {
   const { notes } = req.body;
 
   // Update Doctor
-  doctor.verificationStatus = 'approved';
+  doctor.verificationStatus = 'verified';
   doctor.verificationNotes = notes || '';
   doctor.isActive = true;
   await doctor.save();
@@ -54,15 +63,13 @@ const approveDoctor = asyncHandler(async (req, res) => {
     await provider.save();
   }
 
-  // Notify doctor
-  await Notification.create({
-    recipientType: 'provider',
-    recipientId: doctor.providerId,
-    type: 'verification_approved',
-    title: 'Account Approved',
-    message: 'Congratulations! Your doctor account has been approved. You can now start receiving appointments.',
-    data: { doctorId: doctor._id },
-  });
+  // Notify doctor (best-effort)
+  await notifyAdmin(
+    'doctor_approved',
+    'Account Approved',
+    'Congratulations! Your doctor account has been approved. You can now start receiving appointments.',
+    { providerId: doctor.providerId }
+  );
 
   const updatedDoctor = await Doctor.findById(doctor._id)
     .populate('providerId', 'fullName email phone')
@@ -108,15 +115,13 @@ const rejectDoctor = asyncHandler(async (req, res) => {
     }
   }
 
-  // Notify doctor
-  await Notification.create({
-    recipientType: 'provider',
-    recipientId: doctor.providerId,
-    type: 'verification_rejected',
-    title: 'Verification Rejected',
-    message: `Your account verification was rejected. Reason: ${reason}${canReapply === false ? ' You cannot reapply.' : ''}`,
-    data: { doctorId: doctor._id },
-  });
+  // Notify doctor (best-effort)
+  await notifyAdmin(
+    'doctor_rejected',
+    'Verification Rejected',
+    `Your account verification was rejected. Reason: ${reason}${canReapply === false ? ' You cannot reapply.' : ''}`,
+    { providerId: doctor.providerId }
+  );
 
   const updatedDoctor = await Doctor.findById(doctor._id)
     .populate('providerId', 'fullName email')

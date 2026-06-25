@@ -52,7 +52,7 @@ cron.schedule('*/5 * * * *', async () => {
       .populate('slotId', 'date startTime type clinicId')
       .populate({
         path: 'doctorId',
-        populate: { path: 'userId', select: 'fullName displayName' },
+        populate: { path: 'providerId', select: 'fullName profilePhoto' },
       })
       .lean();
 
@@ -77,8 +77,8 @@ cron.schedule('*/5 * * * *', async () => {
         clinicName = clinic?.name || '';
       }
 
-      const doctorName = appt.doctorId?.userId?.displayName
-        || appt.doctorId?.userId?.fullName
+      const doctorName = appt.doctorId?.providerId?.fullName
+        || appt.doctorId?.providerId?.fullName
         || 'your doctor';
 
       // Send reminder notification to patient
@@ -125,7 +125,7 @@ cron.schedule('*/5 * * * *', async () => {
       .populate('slotId', 'date startTime type')
       .populate({
         path: 'doctorId',
-        populate: { path: 'userId', select: 'fullName displayName' },
+        populate: { path: 'providerId', select: 'fullName profilePhoto' },
       })
       .lean();
 
@@ -151,8 +151,8 @@ cron.schedule('*/5 * * * *', async () => {
       });
       if (existing) continue;
 
-      const doctorName = appt.doctorId?.userId?.displayName
-        || appt.doctorId?.userId?.fullName
+      const doctorName = appt.doctorId?.providerId?.fullName
+        || appt.doctorId?.providerId?.fullName
         || 'Your doctor';
 
       // Notify patient

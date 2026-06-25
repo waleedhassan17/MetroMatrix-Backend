@@ -20,6 +20,10 @@ const notificationSchema = new mongoose.Schema(
         'user_registration',
         'system_alert',
         'report',
+        // Healthcare admin notifications
+        'doctor_verification',
+        'doctor_approved',
+        'doctor_rejected',
       ],
       required: true,
       index: true,

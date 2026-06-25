@@ -2,20 +2,21 @@ const mongoose = require('mongoose');
 
 const doctorSchema = new mongoose.Schema(
   {
-    userId: {
+    // A doctor is a Provider (providerType: 'doctor'). Identity links to Provider.
+    providerId: {
       type: mongoose.Schema.Types.ObjectId,
-      ref: 'User',
-      required: [true, 'User reference is required'],
+      ref: 'Provider',
+      required: [true, 'Provider reference is required'],
     },
     specialtyId: {
       type: mongoose.Schema.Types.ObjectId,
       ref: 'Specialty',
-      required: [true, 'Specialty is required'],
+      default: null,
     },
     pmcNumber: {
       type: String,
-      required: [true, 'PMC number is required'],
       unique: true,
+      sparse: true,
       trim: true,
     },
     qualifications: {
@@ -53,12 +54,34 @@ const doctorSchema = new mongoose.Schema(
     },
     verificationStatus: {
       type: String,
-      enum: ['pending', 'verified', 'rejected'],
+      // 'verified' is the patient-visible / approved state.
+      enum: ['pending', 'under_review', 'verified', 'rejected'],
       default: 'pending',
+    },
+    verificationNotes: {
+      type: String,
+      default: '',
+    },
+    verificationDocuments: {
+      type: mongoose.Schema.Types.Mixed,
+      default: null,
     },
     isActive: {
       type: Boolean,
       default: true,
+    },
+    // Availability toggle (doctor temporarily unavailable)
+    isAvailable: {
+      type: Boolean,
+      default: true,
+    },
+    unavailableFrom: {
+      type: Date,
+      default: null,
+    },
+    unavailableTo: {
+      type: Date,
+      default: null,
     },
   },
   {
@@ -90,9 +113,8 @@ doctorSchema.virtual('slots', {
 });
 
 // Indexes
-doctorSchema.index({ userId: 1 }, { unique: true });
+doctorSchema.index({ providerId: 1 }, { unique: true });
 doctorSchema.index({ specialtyId: 1 });
-doctorSchema.index({ pmcNumber: 1 });
 doctorSchema.index({ verificationStatus: 1 });
 doctorSchema.index({ isActive: 1 });
 doctorSchema.index({ rating: -1 });

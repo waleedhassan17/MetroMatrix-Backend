@@ -129,7 +129,7 @@ const getDoctors = async (filters = {}, options = {}) => {
   // --- Execute ---
   const [doctors, total] = await Promise.all([
     Doctor.find(query)
-      .populate('userId', 'fullName displayName avatar')
+      .populate('providerId', 'fullName profilePhoto')
       .populate('specialtyId', 'name icon')
       .sort(sort)
       .skip(skip)
@@ -182,50 +182,45 @@ const searchDoctors = async (q, limit = 10) => {
     isActive: true,
   });
 
-  // Find doctors whose user displayName/fullName matches OR whose specialty matches
+  // Find doctors whose specialty matches
   const doctors = await Doctor.find({
     verificationStatus: 'verified',
     isActive: true,
-    $or: [
-      { specialtyId: { $in: matchingSpecialtyIds } },
-      // We'll filter by user name after population
-    ],
+    specialtyId: { $in: matchingSpecialtyIds },
   })
-    .populate('userId', 'fullName displayName avatar')
+    .populate('providerId', 'fullName profilePhoto')
     .populate('specialtyId', 'name')
-    .limit(50) // fetch extra, then filter by name
+    .limit(50)
     .lean();
 
-  // Also search by user name directly
-  const User = require('../../../models/User');
-  const matchingUserIds = await User.distinct('_id', {
-    $or: [
-      { fullName: regex },
-      { displayName: regex },
-    ],
+  // Also search by provider (doctor) name directly
+  const Provider = require('../../../models/Provider');
+  const matchingProviderIds = await Provider.distinct('_id', {
+    providerType: 'doctor',
+    fullName: regex,
   });
 
-  const doctorsByUser = await Doctor.find({
+  const doctorsByProvider = await Doctor.find({
     verificationStatus: 'verified',
     isActive: true,
-    userId: { $in: matchingUserIds },
+    providerId: { $in: matchingProviderIds },
   })
-    .populate('userId', 'fullName displayName avatar')
+    .populate('providerId', 'fullName profilePhoto')
     .populate('specialtyId', 'name')
     .lean();
 
   // Merge and deduplicate
   const seen = new Set();
   const merged = [];
-  [...doctors, ...doctorsByUser].forEach((doc) => {
+  [...doctors, ...doctorsByProvider].forEach((doc) => {
     const key = doc._id.toString();
     if (!seen.has(key)) {
       seen.add(key);
       merged.push({
         doctorId: doc._id,
-        name: doc.userId?.displayName || doc.userId?.fullName || '',
+        name: doc.providerId?.fullName || '',
         specialtyName: doc.specialtyId?.name || '',
-        profileImage: doc.userId?.avatar || '',
+        profileImage: doc.providerId?.profilePhoto || '',
       });
     }
   });
@@ -242,7 +237,7 @@ const getFeaturedDoctors = async () => {
     isActive: true,
     totalReviews: { $gte: 10 },
   })
-    .populate('userId', 'fullName displayName avatar')
+    .populate('providerId', 'fullName profilePhoto')
     .populate('specialtyId', 'name icon')
     .sort({ rating: -1 })
     .limit(10)
@@ -261,7 +256,7 @@ const getDoctorById = async (doctorId) => {
     verificationStatus: 'verified',
     isActive: true,
   })
-    .populate('userId', 'fullName displayName avatar email')
+    .populate('providerId', 'fullName profilePhoto email')
     .populate('specialtyId', 'name icon description')
     .lean();
 
@@ -332,10 +327,10 @@ const getDoctorById = async (doctorId) => {
 };
 
 /**
- * Find doctor by userId (for auth-related lookups).
+ * Find doctor by providerId (for auth-related lookups).
  */
-const findDoctorByUserId = async (userId) => {
-  return Doctor.findOne({ userId });
+const findDoctorByProviderId = async (providerId) => {
+  return Doctor.findOne({ providerId });
 };
 
 /**
@@ -357,7 +352,7 @@ module.exports = {
   searchDoctors,
   getFeaturedDoctors,
   getDoctorById,
-  findDoctorByUserId,
+  findDoctorByProviderId,
   createDoctor,
   updateDoctor,
 };

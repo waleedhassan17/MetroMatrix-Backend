@@ -37,11 +37,8 @@ const adminAnalyticsRoutes = require('./routes/adminAnalyticsRoutes');
 // Initialize express
 const app = express();
 
-app.use('/api/v1/healthcare', healthcareDoctorRoutes);
-app.use('/api/v1/admin', adminDoctorRoutes);
-
-app.use('/api/v1/admin', adminSpecialtyRoutes);
-app.use('/api/v1/admin', adminAnalyticsRoutes);
+// NOTE: Healthcare/admin routes are mounted AFTER the body parser (see below),
+// otherwise their POST/PATCH request bodies would not be parsed.
 
 // Trust proxy
 app.set('trust proxy', 1);
@@ -1545,7 +1542,14 @@ function getPasswordResetHTML(status, message, deepLinkUrl = null, userType = 'u
 
 // API Routes
 app.use('/api/auth', authRoutes);
+// Healthcare: provider-based doctor self-service routes first (claim /doctors/me,
+// /doctors/register, /doctors/signin), then the shared healthcare module router.
+app.use('/api/v1/healthcare', healthcareDoctorRoutes);
 app.use('/api/v1/healthcare', require('./modules/healthcare/routes/index'));
+// Healthcare admin routes (doctor approval, specialty CRUD, analytics).
+app.use('/api/v1/admin', adminDoctorRoutes);
+app.use('/api/v1/admin', adminSpecialtyRoutes);
+app.use('/api/v1/admin', adminAnalyticsRoutes);
 app.use('/api/users', userRoutes);
 app.use('/api/providers', providerRoutes);
 app.use('/api/posts', postRoutes);
