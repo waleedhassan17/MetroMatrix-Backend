@@ -58,12 +58,12 @@ const corsOptions = {
       process.env.CLIENT_URL,
     ];
 
-    // Allow requests with no origin (mobile apps)
-    if (!origin || allowedOrigins.includes(origin)) {
-      callback(null, true);
-    } else {
-      callback(new Error('Not allowed by CORS'));
-    }
+    // Allow requests with no origin (mobile apps / curl).
+    if (!origin) return callback(null, true);
+    // In development, allow any localhost / LAN origin (Expo web on any port, etc.).
+    if (process.env.NODE_ENV !== 'production') return callback(null, true);
+    if (allowedOrigins.includes(origin)) return callback(null, true);
+    return callback(new Error('Not allowed by CORS'));
   },
   credentials: true,
   optionsSuccessStatus: 200,
