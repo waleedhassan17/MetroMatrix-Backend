@@ -17,6 +17,7 @@ const {
   unblockSlot,
   setAvailability,
   getAvailability,
+  generateSlotsFromAvailability,
   getMyAppointments,
   getAppointmentDetail,
   confirmAppointment,
@@ -59,6 +60,7 @@ router.delete('/doctors/me/clinics/:clinicId', protect, providerOnly, deleteClin
 // Schedule & Slots
 router.get('/doctors/me/schedule', protect, providerOnly, getMySchedule);
 router.post('/doctors/me/slots', protect, providerOnly, createSlots);
+router.post('/doctors/me/slots/generate', protect, providerOnly, generateSlotsFromAvailability);
 router.post('/doctors/me/slots/block', protect, providerOnly, blockSlots);
 router.delete('/doctors/me/slots/block/:slotId', protect, providerOnly, unblockSlot);
 

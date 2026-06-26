@@ -83,6 +83,41 @@ const doctorSchema = new mongoose.Schema(
       type: Date,
       default: null,
     },
+    // Weekly recurring availability. Per day, the doctor can be available online
+    // (video) and/or onsite (in-clinic), each with its own time ranges.
+    weeklyAvailability: {
+      type: [
+        {
+          _id: false,
+          day: {
+            type: String,
+            enum: ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday'],
+          },
+          isWorking: { type: Boolean, default: false },
+          online: {
+            enabled: { type: Boolean, default: false },
+            ranges: {
+              type: [{ _id: false, startTime: String, endTime: String }],
+              default: [],
+            },
+          },
+          onsite: {
+            enabled: { type: Boolean, default: false },
+            clinicId: { type: mongoose.Schema.Types.ObjectId, ref: 'Clinic', default: null },
+            ranges: {
+              type: [{ _id: false, startTime: String, endTime: String }],
+              default: [],
+            },
+          },
+        },
+      ],
+      default: [],
+    },
+    // Specific dates the doctor is absent (overrides weeklyAvailability).
+    absentDates: {
+      type: [Date],
+      default: [],
+    },
   },
   {
     timestamps: true,
