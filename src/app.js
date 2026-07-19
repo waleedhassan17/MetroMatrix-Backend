@@ -54,7 +54,9 @@ const corsOptions = {
     const allowedOrigins = [
       'http://localhost:3000',
       'http://localhost:19006', // Expo
-      'http://localhost:8081',  // React Native
+      'http://localhost:8081',  // React Native / Expo Web
+      'http://localhost:8082',  // Expo Web fallback port
+      'http://localhost:8083',  // Expo Web fallback port
       process.env.CLIENT_URL,
     ];
 
