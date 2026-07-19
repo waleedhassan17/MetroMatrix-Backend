@@ -7,9 +7,11 @@ const User = require('../models/User');
 const Provider = require('../models/Provider');
 
 // JWT Strategy
+// Fallback keeps require() from crashing when JWT_SECRET is absent at build
+// time (serverless cold start); real deployments must still set JWT_SECRET.
 const jwtOptions = {
   jwtFromRequest: ExtractJwt.fromAuthHeaderAsBearerToken(),
-  secretOrKey: process.env.JWT_SECRET,
+  secretOrKey: process.env.JWT_SECRET || 'missing-jwt-secret',
 };
 
 passport.use(
