@@ -1045,13 +1045,15 @@ const completeAppointment = asyncHandler(async (req, res) => {
     throw new Error('Associated time slot not found');
   }
 
-  // Slot dates are stored at UTC midnight; normalise BOTH to local midnight
-  // so a same-day appointment is completable in any timezone.
+  // Slot dates are stored at UTC midnight while clients may be up to UTC+14.
+  // Allow completion once the slot date has started anywhere on Earth:
+  // reject only when the slot is MORE than one server-day ahead.
   const slotDate = new Date(slot.date);
   slotDate.setHours(0, 0, 0, 0);
   const today = new Date();
   today.setHours(0, 0, 0, 0);
-  if (slotDate > today) {
+  const tomorrow = new Date(today.getTime() + 24 * 60 * 60 * 1000);
+  if (slotDate > tomorrow) {
     res.status(400);
     throw new Error('Cannot complete a future appointment');
   }
