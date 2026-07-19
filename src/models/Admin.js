@@ -68,6 +68,11 @@ const adminSchema = new mongoose.Schema(
         type: Boolean,
         default: false,
       },
+      // Shopping module oversight (brands, orders, outlets, shopping settings)
+      canManageShopping: {
+        type: Boolean,
+        default: true,
+      },
     },
 
     // Profile
