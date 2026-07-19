@@ -33,7 +33,14 @@ const joinVideoCall = async (req, res, next) => {
       return res.status(404).json({ success: false, error: 'Appointment not found' });
     }
 
-    if (appointment.patientId.toString() !== req.user._id.toString()) {
+    // Participants only: the patient OR the owning doctor may join
+    let isParticipant = appointment.patientId.toString() === req.user._id.toString();
+    if (!isParticipant) {
+      const Doctor = require('../models/Doctor');
+      const doctor = await Doctor.findOne({ providerId: req.user._id }).select('_id');
+      isParticipant = !!doctor && appointment.doctorId.toString() === doctor._id.toString();
+    }
+    if (!isParticipant) {
       return res.status(403).json({ success: false, error: 'Access denied' });
     }
 
@@ -58,21 +65,27 @@ const joinVideoCall = async (req, res, next) => {
       return res.status(400).json({ success: false, error: 'This call has already ended' });
     }
 
-    // Generate Agora token
-    const uid = parseInt(req.user._id.toString().slice(-8), 16) % 100000;
-    const channelName = 'metromatrix_call_' + appointment._id;
-    const token = generateAgoraToken(channelName, uid);
+    if (videoCall.status === 'waiting') {
+      videoCall.status = 'active';
+      videoCall.startedAt = videoCall.startedAt || new Date();
+      await videoCall.save();
+    }
+
+    // Transport: Jitsi Meet room rendered in a WebView on both sides.
+    // Free, no API key, works in the Expo managed workflow
+    // (see TELEMEDICINE_DECISION.md). Room name derives from the
+    // appointment id and is only disclosed to participants by this API.
+    const roomName = `MetroMatrix-${appointment._id}`;
+    const roomUrl = `https://meet.jit.si/${roomName}#config.prejoinConfig.enabled=false&config.disableDeepLinking=true`;
 
     res.status(200).json({
       success: true,
       data: {
         callId: videoCall._id,
         roomId: videoCall.roomId,
-        token,
-        provider: 'agora',
-        appId: process.env.AGORA_APP_ID,
-        channelName,
-        uid,
+        provider: 'jitsi',
+        roomName,
+        roomUrl,
         status: videoCall.status
       }
     });
