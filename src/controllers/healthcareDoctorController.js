@@ -1384,24 +1384,33 @@ const getDashboard = asyncHandler(async (req, res) => {
     status: { $in: ['pending', 'confirmed'] },
   })
     .populate({ path: 'slotId', match: { date: { $gte: todayStart } }, select: 'date startTime endTime' })
+    .populate('patientId', 'fullName')
     .sort({ 'slot.date': 1, 'slot.startTime': 1 })
     .lean();
 
   // If slot doesn't match, nextAppointment may have slotId=null due to match filter; better to filter separately.
-  // Alternative: we can fetch closest appointment with slot date >= todayStart.
+  // Return a shape the frontend appointmentSerializer understands (populated
+  // patient + slot times) so the dashboard shows the real patient name/time/type.
   let next = null;
   if (nextAppointment && nextAppointment.slotId) {
     next = {
       appointmentId: nextAppointment._id,
-      patientName: nextAppointment.patientName,
+      patientId: nextAppointment.patientId,
+      patientInfo: nextAppointment.patientInfo,
+      type: nextAppointment.type,
+      symptoms: nextAppointment.symptoms,
       date: nextAppointment.slotId.date,
-      startTime: nextAppointment.slotId.startTime,
+      timeSlot: {
+        start: nextAppointment.slotId.startTime,
+        end: nextAppointment.slotId.endTime,
+      },
     };
   }
 
   res.json({
     success: true,
     data: {
+      doctorName: req.user.fullName || '',
       today: todayStats,
       thisWeek: weekStats,
       thisMonth: monthStats,

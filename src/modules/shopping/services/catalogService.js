@@ -101,12 +101,18 @@ const listProducts = async (params, { page, limit, skip }) => {
     ? null
     : (await Brand.find({ status: 'active', isDeleted: false }).select('_id')).map((b) => b._id);
 
+  const queryParams = { ...params };
   if (params.brandId) {
     const brand = await Brand.findOne({ _id: params.brandId, status: 'active', isDeleted: false });
     if (!brand) return { products: [], total: 0 };
+    // Aggregation $match does NOT auto-cast strings to ObjectId
+    queryParams.brandId = brand._id;
+  }
+  if (params.categoryId && mongoose.isValidObjectId(params.categoryId)) {
+    queryParams.categoryId = new mongoose.Types.ObjectId(String(params.categoryId));
   }
 
-  const query = buildProductQuery(params, activeBrands);
+  const query = buildProductQuery(queryParams, activeBrands);
   const sort = buildProductSort(params.sortBy);
 
   const pipeline = [

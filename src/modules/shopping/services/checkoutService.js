@@ -35,6 +35,9 @@ const checkout = async (user, { addressId, shippingAddress, paymentMethod }) => 
     const saved = await Address.findOne({ _id: addressId, userId: user._id });
     if (!saved) throw new CheckoutError('Saved address not found', 404);
     address = saved.toJSON();
+    if (!address.addressLine2 && (address.area || address.landmark)) {
+      address.addressLine2 = [address.area, address.landmark].filter(Boolean).join(', ');
+    }
   }
   const required = ['fullName', 'phone', 'addressLine1', 'city'];
   if (!address || required.some((f) => !address[f])) {

@@ -17,21 +17,24 @@ const {
   removeFromWishlist,
 } = require('../controllers/wishlistController');
 
-// All cart/wishlist routes require an authenticated customer
-router.use(protect, userOnly);
+// All cart/wishlist routes require an authenticated customer.
+// Middleware is applied per-route (NOT router.use) because this router is
+// mounted at '/', and router.use would also intercept /vendor and /admin
+// requests that fall through to later routers.
+const customer = [protect, userOnly];
 
-router.get('/cart', getCart);
-router.post('/cart/items', addItem);
-router.patch('/cart/items/:itemId', updateItem);
-router.delete('/cart/items/:itemId', removeItem);
-router.delete('/cart', clearCart);
-router.post('/cart/coupon', applyCoupon);
-router.delete('/cart/coupon', removeCoupon);
+router.get('/cart', customer, getCart);
+router.post('/cart/items', customer, addItem);
+router.patch('/cart/items/:itemId', customer, updateItem);
+router.delete('/cart/items/:itemId', customer, removeItem);
+router.delete('/cart', customer, clearCart);
+router.post('/cart/coupon', customer, applyCoupon);
+router.delete('/cart/coupon', customer, removeCoupon);
 
-router.get('/coupons', listCoupons);
+router.get('/coupons', customer, listCoupons);
 
-router.get('/wishlist', getWishlist);
-router.post('/wishlist/:productId', addToWishlist);
-router.delete('/wishlist/:productId', removeFromWishlist);
+router.get('/wishlist', customer, getWishlist);
+router.post('/wishlist/:productId', customer, addToWishlist);
+router.delete('/wishlist/:productId', customer, removeFromWishlist);
 
 module.exports = router;

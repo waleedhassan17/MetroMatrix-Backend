@@ -68,7 +68,12 @@ const getOrderById = asyncHandler(async (req, res) => {
 const getOrderTracking = asyncHandler(async (req, res) => {
   const { orderId } = req.params;
   if (!mongoose.isValidObjectId(orderId)) return fail(res, 400, 'Invalid order ID');
-  const order = await Order.findOne({ _id: orderId, userId: req.user._id });
+  let order = await Order.findOne({ _id: orderId, userId: req.user._id });
+  if (!order) {
+    // Allow a groupId here too — track the group's first child order
+    const group = await OrderGroup.findOne({ _id: orderId, userId: req.user._id });
+    if (group) order = await Order.findOne({ orderGroup: group._id }).sort({ createdAt: 1 });
+  }
   if (!order) return fail(res, 404, 'Order not found');
   return ok(res, {
     orderId: String(order._id),

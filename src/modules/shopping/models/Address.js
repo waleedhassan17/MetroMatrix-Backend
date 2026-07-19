@@ -12,6 +12,8 @@ const addressSchema = new mongoose.Schema(
     addressLine1: { type: String, required: [true, 'Address line 1 is required'] },
     addressLine2: String,
     city: { type: String, required: [true, 'City is required'] },
+    area: { type: String, default: '' },
+    landmark: { type: String, default: '' },
     state: { type: String, default: '' },
     postalCode: { type: String, default: '' },
     country: { type: String, default: 'Pakistan' },

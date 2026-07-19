@@ -14,18 +14,25 @@ const getOrCreate = async (userId) => {
  * `product` card object is added for the Wishlist screen (additive).
  */
 const serialize = async (list) => {
-  await list.populate({
-    path: 'items.product',
-    select: 'name images basePrice salePrice rating totalReviews inStock brandId',
-  });
+  await list.populate([
+    {
+      path: 'items.product',
+      select: 'name images basePrice salePrice rating totalReviews inStock brandId',
+    },
+    { path: 'items.brandId', select: 'name' },
+  ]);
   return list.items
     .filter((it) => it.product) // drop items whose product was removed
-    .map((it) => ({
-      productId: String(it.product._id),
-      brandId: String(it.brandId),
-      addedAt: it.addedAt,
-      product: it.product.toJSON(),
-    }));
+    .map((it) => {
+      const brandDoc = it.brandId && it.brandId.name ? it.brandId : null;
+      return {
+        productId: String(it.product._id),
+        brandId: brandDoc ? String(brandDoc._id) : String(it.brandId),
+        brandName: brandDoc ? brandDoc.name : '',
+        addedAt: it.addedAt,
+        product: it.product.toJSON(),
+      };
+    });
 };
 
 // @desc  GET /api/shopping/wishlist

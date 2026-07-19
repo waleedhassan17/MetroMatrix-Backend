@@ -11,7 +11,9 @@
     "lint": "eslint src/",
     "lint:fix": "eslint src/ --fix",
     "seed": "node scripts/seed.js",
-    "smoke:wallet": "node scripts/smoke-wallet.js"
+    "smoke:wallet": "node scripts/smoke-wallet.js",
+    "seed:shopping": "node scripts/seed-shopping.js",
+    "smoke:shopping": "node scripts/smoke-shopping.js"
   },
   "keywords": [
     "metromatrix",
