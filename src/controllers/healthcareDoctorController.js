@@ -2,6 +2,7 @@ const asyncHandler = require('express-async-handler');
 const bcrypt = require('bcryptjs');
 const Provider = require('../models/Provider');
 // Canonical healthcare models live in the healthcare module.
+const paymentService = require('../modules/healthcare/services/paymentService');
 const Doctor = require('../modules/healthcare/models/Doctor');
 const Specialty = require('../modules/healthcare/models/Specialty');
 const Clinic = require('../modules/healthcare/models/Clinic');
@@ -1056,6 +1057,15 @@ const completeAppointment = asyncHandler(async (req, res) => {
   appointment.completedAt = new Date();
   await appointment.save();
 
+  // H2: capture cash-at-clinic payment and credit the doctor's earnings
+  // ledger (fee minus platform commission) — payout happens at completion,
+  // never at payment time.
+  try {
+    await paymentService.settleCompletedAppointment(appointment);
+  } catch (settleErr) {
+    console.error('Payout settlement failed:', settleErr.message);
+  }
+
   // Notify patient
   await notifyPatient(
     appointment.patientId,
@@ -1112,6 +1122,17 @@ const cancelAppointment = asyncHandler(async (req, res) => {
   appointment.cancelledBy = 'doctor';
   await appointment.save();
 
+  // H2: doctor-initiated cancellation always refunds the patient in full
+  let refunded = 0;
+  try {
+    refunded = await paymentService.refundAppointment(appointment, {
+      cancelledBy: 'doctor',
+      reason: `Refund: appointment cancelled by doctor (${reason})`,
+    });
+  } catch (refundErr) {
+    console.error('Refund failed:', refundErr.message);
+  }
+
   // Update time slot
   const slot = await Slot.findById(appointment.slotId);
   if (slot) {
@@ -1129,7 +1150,9 @@ const cancelAppointment = asyncHandler(async (req, res) => {
     appointment.patientId,
     'appointment_cancelled',
     'Appointment Cancelled',
-    `Your appointment has been cancelled by the doctor. Reason: ${reason}`,
+    refunded > 0
+      ? `Your appointment has been cancelled by the doctor and PKR ${refunded} was refunded to your wallet. Reason: ${reason}`
+      : `Your appointment has been cancelled by the doctor. Reason: ${reason}`,
     { appointmentId: appointment._id }
   );
 

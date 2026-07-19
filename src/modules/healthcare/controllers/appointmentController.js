@@ -3,6 +3,7 @@ const { body, validationResult } = require('express-validator');
 const Appointment = require('../models/Appointment');
 const Doctor = require('../models/Doctor');
 const Slot = require('../models/Slot');
+const paymentService = require('../services/paymentService');
 const appointmentService = require('../services/appointmentService');
 const slotService = require('../services/slotService');
 const couponService = require('../services/couponService');
@@ -170,6 +171,21 @@ const cancelAppointment = async (req, res, next) => {
 
     await session.commitTransaction();
 
+    // H2: refund per policy (full ≥ window, partial inside; outside txn, best effort).
+    let refunded = 0;
+    try {
+      const fresh = await Appointment.findById(result.appointment._id).populate(
+        'slotId',
+        'date startTime'
+      );
+      refunded = await paymentService.refundAppointment(fresh, {
+        cancelledBy: 'patient',
+        reason: `Refund: appointment cancelled by patient (${reason || 'no reason'})`,
+      });
+    } catch (refundErr) {
+      console.error('Refund failed:', refundErr.message);
+    }
+
     // Send notification to doctor (outside transaction — best effort)
     try {
       const doctor = await Doctor.findById(result.appointment.doctorId);
@@ -191,8 +207,12 @@ const cancelAppointment = async (req, res, next) => {
 
     res.json({
       success: true,
-      message: 'Appointment cancelled successfully',
+      message:
+        refunded > 0
+          ? `Appointment cancelled. PKR ${refunded} refunded to your wallet.`
+          : 'Appointment cancelled successfully',
       data: result.appointment,
+      refunded,
     });
   } catch (error) {
     await session.abortTransaction();
@@ -353,6 +373,11 @@ const bookAppointment = async (req, res, next) => {
           fee,
           discount,
           totalAmount,
+          // BOOKING POLICY (documented choice): appointments can be booked
+          // unpaid and settled later — wallet in-app any time before the
+          // visit, or cash at the clinic captured when the doctor completes
+          // the appointment. Payment is therefore NOT required to confirm.
+          payment: { status: 'unpaid', method: null, amount: totalAmount },
         },
       ],
       { session }

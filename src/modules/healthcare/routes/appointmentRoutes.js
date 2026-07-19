@@ -17,8 +17,9 @@ const {
   getDoctorAppointments,
   updateAppointmentStatus,
 } = require('../controllers/appointmentController');
-const { requireUser, requireDoctor } = require('../middleware/healthcareAuth');
+const { requireUser, requireDoctor, requireAppointmentParticipant } = require('../middleware/healthcareAuth');
 const { getAppointmentPrescription } = require('../controllers/prescriptionController');
+const { payAppointment, getPaymentState } = require('../controllers/paymentController');
 
 // ─── Patient routes (requireUser) ───────────────────
 // Static routes MUST come before :appointmentId param
@@ -27,6 +28,10 @@ router.get('/doctor', requireUser, requireDoctor, getDoctorAppointments);
 
 router.get('/', requireUser, getAppointments);             // API 1
 router.post('/', requireUser, bookingValidationRules, handleValidationErrors, bookAppointment); // Booking
+
+// Payment (H2) — PHI-guarded by participant check
+router.post('/:appointmentId/pay', requireUser, requireAppointmentParticipant, payAppointment);
+router.get('/:appointmentId/payment', requireUser, requireAppointmentParticipant, getPaymentState);
 
 router.get('/:appointmentId', requireUser, getAppointmentDetail); // API 2
 router.get('/:appointmentId/prescription', requireUser, getAppointmentPrescription); // Prescription lookup

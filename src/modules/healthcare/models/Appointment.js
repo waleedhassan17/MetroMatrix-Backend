@@ -58,6 +58,40 @@ const appointmentSchema = new mongoose.Schema(
       default: 0,
       min: 0,
     },
+    // Payment — amount frozen from the doctor's consultationFee at booking
+    // time; a later fee change never alters an existing appointment.
+    payment: {
+      status: {
+        type: String,
+        enum: ['unpaid', 'paid', 'refunded'],
+        default: 'unpaid',
+      },
+      method: {
+        type: String,
+        enum: ['wallet', 'cash_at_clinic', null],
+        default: null,
+      },
+      amount: { type: Number, default: 0, min: 0 },
+      walletTransactionId: {
+        type: mongoose.Schema.Types.ObjectId,
+        ref: 'WalletTransaction',
+        default: null,
+      },
+      paidAt: { type: Date, default: null },
+      refundedAt: { type: Date, default: null },
+      refundAmount: { type: Number, default: 0 },
+    },
+    // Doctor payout bookkeeping (credited at completed, minus commission)
+    payout: {
+      amount: { type: Number, default: 0 },
+      commission: { type: Number, default: 0 },
+      paidAt: { type: Date, default: null },
+      walletTransactionId: {
+        type: mongoose.Schema.Types.ObjectId,
+        ref: 'WalletTransaction',
+        default: null,
+      },
+    },
     cancellationReason: {
       type: String,
       default: '',

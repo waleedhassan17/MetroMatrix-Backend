@@ -146,6 +146,45 @@ const adminSettingsSchema = new mongoose.Schema(
       },
     },
 
+    // Healthcare Settings — the SAME values the appointment payment/refund
+    // code reads (healthcare settingsService). Managed via
+    // GET/PATCH /api/v1/admin/healthcare/settings.
+    healthcare: {
+      commissionPercent: {
+        type: Number,
+        default: 10,
+        min: 0,
+        max: 100,
+      },
+      // Full refund when cancelling ≥ this many hours before the slot
+      cancellationWindowHours: {
+        type: Number,
+        default: 12,
+        min: 0,
+      },
+      // % refunded when cancelling inside the window (0 = forfeit)
+      lateCancelRefundPercent: {
+        type: Number,
+        default: 50,
+        min: 0,
+        max: 100,
+      },
+      defaultSlotDurationMinutes: {
+        type: Number,
+        default: 30,
+        min: 5,
+      },
+      maxAdvanceBookingDays: {
+        type: Number,
+        default: 30,
+        min: 1,
+      },
+      autoApproveDoctors: {
+        type: Boolean,
+        default: false,
+      },
+    },
+
     // Metadata
     lastUpdatedBy: {
       type: mongoose.Schema.Types.ObjectId,
