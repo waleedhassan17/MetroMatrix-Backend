@@ -37,6 +37,7 @@ const {
   getTransactions,
 } = require('../controllers/healthcareDoctorController');
 const { protect, providerOnly } = require('../middleware/authMiddleware');
+const { requireTreatingDoctor } = require('../modules/healthcare/middleware/healthcareAuth');
 const { uploadMultipleDocuments, uploadProfilePhoto } = require('../middleware/uploadMiddleware');
 
 // Public
@@ -88,12 +89,12 @@ router.get('/doctors/me/transactions', protect, providerOnly, getTransactions);
 router.get('/doctors/me/reviews', protect, providerOnly, getMyReviews);
 
 // Medical notes (doctor's private notes per patient)
-router.get('/doctors/me/patients/:patientId/notes', protect, providerOnly, getPatientNotes);
-router.post('/doctors/me/notes', protect, providerOnly, createNote);
+router.get('/doctors/me/patients/:patientId/notes', protect, providerOnly, requireTreatingDoctor, getPatientNotes);
+router.post('/doctors/me/notes', protect, providerOnly, requireTreatingDoctor, createNote);
 router.patch('/doctors/me/notes/:noteId', protect, providerOnly, updateNote);
 router.delete('/doctors/me/notes/:noteId', protect, providerOnly, deleteNote);
 
 // Patient history (this doctor's visits with a patient)
-router.get('/doctors/me/patients/:patientId/history', protect, providerOnly, getPatientHistory);
+router.get('/doctors/me/patients/:patientId/history', protect, providerOnly, requireTreatingDoctor, getPatientHistory);
 
 module.exports = router;

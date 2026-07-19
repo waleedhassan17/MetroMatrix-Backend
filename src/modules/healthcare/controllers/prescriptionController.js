@@ -92,7 +92,18 @@ const downloadPrescriptionPDF = async (req, res, next) => {
       return res.status(404).json({ success: false, error: 'Prescription not found' });
     }
 
-    if (prescription.patientId._id.toString() !== req.user._id.toString()) {
+    // PHI: only the patient or the prescribing doctor may download this PDF
+    const isPatient = prescription.patientId._id.toString() === req.user._id.toString();
+    let isPrescriber = false;
+    if (!isPatient) {
+      const Doctor = require('../models/Doctor');
+      const doctor = await Doctor.findOne({ providerId: req.user._id }).select('_id');
+      isPrescriber =
+        !!doctor &&
+        prescription.doctorId &&
+        (prescription.doctorId._id || prescription.doctorId).toString() === doctor._id.toString();
+    }
+    if (!isPatient && !isPrescriber) {
       return res.status(403).json({ success: false, error: 'Access denied' });
     }
 

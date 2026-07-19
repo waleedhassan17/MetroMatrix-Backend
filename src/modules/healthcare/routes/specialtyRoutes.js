@@ -7,15 +7,16 @@ const {
   updateSpecialty,
   deleteSpecialty,
 } = require('../controllers/specialtyController');
-const { requireUser } = require('../middleware/healthcareAuth');
+const { requireAdmin } = require('../middleware/healthcareAuth');
 
 // Public routes
 router.get('/', getSpecialties);
 router.get('/:id', getSpecialty);
 
-// Admin routes (authenticated — add admin middleware in production)
-router.post('/', requireUser, createSpecialty);
-router.put('/:id', requireUser, updateSpecialty);
-router.delete('/:id', requireUser, deleteSpecialty);
+// Admin-only mutations. Previously guarded with requireUser, which let ANY
+// authenticated patient create/edit/delete a medical specialty (SECURITY_FIXES.md #1).
+router.post('/', requireAdmin, createSpecialty);
+router.put('/:id', requireAdmin, updateSpecialty);
+router.delete('/:id', requireAdmin, deleteSpecialty);
 
 module.exports = router;
