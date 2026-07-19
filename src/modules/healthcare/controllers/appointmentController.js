@@ -407,6 +407,14 @@ const bookAppointment = async (req, res, next) => {
           startTime: slot.startTime,
         }
       );
+      // TC-17: the PATIENT also gets a booking confirmation notification
+      await notificationService.createNotification({
+        userId: req.user._id,
+        title: 'Appointment Booked',
+        message: 'Your appointment request has been received. You will be notified when the doctor confirms.',
+        type: 'appointment_booked',
+        data: { appointmentId: appointment._id },
+      });
     } catch (notifErr) {
       console.error('Failed to send booking notification:', notifErr.message);
     }

@@ -13,7 +13,9 @@
     "seed": "node scripts/seed.js",
     "smoke:wallet": "node scripts/smoke-wallet.js",
     "seed:shopping": "node scripts/seed-shopping.js",
-    "smoke:shopping": "node scripts/smoke-shopping.js"
+    "smoke:shopping": "node scripts/smoke-shopping.js",
+    "seed:healthcare": "node scripts/seed-healthcare.js",
+    "smoke:healthcare": "node scripts/smoke-healthcare.js"
   },
   "keywords": [
     "metromatrix",
