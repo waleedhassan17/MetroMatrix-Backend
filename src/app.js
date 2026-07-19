@@ -1546,6 +1546,8 @@ app.use('/api/auth', authRoutes);
 // /doctors/register, /doctors/signin), then the shared healthcare module router.
 app.use('/api/v1/healthcare', healthcareDoctorRoutes);
 app.use('/api/v1/healthcare', require('./modules/healthcare/routes/index'));
+// Shopping module (multi-vendor storefront) — peer module of healthcare.
+app.use('/api/shopping', require('./modules/shopping/routes/index'));
 // Healthcare admin routes (doctor approval, specialty CRUD, analytics).
 app.use('/api/v1/admin', adminDoctorRoutes);
 app.use('/api/v1/admin', adminSpecialtyRoutes);
