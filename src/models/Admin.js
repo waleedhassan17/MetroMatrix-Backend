@@ -73,6 +73,11 @@ const adminSchema = new mongoose.Schema(
         type: Boolean,
         default: true,
       },
+      // Healthcare module oversight (doctors, appointments, clinics, reviews, settings)
+      canManageHealthcare: {
+        type: Boolean,
+        default: true,
+      },
     },
 
     // Profile

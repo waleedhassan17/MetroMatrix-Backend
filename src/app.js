@@ -1552,6 +1552,9 @@ app.use('/api/shopping', require('./modules/shopping/routes/index'));
 app.use('/api/v1/admin', adminDoctorRoutes);
 app.use('/api/v1/admin', adminSpecialtyRoutes);
 app.use('/api/v1/admin', adminAnalyticsRoutes);
+// Healthcare admin oversight (doctor suspend, appointments, clinics, reviews, settings).
+// Mounted after adminDoctorRoutes so its static /doctors/pending wins over /doctors/:doctorId.
+app.use('/api/v1/admin', require('./routes/adminHealthcareRoutes'));
 app.use('/api/users', userRoutes);
 app.use('/api/providers', providerRoutes);
 app.use('/api/posts', postRoutes);
