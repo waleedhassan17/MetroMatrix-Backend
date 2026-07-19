@@ -5,5 +5,6 @@ const router = express.Router();
 router.use('/', require('./catalogRoutes'));
 router.use('/', require('./cartRoutes'));
 router.use('/', require('./orderRoutes'));
+router.use('/vendor', require('./vendorRoutes'));
 
 module.exports = router;
