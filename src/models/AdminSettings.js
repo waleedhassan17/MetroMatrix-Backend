@@ -111,6 +111,41 @@ const adminSettingsSchema = new mongoose.Schema(
       },
     },
 
+    // Shopping Settings — the SAME values shopping checkout/inventory/analytics read.
+    // Managed via GET/PATCH /api/shopping/admin/settings.
+    shopping: {
+      commissionPercent: {
+        type: Number,
+        default: 10,
+        min: 0,
+        max: 100,
+      },
+      shippingFeePerBrand: {
+        type: Number,
+        default: 150,
+        min: 0,
+      },
+      freeShippingThreshold: {
+        type: Number,
+        default: 3000,
+        min: 0,
+      },
+      lowStockThreshold: {
+        type: Number,
+        default: 5,
+        min: 0,
+      },
+      defaultReturnDays: {
+        type: Number,
+        default: 7,
+        min: 0,
+      },
+      autoApproveBrands: {
+        type: Boolean,
+        default: false,
+      },
+    },
+
     // Metadata
     lastUpdatedBy: {
       type: mongoose.Schema.Types.ObjectId,
