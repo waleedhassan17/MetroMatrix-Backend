@@ -11,6 +11,74 @@ const {
   pkrToUsdCents,
 } = require('../config/currency');
 
+// Groups WalletTransaction.source values into the "module" filter the
+// frontend's unified TransactionHistory screen shows (Part C.5 / Part 2.5).
+const SOURCE_MODULE = {
+  homeservice_payment: 'homeservice',
+  homeservice_earning: 'homeservice',
+  healthcare_payment: 'healthcare',
+  healthcare_earning: 'healthcare',
+  shopping_payment: 'shopping',
+  shopping_earning: 'shopping',
+  stripe_topup: 'topup',
+  payout: 'payout',
+};
+const MODULE_SOURCES = Object.entries(SOURCE_MODULE).reduce((acc, [source, mod]) => {
+  (acc[mod] = acc[mod] || []).push(source);
+  return acc;
+}, {});
+
+// @desc    Get the caller's wallet transaction history — ONE endpoint for
+//          both users and providers; the wallet is resolved from the JWT.
+//          Filterable by source, module (home services/healthcare/shopping/
+//          top-up/payout), type and date range.
+// @route   GET /api/wallet/transactions
+// @access  Private
+const getMyTransactions = asyncHandler(async (req, res) => {
+  const ownerId = req.user._id;
+  const ownerType = req.isProvider ? 'Provider' : 'User';
+  const wallet = await WalletService.getOrCreateWallet(ownerId, ownerType);
+
+  const { source, module: moduleFilter, type, from, to } = req.query;
+  const limit = Math.min(parseInt(req.query.limit, 10) || 20, 100);
+  const page = Math.max(parseInt(req.query.page, 10) || 1, 1);
+
+  const query = { wallet: wallet._id };
+  if (type && ['credit', 'debit'].includes(type)) query.type = type;
+  if (source) query.source = source;
+  else if (moduleFilter && MODULE_SOURCES[moduleFilter]) {
+    query.source = { $in: MODULE_SOURCES[moduleFilter] };
+  }
+  if (from || to) {
+    query.createdAt = {};
+    if (from) query.createdAt.$gte = new Date(from);
+    if (to) query.createdAt.$lte = new Date(to);
+  }
+
+  const [transactions, total] = await Promise.all([
+    WalletTransaction.find(query)
+      .sort({ createdAt: -1 })
+      .skip((page - 1) * limit)
+      .limit(limit),
+    WalletTransaction.countDocuments(query),
+  ]);
+
+  res.status(200).json({
+    success: true,
+    wallet: { balance: wallet.balance, currency: wallet.currency },
+    transactions: transactions.map((t) => ({
+      ...t.toObject(),
+      module: SOURCE_MODULE[t.source] || null,
+    })),
+    pagination: {
+      page,
+      limit,
+      total,
+      pages: Math.ceil(total / limit) || 1,
+    },
+  });
+});
+
 // @desc    Get user's wallet with transaction history
 // @route   GET /api/wallet/me
 // @access  Private
@@ -115,7 +183,7 @@ const createCheckoutSession = asyncHandler(async (req, res) => {
 const topUpSuccess = asyncHandler(async (req, res) => {
   const { session_id } = req.query;
 
-  const deepLinkUrl = `${process.env.APP_DEEP_LINK_SCHEME}://wallet/topup-success?session_id=${session_id}`;
+  const deepLinkUrl = `${(process.env.APP_DEEP_LINK_SCHEME || 'metromatrix')}://wallet/topup-success?session_id=${session_id}`;
 
   const html = `
 <!DOCTYPE html>
@@ -223,7 +291,7 @@ const topUpSuccess = asyncHandler(async (req, res) => {
 // @route   GET /api/wallet/topup/cancel
 // @access  Public
 const topUpCancel = asyncHandler(async (req, res) => {
-  const deepLinkUrl = `${process.env.APP_DEEP_LINK_SCHEME}://wallet/topup-cancel`;
+  const deepLinkUrl = `${(process.env.APP_DEEP_LINK_SCHEME || 'metromatrix')}://wallet/topup-cancel`;
 
   const html = `
 <!DOCTYPE html>
@@ -607,12 +675,12 @@ const getConnectStatus = asyncHandler(async (req, res) => {
 
 // Public pages for Connect onboarding redirects
 const connectRefresh = asyncHandler(async (req, res) => {
-  const deepLinkUrl = `${process.env.APP_DEEP_LINK_SCHEME}://wallet/connect-refresh`;
+  const deepLinkUrl = `${(process.env.APP_DEEP_LINK_SCHEME || 'metromatrix')}://wallet/connect-refresh`;
   res.send(`<!DOCTYPE html><html><head><title>Refresh Required</title><meta http-equiv="refresh" content="1;url=${deepLinkUrl}"/></head><body style="font-family:sans-serif;text-align:center;padding:40px;">Redirecting back to app… <a href="${deepLinkUrl}">Tap here if not redirected</a></body></html>`);
 });
 
 const connectReturn = asyncHandler(async (req, res) => {
-  const deepLinkUrl = `${process.env.APP_DEEP_LINK_SCHEME}://wallet/connect-return`;
+  const deepLinkUrl = `${(process.env.APP_DEEP_LINK_SCHEME || 'metromatrix')}://wallet/connect-return`;
   res.send(`<!DOCTYPE html><html><head><title>Onboarding Complete</title><meta http-equiv="refresh" content="1;url=${deepLinkUrl}"/></head><body style="font-family:sans-serif;text-align:center;padding:40px;">Onboarding complete. Redirecting back to app… <a href="${deepLinkUrl}">Tap here if not redirected</a></body></html>`);
 });
 
@@ -749,6 +817,7 @@ const requestPayout = asyncHandler(async (req, res) => {
 
 module.exports = {
   getMyWallet,
+  getMyTransactions,
   createCheckoutSession,
   topUpSuccess,
   topUpCancel,

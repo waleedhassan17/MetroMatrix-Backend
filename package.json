@@ -17,7 +17,8 @@
     "seed:healthcare": "node scripts/seed-healthcare.js",
     "smoke:healthcare": "node scripts/smoke-healthcare.js",
     "seed:homeservice": "node scripts/seed-homeservice.js",
-    "smoke:homeservice": "node scripts/smoke-homeservice.js"
+    "smoke:homeservice": "node scripts/smoke-homeservice.js",
+    "smoke:wallet-stripe": "node scripts/wallet-smoke.js"
   },
   "keywords": [
     "metromatrix",

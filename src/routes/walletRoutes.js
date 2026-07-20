@@ -5,6 +5,7 @@ const { protect } = require('../middleware/authMiddleware');
 const { validate } = require('../middleware/validate');
 const {
   getMyWallet,
+  getMyTransactions,
   createCheckoutSession,
   topUpSuccess,
   topUpCancel,
@@ -36,6 +37,10 @@ router.use(protect);
 
 // Get wallet with transaction history
 router.get('/me', getMyWallet);
+
+// Unified transaction history — same endpoint for users and providers,
+// filterable by source, module, type and date range (Part C.5).
+router.get('/transactions', getMyTransactions);
 
 // Create Stripe checkout session for top-up
 const checkoutValidationRules = [
