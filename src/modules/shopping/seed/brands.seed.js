@@ -1,17 +1,34 @@
 /**
- * Cougar + Outfitters brand seed (QA.md Prompt 3).
+ * Cougar + Outfitters brand seed — REAL scraped catalogue data (shop.md
+ * Prompt 1). Replaces the earlier synthetic-catalogue version from
+ * QA.md Prompt 3.
  *
- * Idempotent, re-runnable: every entity is upserted by a stable natural key
- * (slug, sku, coupon code, email, order-guard on customer set). Running this
- * twice never duplicates a document.
+ * Data source: scripts/scrape-brands.py, run separately, writes
+ * scripts/scraped/{cougar,outfitters}-catalog.json. Outfitters is a
+ * classic Shopify (Liquid) storefront scraped via the REST /products.json
+ * endpoint. Cougar runs on Shopify Hydrogen/Oxygen (a headless React
+ * storefront with no Liquid engine, so /products.json 404s) — scraped via
+ * the Storefront GraphQL API using the public storefront access token
+ * Hydrogen embeds client-side (read-only, no admin access, its intended
+ * public use).
+ *
+ * DESTRUCTIVE BY DESIGN: purges every Brand/Category/Product/Outlet/Coupon
+ * and every shopping Order/OrderGroup/ReturnRequest/ProductReview/
+ * InventoryLog that isn't Cougar or Outfitters, per the task's explicit
+ * instruction. After this seed runs there are EXACTLY TWO brands in the
+ * database — asserted with a hard failure if not.
+ *
+ * Idempotent despite the purge: the purge only ever removes NON-Cougar/
+ * Outfitters documents, so a second run finds nothing left to purge and
+ * every Cougar/Outfitters entity is upserted by a stable natural key
+ * (slug/sku/coupon code/email) — running twice yields identical counts.
  *
  * Exports `seedBrands()` which assumes an ACTIVE mongoose connection (the
- * caller — scripts/seed-shopping.js, or this file run standalone — owns
- * connect/disconnect). Order payments and payouts go through the real
- * checkoutService / orderService / WalletService code paths, not hand-rolled
- * writes, so the seeded ledger is indistinguishable from what real usage
- * would produce.
+ * caller owns connect/disconnect). Order payments and payouts go through
+ * the real checkoutService/orderService/WalletService code paths.
  */
+const fs = require('fs');
+const path = require('path');
 const mongoose = require('mongoose');
 const Provider = require('../../../models/Provider');
 const User = require('../../../models/User');
@@ -27,6 +44,7 @@ const Order = require('../models/Order');
 const OrderGroup = require('../models/OrderGroup');
 const ReturnRequest = require('../models/ReturnRequest');
 const ProductReview = require('../models/ProductReview');
+const InventoryLog = require('../models/InventoryLog');
 const { slugify } = require('../utils/ids');
 
 const cartService = require('../services/cartService');
@@ -34,32 +52,25 @@ const checkoutService = require('../services/checkoutService');
 const orderService = require('../services/orderService');
 
 const log = (msg) => console.log(`  ${msg}`);
-const IMG = (seed) => `https://picsum.photos/seed/${seed}/700/700`;
 
-/* ── Brand specs ─────────────────────────────────────────────────── */
+const SCRAPED_DIR = path.join(__dirname, '../../../../scripts/scraped');
+
+/* ── Brand specs (real facts from the live sites, per shop.md) ──────── */
 
 const COUGAR = {
   slug: 'cougar',
   name: 'Cougar',
-  tagline: 'Step into class',
+  tagline: 'Casual wear, done properly',
   description:
-    'Premium footwear and leather goods for the modern Pakistani professional — formal shoes, loafers and accessories crafted for classic, timeless style.',
+    'Cougar Clothing — a full apparel brand for Men, Women and Kids. Casual and smart-casual wardrobe staples across shirts, denim, trousers and footwear, at Pakistan’s mid-to-premium price point.',
   primaryColor: '#1C1C1C',
   secondaryColor: '#8B5E34',
   accentColor: '#C9A66B',
   vendor: { email: 'vendor.cougar@metromatrix.pk', fullName: 'Zeeshan Malik', phoneNumber: '03001234520' },
-  categories: [
-    "Men's Formal Shoes",
-    "Men's Casual Shoes",
-    'Loafers',
-    'Sandals',
-    'Boots',
-    "Women's Footwear",
-    'Bags',
-    'Belts & Wallets',
-  ],
+  contactEmail: 'info@cougar.com.pk',
+  contactPhone: '042-32301484',
   outlets: [
-    { name: 'Liberty Market', address: 'Liberty Market, Gulberg III', lat: 31.5100, lng: 74.3436, postal: '54660' },
+    { name: 'Emporium Mall', address: 'Emporium Mall, Johar Town', lat: 31.4676, lng: 74.2665, postal: '54782' },
     { name: 'Packages Mall', address: 'Packages Mall, Walton Road', lat: 31.4996, lng: 74.3626, postal: '54700' },
   ],
 };
@@ -69,139 +80,132 @@ const OUTFITTERS = {
   name: 'Outfitters',
   tagline: 'Wear your attitude',
   description:
-    'Young, casual, streetwear-leaning fashion for men and women — everyday essentials with an edge.',
+    'Outfitters — Pakistan’s youth/streetwear leader, ~60 stores across 22 cities. Everyday essentials for Men and Women at an accessible price point.',
   primaryColor: '#1A1A2E',
   secondaryColor: '#E67E22',
   accentColor: '#F1C40F',
   vendor: { email: 'vendor.outfitters@metromatrix.pk', fullName: 'Ahmed Raza', phoneNumber: '03001234501' },
-  men: [
-    'T-Shirts',
-    'Shirts',
-    'Denim',
-    'Trousers',
-    'Hoodies & Sweatshirts',
-    'Outerwear',
-    'Footwear',
-    'Accessories',
-  ],
-  women: ['Tops', 'Dresses', 'Denim', 'Co-ords', 'Outerwear', 'Footwear', 'Accessories'],
+  contactEmail: 'info@outfitters.com.pk',
+  contactPhone: '042-111-000-009',
   outlets: [
-    { name: 'Fortress Stadium', address: 'Fortress Stadium, Lahore Cantt', lat: 31.5225, lng: 74.3583, postal: '54810' },
-    { name: 'Emporium Mall', address: 'Emporium Mall, Johar Town', lat: 31.4676, lng: 74.2665, postal: '54782' },
+    { name: 'Fortress Square', address: 'Fortress Stadium, Lahore Cantt', lat: 31.5225, lng: 74.3583, postal: '54810' },
+    { name: 'Gulberg Main Boulevard', address: 'MM Alam Road, Gulberg III', lat: 31.5090, lng: 74.3444, postal: '54660' },
   ],
 };
 
-/* ── Product templates ───────────────────────────────────────────── */
+/* ── Category normalisation: raw feed type -> canonical name ────────── */
+/* (Reference taxonomy per shop.md's own live-site research.) */
 
-const SHOE_SIZES = ['40', '41', '42', '43', '44'];
-const WOMEN_SHOE_SIZES = ['37', '38', '39', '40'];
-const ONE_SIZE = ['One Size'];
-
-// [name, basePrice, salePrice|null, sizes, category]
-const COUGAR_PRODUCTS = [
-  ['Oxford Cap-Toe', 8499, 6999, SHOE_SIZES, "Men's Formal Shoes"],
-  ['Derby Classic', 7999, null, SHOE_SIZES, "Men's Formal Shoes"],
-  ['Monk Strap', 8999, 7499, SHOE_SIZES, "Men's Formal Shoes"],
-  ['Chelsea Formal', 8299, null, SHOE_SIZES, "Men's Formal Shoes"],
-  ['Suede Desert Boot Low', 6499, 5499, SHOE_SIZES, "Men's Casual Shoes"],
-  ['Canvas Street Sneaker', 4999, null, SHOE_SIZES, "Men's Casual Shoes"],
-  ['Leather Low-Top', 6999, 5999, SHOE_SIZES, "Men's Casual Shoes"],
-  ['Penny Loafer', 6799, null, SHOE_SIZES, 'Loafers'],
-  ['Tassel Loafer', 7299, 6299, SHOE_SIZES, 'Loafers'],
-  ['Horsebit Loafer', 7599, null, SHOE_SIZES, 'Loafers'],
-  ['Suede Loafer', 6999, 5999, SHOE_SIZES, 'Loafers'],
-  ['Leather Slide', 2999, null, SHOE_SIZES, 'Sandals'],
-  ['Peshawari Chappal', 2499, 1999, SHOE_SIZES, 'Sandals'],
-  ['Sport Sandal', 3299, null, SHOE_SIZES, 'Sandals'],
-  ['Chelsea Boot', 9499, 7999, SHOE_SIZES, 'Boots'],
-  ['Chukka Boot', 8999, null, SHOE_SIZES, 'Boots'],
-  ['Combat Boot', 10499, 8999, SHOE_SIZES, 'Boots'],
-  ['Work Boot', 9999, null, SHOE_SIZES, 'Boots'],
-  ['Block Heel Pump', 6499, 5499, WOMEN_SHOE_SIZES, "Women's Footwear"],
-  ['Ballet Flat', 4999, null, WOMEN_SHOE_SIZES, "Women's Footwear"],
-  ['Ankle Boot', 7499, 6499, WOMEN_SHOE_SIZES, "Women's Footwear"],
-  ['Wedge Sandal', 5499, null, WOMEN_SHOE_SIZES, "Women's Footwear"],
-  ['Leather Tote', 8999, 7499, ONE_SIZE, 'Bags'],
-  ['Crossbody Sling', 5499, null, ONE_SIZE, 'Bags'],
-  ['Laptop Backpack', 8499, 6999, ONE_SIZE, 'Bags'],
-  ['Reversible Leather Belt', 2499, null, ONE_SIZE, 'Belts & Wallets'],
-  ['Bifold Wallet', 1999, 1599, ONE_SIZE, 'Belts & Wallets'],
-  ['Cardholder', 1499, null, ONE_SIZE, 'Belts & Wallets'],
-];
-
-const OUTFITTERS_PRODUCTS = [
-  ['Graphic Print Tee', 1899, 1499, ['S', 'M', 'L', 'XL'], 'men', 'T-Shirts'],
-  ['Essential Crew Tee', 1499, null, ['S', 'M', 'L', 'XL'], 'men', 'T-Shirts'],
-  ['Oxford Casual Shirt', 3299, 2799, ['S', 'M', 'L', 'XL'], 'men', 'Shirts'],
-  ['Denim Overshirt', 4499, null, ['M', 'L', 'XL'], 'men', 'Shirts'],
-  ['Slim Fit Jeans', 3999, 3499, ['30', '32', '34', '36'], 'men', 'Denim'],
-  ['Straight Cut Jeans', 3799, null, ['30', '32', '34', '36'], 'men', 'Denim'],
-  ['Cargo Trousers', 3999, 3499, ['30', '32', '34'], 'men', 'Trousers'],
-  ['Chino Trousers', 3499, null, ['30', '32', '34', '36'], 'men', 'Trousers'],
-  ['Pullover Hoodie', 4499, 3799, ['M', 'L', 'XL'], 'men', 'Hoodies & Sweatshirts'],
-  ['Crewneck Sweatshirt', 3999, null, ['S', 'M', 'L', 'XL'], 'men', 'Hoodies & Sweatshirts'],
-  ['Bomber Jacket', 7999, 6999, ['M', 'L', 'XL'], 'men', 'Outerwear'],
-  ['Denim Jacket', 6499, null, ['M', 'L', 'XL'], 'men', 'Outerwear'],
-  ['Canvas Sneaker', 4999, 4299, SHOE_SIZES, 'men', 'Footwear'],
-  ['Chunky Trainer', 6499, null, SHOE_SIZES, 'men', 'Footwear'],
-  ['Canvas Cap', 999, 799, ONE_SIZE, 'men', 'Accessories'],
-  ['Woven Belt', 1299, null, ONE_SIZE, 'men', 'Accessories'],
-  ['Ribbed Crop Top', 1699, 1399, ['XS', 'S', 'M', 'L'], 'women', 'Tops'],
-  ['Oversized Blouse', 2299, null, ['XS', 'S', 'M', 'L'], 'women', 'Tops'],
-  ['Wrap Midi Dress', 4999, 4299, ['XS', 'S', 'M', 'L'], 'women', 'Dresses'],
-  ['Shirt Dress', 4499, null, ['XS', 'S', 'M', 'L'], 'women', 'Dresses'],
-  ['Mom Fit Jeans', 4299, 3699, ['28', '30', '32', '34'], 'women', 'Denim'],
-  ['Denim Skirt', 2999, null, ['28', '30', '32', '34'], 'women', 'Denim'],
-  ['Knit Co-ord Set', 5499, 4699, ['XS', 'S', 'M', 'L'], 'women', 'Co-ords'],
-  ['Utility Co-ord Set', 5999, null, ['XS', 'S', 'M', 'L'], 'women', 'Co-ords'],
-  ['Puffer Jacket', 6999, 5999, ['S', 'M', 'L'], 'women', 'Outerwear'],
-  ['Trench Coat', 7999, null, ['S', 'M', 'L'], 'women', 'Outerwear'],
-  ['Platform Sneaker', 5499, 4699, WOMEN_SHOE_SIZES, 'women', 'Footwear'],
-  ['Strappy Sandal', 3499, null, WOMEN_SHOE_SIZES, 'women', 'Footwear'],
-  ['Tote Bag', 3999, 3299, ONE_SIZE, 'women', 'Accessories'],
-  ['Statement Earrings', 1299, null, ONE_SIZE, 'women', 'Accessories'],
-];
-
-/** Deterministic, varied stock so the catalogue shows every stock state:
- * healthy, low (<5), out-of-stock on one variant, and fully out-of-stock. */
-const stockPattern = (pIndex, sizes) => {
-  const mod = pIndex % 4;
-  return sizes.map((_, vIdx) => {
-    if (mod === 3) return 0; // whole product out of stock
-    if (vIdx === 0) return mod === 2 ? 3 : 14 + ((pIndex + vIdx) % 5) * 6; // low or healthy
-    if (mod === 1 && vIdx === sizes.length - 1) return 0; // one variant OOS
-    return 6 + ((pIndex + vIdx * 2) % 6) * 5;
-  });
+const OUTFITTERS_TYPE_MAP = {
+  TEES: 'T-Shirts', APPAREL: 'T-Shirts', POLOS: 'T-Shirts', 'ACTIVEWEAR (TOP)': 'T-Shirts',
+  JEANS: 'Denim',
+  SHIRTS: 'Shirts', 'SHIRTS/BLOUSES': 'Shirts',
+  TROUSERS: 'Trousers',
+  SHORTS: 'Shorts', SKIRTS: 'Shorts', 'ACTIVEWEAR (BOTTOM)': 'Shorts',
+  'DRESSES & JUMP SUITS': 'Dresses',
+  SWEATERS: 'Hoodies & Sweatshirts', SWEATSHIRTS: 'Hoodies & Sweatshirts',
+  OUTERWEAR: 'Outerwear',
+  'CLOSED SHOES': 'Footwear', 'OPEN SHOES': 'Footwear',
+  FRAGRANCES: 'Fragrances',
+  SOCKS: 'Accessories', JEWELLERY: 'Accessories', 'BAGS & WALLETS': 'Accessories', BAGS: 'Accessories',
+  EARRING: 'Accessories', SUNGLASSES: 'Accessories', 'BELTS & BRACES': 'Accessories', WALLETS: 'Accessories',
+  UNDERWEAR: 'Accessories', 'CAPS & HATS': 'Accessories', 'SCARVES & FOULARDS': 'Accessories',
 };
 
-/* ── Coupons ──────────────────────────────────────────────────────── */
-
-const buildCoupons = (cougar, outfitters) => {
-  const now = Date.now();
-  const day = 86400000;
-  return [
-    { couponCode: 'COUGAR15', brandId: cougar._id, type: 'percentage', value: 15, minOrderAmount: 5000, maxDiscount: 2500 },
-    { couponCode: 'COUGARLEATHER', brandId: cougar._id, type: 'fixed', value: 800, minOrderAmount: 4000, maxDiscount: 0 },
-    { couponCode: 'COUGARVIP', brandId: cougar._id, type: 'percentage', value: 20, minOrderAmount: 9000, maxDiscount: 3500 },
-    { couponCode: 'OUTFIT20', brandId: outfitters._id, type: 'percentage', value: 20, minOrderAmount: 5000, maxDiscount: 2500 },
-    { couponCode: 'OUTFITNEW', brandId: outfitters._id, type: 'fixed', value: 500, minOrderAmount: 3000, maxDiscount: 0 },
-    { couponCode: 'OUTFITSTREET', brandId: outfitters._id, type: 'percentage', value: 15, minOrderAmount: 4000, maxDiscount: 1800 },
-  ].map((c) => ({
-    ...c,
-    validFrom: new Date(now - 7 * day),
-    validUntil: new Date(now + 90 * day),
-    usageLimit: 500,
-    usedCount: 0,
-    isActive: true,
-  }));
+const COUGAR_TYPE_MAP = {
+  Tee: 'T-Shirts', Polo: 'Polos', Shirt: 'Shirts', Jean: 'Jeans', Jeans: 'Jeans',
+  Trouser: 'Trousers', Chino: 'Trousers', '5-Pocket Pant': 'Trousers', 'Chino Pant': 'Trousers',
+  Shorts: 'Shorts', Short: 'Shorts',
+  'Embroided Top': 'Tops & Blouses', 'Fashion Top': 'Tops & Blouses', 'Top 2PC': 'Co-Ord Sets', '2PC Top': 'Co-Ord Sets',
+  Jumpsuit: 'Eastern Wear', Frock: 'Eastern Wear',
 };
 
-const CUSTOMERS = [
-  { email: 'shopper1.qa@metromatrix.pk', fullName: 'Hina Aslam', phoneNumber: '03005550011' },
-  { email: 'shopper2.qa@metromatrix.pk', fullName: 'Usman Tariq', phoneNumber: '03005550012' },
-  { email: 'shopper3.qa@metromatrix.pk', fullName: 'Mahnoor Fatima', phoneNumber: '03005550013' },
-];
-const CUSTOMER_PASSWORD = 'Shopper@123';
+const normaliseOutfittersCategory = (rawType) => OUTFITTERS_TYPE_MAP[rawType?.toUpperCase()] || 'Accessories';
+
+/** Cougar's productType is "<Gender> <Item>" e.g. "Women Trouser", "Boy Jeans". */
+const parseCougarType = (rawType) => {
+  const parts = (rawType || 'Apparel').split(' ');
+  const genderWord = parts[0];
+  const rest = parts.slice(1).join(' ');
+  const gender =
+    genderWord === 'Men' ? 'Men' : genderWord === 'Women' ? 'Women' : genderWord === 'Boy' || genderWord === 'Girl' ? 'Kids' : 'Women';
+  const category = COUGAR_TYPE_MAP[rest] || rest || 'Accessories';
+  return { gender, category };
+};
+
+const IMG_FALLBACK = (seed) => `https://picsum.photos/seed/${seed}/700/700`;
+
+/* ── Purge ────────────────────────────────────────────────────────────
+ * Two things need to happen for "replace all Shopping seed data with
+ * exactly two REAL-data brands" to actually hold:
+ *   1. Any OTHER brand (old synthetic TechMart/Khaadi/Servis Steps/etc)
+ *      is deleted outright — Brand doc and all.
+ *   2. Cougar's AND Outfitters' own catalogue/transactional data is ALSO
+ *      wiped every run, not just upserted-by-natural-key. The previous
+ *      QA.md-era seed already created an "outfitters" brand with 40
+ *      SYNTHETIC products using the same SKU prefix (OTF-1001...) this
+ *      script's real-data products use — upserting by SKU against that
+ *      pre-existing data would find "OTF-1001" already exists and keep
+ *      the old FAKE product instead of replacing it with the real
+ *      scraped one. Only the Brand document and vendor/customer
+ *      identities are preserved (via upsert) across runs; everything
+ *      else is rebuilt from scratch every time, which is what makes the
+ *      "run twice, diff the document counts, must be identical" idempotency
+ *      check meaningful — a deterministic rebuild, not an ambiguous merge.
+ */
+async function purgeAllShoppingData() {
+  const keepSlugs = [COUGAR.slug, OUTFITTERS.slug];
+  const otherBrands = await Brand.find({ slug: { $nin: keepSlugs } }).select('_id name');
+  const otherBrandIds = otherBrands.map((b) => b._id);
+  if (otherBrandIds.length) {
+    log(`purge: deleting ${otherBrandIds.length} foreign brand(s): ${otherBrands.map((b) => b.name).join(', ')}`);
+  }
+
+  const results = await Promise.all([
+    ReturnRequest.deleteMany({}),
+    ProductReview.deleteMany({}),
+    InventoryLog.deleteMany({}),
+    Order.deleteMany({}),
+    OrderGroup.deleteMany({}),
+    Coupon.deleteMany({}),
+    Outlet.deleteMany({}),
+    Category.deleteMany({}),
+    Product.deleteMany({}),
+    Brand.deleteMany({ _id: { $in: otherBrandIds } }),
+  ]);
+  const [rr, pr, il, ord, grp, cp, ot, ct, pd, br] = results.map((r) => r.deletedCount);
+  log(
+    `purge: removed foreignBrands=${br} categories=${ct} products=${pd} outlets=${ot} coupons=${cp} ` +
+      `orderGroups=${grp} orders=${ord} returns=${rr} reviews=${pr} inventoryLogs=${il}`
+  );
+
+  // Reset each QA customer's wallet to a clean, deterministic baseline so
+  // re-running the order-seeding step produces identical wallet state
+  // every time, instead of compounding balance/history across runs.
+  const db = mongoose.connection.db;
+  const users = await db.collection('users').find({ email: { $in: CUSTOMERS.map((c) => c.email) } }).toArray();
+  const userIds = users.map((u) => u._id);
+  if (userIds.length) {
+    const wallets = await db.collection('wallets').find({ owner: { $in: userIds }, ownerType: 'User' }).toArray();
+    const walletIds = wallets.map((w) => w._id);
+    const txDel = await db.collection('wallettransactions').deleteMany({ wallet: { $in: walletIds } });
+    await db.collection('wallets').deleteMany({ owner: { $in: userIds }, ownerType: 'User' });
+    log(`purge: reset ${wallets.length} customer wallet(s), removed ${txDel.deletedCount} transaction(s)`);
+  }
+
+  // Same reset for the two vendor Provider wallets (earnings accumulate
+  // across runs otherwise, breaking idempotency).
+  const vendorEmails = [COUGAR.vendor.email, OUTFITTERS.vendor.email];
+  const providers = await db.collection('providers').find({ email: { $in: vendorEmails } }).toArray();
+  const providerIds = providers.map((p) => p._id);
+  if (providerIds.length) {
+    const pWallets = await db.collection('wallets').find({ owner: { $in: providerIds }, ownerType: 'Provider' }).toArray();
+    const pWalletIds = pWallets.map((w) => w._id);
+    const pTxDel = await db.collection('wallettransactions').deleteMany({ wallet: { $in: pWalletIds } });
+    await db.collection('wallets').deleteMany({ owner: { $in: providerIds }, ownerType: 'Provider' });
+    log(`purge: reset ${pWallets.length} vendor wallet(s), removed ${pTxDel.deletedCount} transaction(s)`);
+  }
+}
 
 /* ── Upsert helpers ──────────────────────────────────────────────── */
 
@@ -221,10 +225,8 @@ async function upsertVendor(spec) {
     });
     log(`vendor created: ${spec.email}`);
   } else {
-    // Same email can already exist from an earlier seed script (e.g.
-    // vendor.outfitters@metromatrix.pk is also created by seed-accounts.js
-    // with a different password) — reset it so the documented Vendor@123
-    // credential genuinely works, not just on a fresh account.
+    // Same email can already exist from an earlier seed script with a
+    // different password — reset it so Vendor@123 genuinely works.
     provider.providerType = 'vendor';
     provider.emailVerified = 'active';
     provider.adminVerified = 'active';
@@ -243,14 +245,14 @@ async function upsertBrand(spec, owner, topCategories) {
       slug: spec.slug,
       tagline: spec.tagline,
       description: spec.description,
-      logo: IMG(`${spec.slug}-logo`),
-      bannerImage: IMG(`${spec.slug}-banner`),
+      logo: IMG_FALLBACK(`${spec.slug}-logo`),
+      bannerImage: IMG_FALLBACK(`${spec.slug}-banner`),
       primaryColor: spec.primaryColor,
       secondaryColor: spec.secondaryColor,
       accentColor: spec.accentColor,
       categories: topCategories,
-      contactEmail: spec.vendor.email,
-      contactPhone: `+92-42-3576${Math.floor(1000 + Math.random() * 9000)}`,
+      contactEmail: spec.contactEmail,
+      contactPhone: spec.contactPhone,
       owner: owner._id,
       status: 'active',
       approvedAt: new Date(),
@@ -260,6 +262,8 @@ async function upsertBrand(spec, owner, topCategories) {
     brand.description = spec.description;
     brand.tagline = spec.tagline;
     brand.categories = topCategories;
+    brand.contactEmail = spec.contactEmail;
+    brand.contactPhone = spec.contactPhone;
     if (!brand.owner) brand.owner = owner._id;
     brand.status = 'active';
     await brand.save();
@@ -268,68 +272,82 @@ async function upsertBrand(spec, owner, topCategories) {
   return brand;
 }
 
-async function upsertFlatCategory(brand, name) {
-  const slug = slugify(name);
-  let cat = await Category.findOne({ brandId: brand._id, slug });
-  if (!cat) cat = await Category.create({ brandId: brand._id, name, slug, icon: 'tag' });
-  return cat;
-}
-
-/** Parent lookup reuses a pre-existing flat category of the same slug if one
- * exists (e.g. legacy 'Men'/'Women' rows from the old shopping seed), so the
- * old and new data converge onto one tree instead of colliding. */
-async function upsertCategoryTree(brand, parentName, childNames) {
-  const parentSlug = slugify(parentName);
-  let parent = await Category.findOne({ brandId: brand._id, slug: parentSlug });
-  if (!parent) parent = await Category.create({ brandId: brand._id, name: parentName, slug: parentSlug, icon: 'tag' });
-
-  const children = {};
-  for (const childName of childNames) {
-    const childSlug = `${parentSlug}-${slugify(childName)}`;
-    let child = await Category.findOne({ brandId: brand._id, slug: childSlug });
-    if (!child) {
-      child = await Category.create({
-        brandId: brand._id,
-        name: childName,
-        slug: childSlug,
-        icon: 'tag',
-        parentId: parent._id,
-      });
+async function upsertCategoryTree(brand, sections) {
+  // sections: { [genderOrTop: string]: Set<subCategoryName> }
+  const tree = {};
+  for (const [parentName, subNames] of Object.entries(sections)) {
+    const parentSlug = slugify(parentName);
+    let parent = await Category.findOne({ brandId: brand._id, slug: parentSlug });
+    if (!parent) parent = await Category.create({ brandId: brand._id, name: parentName, slug: parentSlug, icon: 'tag' });
+    tree[parentName] = { parent, children: {} };
+    for (const subName of subNames) {
+      const childSlug = `${parentSlug}-${slugify(subName)}`;
+      let child = await Category.findOne({ brandId: brand._id, slug: childSlug });
+      if (!child) {
+        child = await Category.create({
+          brandId: brand._id,
+          name: subName,
+          slug: childSlug,
+          icon: 'tag',
+          parentId: parent._id,
+        });
+      }
+      tree[parentName].children[subName] = child;
     }
-    children[childName] = child;
   }
-  return { parent, children };
+  return tree;
 }
 
-async function upsertCougarCatalogue(brand) {
-  const cats = {};
-  for (const name of COUGAR.categories) cats[name] = await upsertFlatCategory(brand, name);
+/** Deterministic varied stock so the catalogue demoes every stock state. */
+const stockFor = (productIdx, variantIdx, apiAvailable) => {
+  if (!apiAvailable) return 0;
+  const mod = productIdx % 5;
+  if (mod === 0 && variantIdx === 0) return 2; // low stock
+  if (mod === 1 && variantIdx === 1) return 0; // one OOS variant on an otherwise-in-stock product
+  return 6 + ((productIdx + variantIdx) % 5) * 5; // 6..26
+};
+
+async function upsertOutfittersCatalogue(brand, scraped) {
+  const genderTags = { Men: new Set(), Women: new Set() };
+  const productsMeta = [];
+  for (const p of scraped) {
+    const gender = p.tags.includes('Men') ? 'Men' : p.tags.includes('Women') ? 'Women' : 'Women';
+    const category = normaliseOutfittersCategory(p.productType);
+    genderTags[gender].add(category);
+    productsMeta.push({ ...p, gender, category });
+  }
+  const sections = { Men: genderTags.Men, Women: genderTags.Women };
+  const tree = await upsertCategoryTree(brand, sections);
 
   const products = [];
-  for (let i = 0; i < COUGAR_PRODUCTS.length; i += 1) {
-    const [name, basePrice, salePrice, sizes, catName] = COUGAR_PRODUCTS[i];
-    const sku = `CGR-${1001 + i}`;
+  for (let i = 0; i < productsMeta.length; i += 1) {
+    const p = productsMeta[i];
+    const sku = `OTF-${1001 + i}`;
     let product = await Product.findOne({ brandId: brand._id, sku });
     if (!product) {
-      const stocks = stockPattern(i, sizes);
+      const categoryDoc = tree[p.gender].children[p.category];
+      const prices = p.variants.map((v) => v.price);
+      const basePrice = Math.max(...p.variants.map((v) => v.compareAtPrice || v.price));
+      const salePrice = Math.min(...prices) < basePrice ? Math.min(...prices) : null;
       product = new Product({
         brandId: brand._id,
-        categoryId: cats[catName]._id,
+        categoryId: categoryDoc ? categoryDoc._id : null,
         sku,
-        name,
-        description: `${name} by Cougar. ${COUGAR.tagline}. Genuine materials, crafted for everyday wear.`,
-        images: [IMG(`${sku}-1`), IMG(`${sku}-2`)],
-        basePrice,
-        salePrice: salePrice || null,
-        variants: sizes.map((size, idx) => ({
-          size,
+        name: p.title,
+        description: (p.bodyHtml || '').replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' ').trim() || `${p.title} by Outfitters.`,
+        images: p.images.length ? p.images.slice(0, 3) : [IMG_FALLBACK(`${sku}-1`)],
+        basePrice: Math.round(basePrice),
+        salePrice: salePrice ? Math.round(salePrice) : null,
+        variants: p.variants.map((v, vi) => ({
+          size: v.size || 'One Size',
+          color: v.color && v.color !== 'FREE' ? v.color : undefined,
           additionalPrice: 0,
-          stockQuantity: stocks[idx],
-          sku: `${sku}-${String(size).replace(/\s+/g, '')}`,
+          stockQuantity: stockFor(i, vi, v.available),
+          sku: v.sku,
         })),
         isFeatured: i < 4,
         isNewArrival: i >= 4 && i < 8,
-        tags: ['cougar', catName.toLowerCase(), name.split(' ')[0].toLowerCase()],
+        tags: [brand.slug, p.gender.toLowerCase(), p.category.toLowerCase()],
       });
       product.syncStockFlag();
       await product.save();
@@ -339,46 +357,45 @@ async function upsertCougarCatalogue(brand) {
   return products;
 }
 
-async function upsertOutfittersCatalogue(brand) {
-  const { children: menCats } = await upsertCategoryTree(brand, 'Men', OUTFITTERS.men);
-  const { children: womenCats } = await upsertCategoryTree(brand, 'Women', OUTFITTERS.women);
+async function upsertCougarCatalogue(brand, scraped) {
+  const sectionCats = { Men: new Set(), Women: new Set(), Kids: new Set() };
+  const productsMeta = [];
+  for (const p of scraped) {
+    const { gender, category } = parseCougarType(p.productType);
+    sectionCats[gender].add(category);
+    productsMeta.push({ ...p, gender, category });
+  }
+  const tree = await upsertCategoryTree(brand, sectionCats);
 
-  // Legacy flat categories from the original 4-brand shopping seed
-  // ('Shirts','Denim','Shoes','Accessories' with no parent) are superseded
-  // by the nested Men/Women tree above — deactivate them so the catalogue
-  // tree isn't duplicated, without deleting the products that still
-  // reference them.
-  await Category.updateMany(
-    { brandId: brand._id, parentId: null, slug: { $in: ['shirts', 'denim', 'shoes', 'accessories'] } },
-    { $set: { isActive: false } }
-  );
-
-  const catsByGroup = { men: menCats, women: womenCats };
   const products = [];
-  for (let i = 0; i < OUTFITTERS_PRODUCTS.length; i += 1) {
-    const [name, basePrice, salePrice, sizes, group, catName] = OUTFITTERS_PRODUCTS[i];
-    const sku = `OTF-${1001 + i}`;
+  for (let i = 0; i < productsMeta.length; i += 1) {
+    const p = productsMeta[i];
+    const sku = `CGR-${1001 + i}`;
     let product = await Product.findOne({ brandId: brand._id, sku });
     if (!product) {
-      const stocks = stockPattern(i, sizes);
+      const categoryDoc = tree[p.gender].children[p.category];
+      const prices = p.variants.map((v) => v.price);
+      const basePrice = Math.max(...p.variants.map((v) => v.compareAtPrice || v.price));
+      const salePrice = Math.min(...prices) < basePrice ? Math.min(...prices) : null;
       product = new Product({
         brandId: brand._id,
-        categoryId: catsByGroup[group][catName]._id,
+        categoryId: categoryDoc ? categoryDoc._id : null,
         sku,
-        name,
-        description: `${name} by Outfitters. ${OUTFITTERS.tagline}. Street-ready pieces made for daily rotation.`,
-        images: [IMG(`${sku}-1`), IMG(`${sku}-2`)],
-        basePrice,
-        salePrice: salePrice || null,
-        variants: sizes.map((size, idx) => ({
-          size,
+        name: p.title,
+        description: (p.bodyHtml || '').replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' ').trim() || `${p.title} by Cougar.`,
+        images: p.images.length ? p.images.slice(0, 3) : [IMG_FALLBACK(`${sku}-1`)],
+        basePrice: Math.round(basePrice),
+        salePrice: salePrice ? Math.round(salePrice) : null,
+        variants: p.variants.map((v, vi) => ({
+          size: v.size || 'One Size',
+          color: v.color && v.color !== 'FREE' ? v.color : undefined,
           additionalPrice: 0,
-          stockQuantity: stocks[idx],
-          sku: `${sku}-${String(size).replace(/\s+/g, '')}`,
+          stockQuantity: stockFor(i, vi, v.available),
+          sku: v.sku,
         })),
         isFeatured: i < 4,
         isNewArrival: i >= 4 && i < 8,
-        tags: ['outfitters', group, catName.toLowerCase(), name.split(' ')[0].toLowerCase()],
+        tags: [brand.slug, p.gender.toLowerCase(), p.category.toLowerCase()],
       });
       product.syncStockFlag();
       await product.save();
@@ -405,12 +422,12 @@ async function upsertOutlets(brand, brandSpec) {
         },
         location: { address: spot.address, city: 'Lahore', state: 'Punjab', country: 'Pakistan', postalCode: spot.postal },
         geo: { type: 'Point', coordinates: [spot.lng, spot.lat] },
-        phone: '+92-42-35761234',
+        phone: brandSpec.contactPhone,
         email: `${slug}@metromatrix.pk`,
         openingHours: 'Mon–Sun: 11:00 AM – 10:00 PM',
         managerName: brandSpec.vendor.fullName,
-        images: [IMG(`${slug}-store`)],
-        floorArea: 2200,
+        images: [IMG_FALLBACK(`${slug}-store`)],
+        floorArea: 2400,
       });
       log(`outlet created: ${brandSpec.name} ${spot.name}`);
     }
@@ -418,12 +435,34 @@ async function upsertOutlets(brand, brandSpec) {
 }
 
 async function upsertCoupons(cougar, outfitters) {
-  const coupons = buildCoupons(cougar, outfitters);
+  const now = Date.now();
+  const day = 86400000;
+  const coupons = [
+    // minOrderAmount tuned to real scraped price ranges (Cougar variants
+    // top out around PKR 3000, Outfitters around PKR 9000 — a generic 5000
+    // minimum, reasonable for the old synthetic catalogue, made the coupon
+    // nearly impossible to actually clear with 1-2 real items and broke
+    // seeding when a real order tried to apply one).
+    { couponCode: 'COUGAR15', brandId: cougar._id, type: 'percentage', value: 15, minOrderAmount: 1500, maxDiscount: 1000, validFrom: new Date(now - 7 * day), validUntil: new Date(now + 90 * day) },
+    { couponCode: 'COUGARLEATHER', brandId: cougar._id, type: 'fixed', value: 300, minOrderAmount: 1200, maxDiscount: 0, validFrom: new Date(now - 7 * day), validUntil: new Date(now + 90 * day) },
+    { couponCode: 'COUGAREXPIRED', brandId: cougar._id, type: 'percentage', value: 25, minOrderAmount: 0, maxDiscount: 1500, validFrom: new Date(now - 60 * day), validUntil: new Date(now - 30 * day) },
+    { couponCode: 'OUTFIT20', brandId: outfitters._id, type: 'percentage', value: 20, minOrderAmount: 1000, maxDiscount: 1500, validFrom: new Date(now - 7 * day), validUntil: new Date(now + 90 * day) },
+    { couponCode: 'OUTFITNEW', brandId: outfitters._id, type: 'fixed', value: 500, minOrderAmount: 1500, maxDiscount: 0, validFrom: new Date(now - 7 * day), validUntil: new Date(now + 90 * day) },
+    { couponCode: 'OUTFITEXPIRED', brandId: outfitters._id, type: 'percentage', value: 30, minOrderAmount: 0, maxDiscount: 1500, validFrom: new Date(now - 60 * day), validUntil: new Date(now - 30 * day) },
+  ].map((c) => ({ ...c, usageLimit: 500, usedCount: 0, isActive: true }));
+
   for (const c of coupons) {
     await Coupon.updateOne({ couponCode: c.couponCode }, { $setOnInsert: c }, { upsert: true });
   }
-  log(`coupons upserted (${coupons.length})`);
+  log(`coupons upserted (${coupons.length}, incl. 2 expired)`);
 }
+
+const CUSTOMERS = [
+  { email: 'shopper1.qa@metromatrix.pk', fullName: 'Hina Aslam', phoneNumber: '03005550011' },
+  { email: 'shopper2.qa@metromatrix.pk', fullName: 'Usman Tariq', phoneNumber: '03005550012' },
+  { email: 'shopper3.qa@metromatrix.pk', fullName: 'Mahnoor Fatima', phoneNumber: '03005550013' },
+];
+const CUSTOMER_PASSWORD = 'Shopper@123';
 
 async function upsertCustomers() {
   const users = [];
@@ -440,7 +479,6 @@ async function upsertCustomers() {
       });
       log(`customer created: ${spec.email} / ${CUSTOMER_PASSWORD}`);
     }
-
     const wallet = await WalletService.getOrCreateWallet(user._id, 'User');
     if (wallet.balance < 30000) {
       const amount = 60000 - wallet.balance;
@@ -453,7 +491,6 @@ async function upsertCustomers() {
         status: 'completed',
       });
     }
-
     const existingAddress = await Address.findOne({ userId: user._id });
     if (!existingAddress) {
       await Address.create({
@@ -476,7 +513,7 @@ async function upsertCustomers() {
 
 /* ── Order lifecycle (through the real checkout/order services) ────── */
 
-const CHAIN_TO = {
+const NEXT_STATUSES = {
   pending: [],
   confirmed: ['confirmed'],
   processing: ['confirmed', 'processing'],
@@ -506,7 +543,7 @@ async function addToCart(user, product, variant, quantity) {
 
 async function advanceOrder(orderMongoId, targetStatus, vendorProviderId) {
   let order = await Order.findById(orderMongoId);
-  for (const status of CHAIN_TO[targetStatus]) {
+  for (const status of NEXT_STATUSES[targetStatus]) {
     order = await orderService.transition(order, status, { id: vendorProviderId, role: 'vendor' }, {
       trackingNumber: TRACKED_STATUSES.includes(status)
         ? `TCS-${29800000 + Math.floor(Math.random() * 99999)}`
@@ -516,16 +553,11 @@ async function advanceOrder(orderMongoId, targetStatus, vendorProviderId) {
   return order;
 }
 
-/** Shift a just-created order/group cluster into the past by `daysAgo`,
- * preserving the relative spacing of its statusHistory (all timestamps
- * happened within the same script tick, so one uniform shift is exact).
- *
- * Uses the raw driver, not the Mongoose model, for the createdAt writes:
- * Mongoose treats a schema's `timestamps: true` createdAt path as immutable
- * and silently drops it from any $set on Model.updateOne — the call reports
- * modifiedCount: 1 (other fields in the same $set really did change) while
- * createdAt quietly stays whatever it already was. Confirmed by testing
- * directly against this schema; the raw collection has no such protection. */
+/** Shift a just-created order/group cluster into the past by `daysAgo`.
+ * Uses the raw driver, not the Mongoose model: Mongoose treats a schema's
+ * `timestamps: true` createdAt path as immutable and silently drops it
+ * from any $set on Model.updateOne (modifiedCount:1 reported, value
+ * unchanged) — confirmed by direct testing against this exact schema. */
 async function backdate(groupMongoId, orderMongoIds, daysAgo) {
   const shiftMs = daysAgo * 86400000;
   const db = mongoose.connection.db;
@@ -534,25 +566,19 @@ async function backdate(groupMongoId, orderMongoIds, daysAgo) {
   const walletTransactions = db.collection('wallettransactions');
 
   const group = await OrderGroup.findById(groupMongoId);
-  await orderGroups.updateOne(
-    { _id: group._id },
-    { $set: { createdAt: new Date(group.createdAt.getTime() - shiftMs) } }
-  );
+  await orderGroups.updateOne({ _id: group._id }, { $set: { createdAt: new Date(group.createdAt.getTime() - shiftMs) } });
 
   for (const orderId of orderMongoIds) {
     const order = await Order.findById(orderId);
-    const newCreatedAt = new Date(order.createdAt.getTime() - shiftMs);
     const newHistory = order.statusHistory.map((h) => ({
       ...h.toObject(),
       changedAt: new Date(h.changedAt.getTime() - shiftMs),
     }));
-    const set = { createdAt: newCreatedAt, statusHistory: newHistory };
+    const set = { createdAt: new Date(order.createdAt.getTime() - shiftMs), statusHistory: newHistory };
     if (order.deliveredAt) set.deliveredAt = new Date(order.deliveredAt.getTime() - shiftMs);
     await orders.updateOne({ _id: order._id }, { $set: set });
   }
 
-  // Every wallet transaction tied to this checkout or its per-brand orders
-  // (customer debit, vendor payout + commission, refunds) shifts together.
   await walletTransactions.updateMany(
     {
       $or: [
@@ -564,12 +590,6 @@ async function backdate(groupMongoId, orderMongoIds, daysAgo) {
   );
 }
 
-/**
- * One line item drawn from a brand's product list. Some seed products are
- * deliberately fully out-of-stock (stockPattern mod 3) to exercise that
- * catalogue state — skip forward past those so real orders never try to
- * buy something with zero stock.
- */
 function pickLine(products, index) {
   for (let offset = 0; offset < products.length; offset += 1) {
     const product = products[(index + offset) % products.length];
@@ -593,6 +613,60 @@ const ORDER_PLAN = [
   { status: 'confirmed', payment: 'wallet', brands: ['outfitters', 'cougar'] }, // multi-brand OrderGroup
 ];
 
+const REVIEW_COMMENTS = [
+  { rating: 5, title: 'Loved it', comment: 'Exactly as pictured, great fit and quick delivery.' },
+  { rating: 4, title: 'Good quality', comment: 'Nice material, runs slightly large — order one size down.' },
+  { rating: 3, title: 'Decent', comment: 'Fine for the price but the color was a bit different from the photos.' },
+  { rating: 5, title: 'Will buy again', comment: 'Second time ordering from this brand, consistently good.' },
+  { rating: 2, title: 'Not what I expected', comment: 'Stitching came loose after a couple of washes.' },
+  { rating: 4, title: 'Solid pick', comment: 'Comfortable and true to size.' },
+];
+
+async function seedProductReviews(customers, productsBySlug) {
+  let created = 0;
+  for (const slug of Object.keys(productsBySlug)) {
+    for (const product of productsBySlug[slug]) {
+      const existingCount = await ProductReview.countDocuments({ productId: product._id });
+      if (existingCount > 0) continue; // idempotent — only seed once per product
+      const numReviews = 3 + (product.name.length % 4); // 3-6
+      for (let i = 0; i < numReviews; i += 1) {
+        const customer = customers[i % customers.length];
+        const template = REVIEW_COMMENTS[(product.name.length + i) % REVIEW_COMMENTS.length];
+        // Reviews need a real delivered order to satisfy the unique
+        // (productId,userId,order) index and the "verified purchase"
+        // model — reuse any existing order for that brand+customer if one
+        // exists, else skip (this runs after order seeding).
+        const anyOrder = await Order.findOne({ brandId: product.brandId, userId: customer._id, orderStatus: 'delivered' });
+        if (!anyOrder) continue;
+        const already = await ProductReview.findOne({ productId: product._id, userId: customer._id, order: anyOrder._id });
+        if (already) continue;
+        await ProductReview.create({
+          productId: product._id,
+          brandId: product.brandId,
+          userId: customer._id,
+          order: anyOrder._id,
+          rating: template.rating,
+          title: template.title,
+          comment: template.comment,
+          isVerifiedPurchase: true,
+        });
+        created += 1;
+      }
+      const [agg] = await ProductReview.aggregate([
+        { $match: { productId: product._id } },
+        { $group: { _id: null, avg: { $avg: '$rating' }, count: { $sum: 1 } } },
+      ]);
+      if (agg) {
+        await Product.updateOne(
+          { _id: product._id },
+          { $set: { rating: Math.round(agg.avg * 10) / 10, totalReviews: agg.count } }
+        );
+      }
+    }
+  }
+  log(`product reviews created: ${created} (realistic 2-5 star spread, not all 5-star)`);
+}
+
 async function seedCrossBrandOrders(customers, brands, productsBySlug) {
   const existing = await OrderGroup.countDocuments({ userId: { $in: customers.map((c) => c._id) } });
   if (existing > 0) {
@@ -602,23 +676,36 @@ async function seedCrossBrandOrders(customers, brands, productsBySlug) {
 
   let createdGroups = 0;
   let createdOrders = 0;
-  let multiBrandGroupId = null;
 
   for (let i = 0; i < ORDER_PLAN.length; i += 1) {
     const plan = ORDER_PLAN[i];
     const customer = customers[i % customers.length];
 
-    let running = 0;
+    // A cart survives across seed runs. If an earlier run failed partway
+    // (checkout throws before the cart is cleared), the next run's
+    // addToCart calls would append to leftover items that still reference
+    // now-purged product/variant ids — checkout then fails validating
+    // those stale lines. Start every order from a guaranteed-empty cart.
+    const staleCart = await cartService.getOrCreateCart(customer._id);
+    staleCart.items = [];
+    staleCart.appliedCoupon = null;
+    await staleCart.save();
+
     for (let b = 0; b < plan.brands.length; b += 1) {
       const brandSlug = plan.brands[b];
       const products = productsBySlug[brandSlug];
       const { product: p1, variant: v1 } = pickLine(products, i + b);
       const { product: p2, variant: v2 } = pickLine(products, i + b + 5);
-      await addToCart(customer, p1, v1, 1);
+      // Orders carrying a coupon need enough margin above minOrderAmount
+      // regardless of which specific (cheap or pricey) real product got
+      // picked at this index — real scraped prices vary far more than the
+      // old synthetic catalogue's, so a flat qty:1 risked landing under
+      // the threshold and failing checkout entirely.
+      const qty1 = plan.coupon ? 2 : 1;
+      await addToCart(customer, p1, v1, qty1);
       if (p2._id.toString() !== p1._id.toString() || v2._id.toString() !== v1._id.toString()) {
         await addToCart(customer, p2, v2, 1);
       }
-      running += 1;
     }
 
     if (plan.coupon) {
@@ -636,7 +723,6 @@ async function seedCrossBrandOrders(customers, brands, productsBySlug) {
       await advanceOrder(order._id, plan.status, brand.owner);
       createdOrders += 1;
     }
-    if (plan.brands.length > 1) multiBrandGroupId = result.groupId;
 
     await backdate(
       result.groupId,
@@ -644,7 +730,6 @@ async function seedCrossBrandOrders(customers, brands, productsBySlug) {
       ORDER_PLAN.length - i
     );
 
-    // Return request + review for terminal statuses
     for (const order of orderDocs) {
       const fresh = await Order.findById(order._id);
       if (['returned', 'refunded'].includes(plan.status)) {
@@ -665,56 +750,55 @@ async function seedCrossBrandOrders(customers, brands, productsBySlug) {
           refundAmount: fresh.total,
         });
       }
-      if (plan.status === 'delivered') {
-        const firstItem = fresh.items[0];
-        const already = await ProductReview.findOne({ productId: firstItem.productId, userId: customer._id, order: fresh._id });
-        if (!already) {
-          await ProductReview.create({
-            productId: firstItem.productId,
-            brandId: fresh.brandId,
-            userId: customer._id,
-            order: fresh._id,
-            rating: 4 + (i % 2),
-            title: 'Happy with this purchase',
-            comment: `The ${firstItem.productName} arrived on time and matches the photos.`,
-            isVerifiedPurchase: true,
-          });
-          const [agg] = await ProductReview.aggregate([
-            { $match: { productId: firstItem.productId } },
-            { $group: { _id: null, avg: { $avg: '$rating' }, count: { $sum: 1 } } },
-          ]);
-          await Product.updateOne(
-            { _id: firstItem.productId },
-            { $set: { rating: Math.round((agg.avg || 0) * 10) / 10, totalReviews: agg.count || 0 } }
-          );
-        }
-      }
     }
 
     createdGroups += 1;
   }
 
-  return { groups: createdGroups, orders: createdOrders, multiBrandGroupId, skipped: false };
+  return { groups: createdGroups, orders: createdOrders, skipped: false };
 }
 
 /* ── Entry point ─────────────────────────────────────────────────── */
 
+function loadScrapedCatalog(brandSlug) {
+  const p = path.join(SCRAPED_DIR, `${brandSlug}-catalog.json`);
+  if (!fs.existsSync(p)) {
+    throw new Error(
+      `Missing ${p} — run "python3 scripts/scrape-brands.py" first (see scripts/scrape-brands.py).`
+    );
+  }
+  const data = JSON.parse(fs.readFileSync(p, 'utf8'));
+  if (!Array.isArray(data) || data.length === 0) {
+    throw new Error(`${p} is empty — the scraper failed to fetch ${brandSlug}'s catalogue. Re-run the scraper.`);
+  }
+  return data;
+}
+
 async function seedBrands() {
-  log('=== Cougar + Outfitters brand seed ===');
+  log('=== Cougar + Outfitters brand seed (REAL scraped data) ===');
+
+  await purgeAllShoppingData();
+
+  const cougarScraped = loadScrapedCatalog('cougar');
+  const outfittersScraped = loadScrapedCatalog('outfitters');
 
   const cougarVendor = await upsertVendor(COUGAR.vendor);
-  const cougarBrand = await upsertBrand(COUGAR, cougarVendor, COUGAR.categories.slice(0, 4));
-  const cougarProducts = await upsertCougarCatalogue(cougarBrand);
+  const cougarBrand = await upsertBrand(COUGAR, cougarVendor, ['Men', 'Women', 'Kids']);
+  const cougarProducts = await upsertCougarCatalogue(cougarBrand, cougarScraped);
   await upsertOutlets(cougarBrand, COUGAR);
 
   const outfittersVendor = await upsertVendor(OUTFITTERS.vendor);
   const outfittersBrand = await upsertBrand(OUTFITTERS, outfittersVendor, ['Men', 'Women']);
-  const outfittersProducts = await upsertOutfittersCatalogue(outfittersBrand);
+  const outfittersProducts = await upsertOutfittersCatalogue(outfittersBrand, outfittersScraped);
   await upsertOutlets(outfittersBrand, OUTFITTERS);
 
-  log(
-    `catalogue ready — Cougar: ${cougarProducts.length} products, Outfitters: ${outfittersProducts.length} products`
-  );
+  log(`catalogue ready — Cougar: ${cougarProducts.length} products (real), Outfitters: ${outfittersProducts.length} products (real)`);
+
+  const finalBrandCount = await Brand.countDocuments();
+  if (finalBrandCount !== 2) {
+    throw new Error(`ASSERTION FAILED: expected exactly 2 brands after purge+seed, found ${finalBrandCount}`);
+  }
+  log(`✓ verified exactly 2 brands in the database`);
 
   await upsertCoupons(cougarBrand, outfittersBrand);
   const customers = await upsertCustomers();
@@ -722,10 +806,12 @@ async function seedBrands() {
   const brands = { cougar: cougarBrand, outfitters: outfittersBrand };
   const productsBySlug = { cougar: cougarProducts, outfitters: outfittersProducts };
   const orderResult = await seedCrossBrandOrders(customers, brands, productsBySlug);
+  await seedProductReviews(customers, productsBySlug);
 
   const summary = {
+    brandCount: finalBrandCount,
     brands: { cougar: cougarBrand.name, outfitters: outfittersBrand.name },
-    products: { cougar: cougarProducts.length, outfitters: outfittersProducts.length },
+    products: { cougar: cougarProducts.length, outfitters: outfittersProducts.length, dataSource: 'real (scraped)' },
     outlets: COUGAR.outlets.length + OUTFITTERS.outlets.length,
     coupons: 6,
     customers: CUSTOMERS.map((c) => c.email),

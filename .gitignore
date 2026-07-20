@@ -7,3 +7,11 @@ node_modules
 .vercel
 .env*
 !.env.example
+
+# Raw scrape cache (scripts/scrape-brands.py) — a re-run convenience so the
+# scraper doesn't re-hit the live sites, not needed to run the seed itself
+# (which only reads the small normalised scripts/scraped/*-catalog.json
+# files, tracked below). The Outfitters raw feed alone is ~15MB, too large
+# to be worth committing.
+scripts/scraped/*/
+
