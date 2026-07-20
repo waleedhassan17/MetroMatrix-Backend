@@ -99,6 +99,7 @@ class WalletService {
     stripeSessionId,
     stripePaymentIntentId,
     metadata,
+    relatedTo,
   }) {
     // Idempotency check: if stripeSessionId is provided, check for existing transaction
     if (stripeSessionId) {
@@ -121,6 +122,7 @@ class WalletService {
       stripeSessionId,
       stripePaymentIntentId,
       metadata,
+      relatedTo,
     });
 
     return transaction;

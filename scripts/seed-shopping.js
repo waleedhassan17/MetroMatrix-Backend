@@ -546,6 +546,11 @@ async function main() {
   console.log('Demo logins:');
   console.log('  customer: customer.demo@metromatrix.pk / Customer@123');
   BRANDS.forEach((b) => console.log(`  vendor (${b.name}): ${b.vendor.email} / Vendor@123`));
+
+  // Cougar + Outfitters (QA.md Prompt 3) — separate module, same connection.
+  const seedBrands = require('../src/modules/shopping/seed/brands.seed');
+  await seedBrands();
+
   await mongoose.disconnect();
 }
 
