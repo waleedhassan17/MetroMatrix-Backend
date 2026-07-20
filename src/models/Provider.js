@@ -254,6 +254,31 @@ const providerSchema = new mongoose.Schema(
       type: Boolean,
       default: false,
     },
+    // Home-services discovery (HS2). Migration-safe defaults: providers
+    // seeded before these fields existed stay searchable city-wide.
+    isAvailable: {
+      type: Boolean,
+      default: true,
+    },
+    serviceRadius: {
+      type: Number, // km
+      default: 15,
+    },
+    basePrice: {
+      type: Number, // PKR starting price shown on provider cards
+      default: 0,
+    },
+    currentLocation: {
+      type: {
+        type: String,
+        enum: ['Point'],
+        default: 'Point',
+      },
+      coordinates: {
+        type: [Number], // [lng, lat]
+        default: [74.3587, 31.5204], // Lahore centre fallback
+      },
+    },
     lastSeen: {
       type: Date,
     },
@@ -358,6 +383,8 @@ providerSchema.index({ status: 1 });
 providerSchema.index({ emailVerified: 1 });
 providerSchema.index({ adminVerified: 1 });
 providerSchema.index({ onboardingStatus: 1 });
+providerSchema.index({ currentLocation: '2dsphere' });
+providerSchema.index({ providerType: 1, providerSubType: 1, isAvailable: 1 });
 
 // Track if document is new for post-save hook
 providerSchema.pre('save', function (next) {
