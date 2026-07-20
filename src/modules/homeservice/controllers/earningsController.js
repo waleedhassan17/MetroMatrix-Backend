@@ -154,7 +154,9 @@ const getEarnings = asyncHandler(async (req, res) => {
       statusTier: completed >= 100 ? 'Gold' : completed >= 25 ? 'Silver' : 'Bronze',
       repeatCustomerRate: 0,
     },
-    availableBalance: Math.max(0, wallet.balance - pendingComm),
+    // Same formula requestPayout() enforces — a provider must never see an
+    // "available" figure here that a payout request would then reject.
+    availableBalance: Math.max(0, wallet.balance - pendingComm - pendingPayouts),
     commissionPercent: settings.commissionPercent,
   }, 'Earnings data fetched');
 });

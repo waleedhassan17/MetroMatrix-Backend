@@ -69,7 +69,11 @@ async function transition(booking, nextStatus, actor, opts = {}) {
         403
       );
     }
-    if (String(booking.provider) !== String(actor.id)) {
+    // booking.provider may be a raw ObjectId or a populated Provider doc
+    // (loadBookingWithAccess populates it) — String(populatedDoc) is NOT its
+    // id string, so unwrap ._id first.
+    const providerId = booking.provider && booking.provider._id ? booking.provider._id : booking.provider;
+    if (String(providerId) !== String(actor.id)) {
       throw new StatusError('You are not the assigned provider for this booking', 403);
     }
   }

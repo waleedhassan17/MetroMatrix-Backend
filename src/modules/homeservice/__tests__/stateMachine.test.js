@@ -95,6 +95,22 @@ describe('actor rules', () => {
     expect(err.message).toMatch(/not the assigned provider/i);
   });
 
+  it('the ASSIGNED provider succeeds even when booking.provider is a populated doc (regression: loadBookingWithAccess populates it, String(doc) !== the id string)', async () => {
+    const b = makeBooking(STATUS.PENDING);
+    b.provider = { _id: PROVIDER_ID, fullName: 'Populated Provider Doc' };
+    await transition(b, STATUS.ACCEPTED, provider);
+    expect(b.status).toBe(STATUS.ACCEPTED);
+  });
+
+  it('a different provider still gets 403 when booking.provider is a populated doc', async () => {
+    const b = makeBooking(STATUS.PENDING);
+    b.provider = { _id: PROVIDER_ID, fullName: 'Populated Provider Doc' };
+    const err = await transition(b, STATUS.ACCEPTED, { id: OTHER_PROVIDER, role: 'provider' })
+      .catch((e) => e);
+    expect(err).toBeInstanceOf(StatusError);
+    expect(err.statusCode).toBe(403);
+  });
+
   it('customer cannot cancel once IN_PROGRESS', async () => {
     const b = makeBooking(STATUS.IN_PROGRESS);
     // IN_PROGRESS → CANCELLED is not in ALLOWED_TRANSITIONS at all, so the

@@ -67,7 +67,7 @@ const searchProviders = asyncHandler(async (req, res, next) => {
     providerType: 'home_service',
     providerSubType: CATEGORY_TO_SUBTYPE[cat],
     adminVerified: 'active',
-    status: { $ne: 'inactive' },
+    isActive: true,
   };
   if (fMinRating) match['ratings.average'] = { $gte: fMinRating };
   if (fMaxPrice) match.basePrice = { $lte: fMaxPrice };
