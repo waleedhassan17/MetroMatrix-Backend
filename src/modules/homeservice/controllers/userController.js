@@ -254,8 +254,47 @@ const deleteAddress = asyncHandler(async (req, res) => {
   ok(res, { addressId: req.params.addressId }, 'Address deleted');
 });
 
+// GET /api/user/notifications — booking lifecycle notifications, derived
+// from statusHistory (no separate notification store for home services).
+const getNotifications = asyncHandler(async (req, res) => {
+  const bookings = await Booking.find({ customer: req.user._id })
+    .populate('provider', 'fullName')
+    .sort({ updatedAt: -1 })
+    .limit(30);
+
+  const LABELS = {
+    PENDING: 'Booking request sent',
+    ACCEPTED: 'Provider accepted your booking',
+    REJECTED: 'Provider declined your booking',
+    CANCELLED: 'Booking was cancelled',
+    EN_ROUTE: 'Provider is on the way',
+    ARRIVED: 'Provider has arrived',
+    IN_PROGRESS: 'Work has started',
+    COMPLETED: 'Job completed — you can pay and review now',
+  };
+
+  const items = [];
+  bookings.forEach((b) => {
+    (b.statusHistory || []).forEach((h) => {
+      items.push({
+        id: `${b._id}-${h.status}-${h.changedAt ? h.changedAt.getTime() : 0}`,
+        bookingId: String(b._id),
+        type: h.status,
+        title: LABELS[h.status] || h.status,
+        body: `${b.serviceSubCategory || b.serviceCategory} · ${
+          b.provider ? b.provider.fullName : 'Provider'
+        }`,
+        at: h.changedAt ? h.changedAt.toISOString() : b.updatedAt.toISOString(),
+      });
+    });
+  });
+  items.sort((a, b) => (a.at < b.at ? 1 : -1));
+  ok(res, items.slice(0, 50), 'Notifications fetched');
+});
+
 module.exports = {
   getHome,
+  getNotifications,
   getUserBookings,
   cancelUserBooking,
   updateUserBookingStatus,

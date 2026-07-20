@@ -51,6 +51,7 @@ router.post('/user/bookings/:bookingId/rate', protect, loadBookingWithAccess, (r
   req.body.feedback = req.body.review || req.body.feedback;
   require('../controllers/reviewController').submitReview(req, res, next);
 });
+router.get('/user/notifications', protect, userOnly, userC.getNotifications);
 router.get('/user/profile', protect, userOnly, userC.getUserProfile);
 router.patch('/user/profile', protect, userOnly, userC.updateUserProfile);
 router.post('/user/profile/avatar', protect, userOnly, userC.updateUserAvatar);
