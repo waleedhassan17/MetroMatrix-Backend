@@ -170,11 +170,11 @@ const validateLine = async (productId, variantId, quantity) => {
 
   const brand = await Brand.findOne({ _id: product.brandId, status: 'active', isDeleted: false });
   if (!brand) {
-    return { ok: false, status: 400, reason: 'This brand is not currently accepting orders' };
+    return { ok: false, status: 400, reason: 'This brand is not currently accepting orders', product };
   }
 
   const variant = product.variants.find((v) => String(v._id) === String(variantId));
-  if (!variant) return { ok: false, status: 404, reason: 'Selected variant not found' };
+  if (!variant) return { ok: false, status: 404, reason: 'Selected variant not found', product };
 
   if (variant.stockQuantity < quantity) {
     return {
@@ -184,6 +184,7 @@ const validateLine = async (productId, variantId, quantity) => {
         variant.stockQuantity === 0
           ? 'This item is out of stock'
           : `Only ${variant.stockQuantity} left in stock`,
+      product,
     };
   }
   return { ok: true, product, variant };
