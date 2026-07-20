@@ -91,11 +91,21 @@ const loginUser = asyncHandler(async (req, res) => {
   
   // Check for user email
   const user = await User.findOne({ email }).select('+password');
-  
+
   if (user && (await user.matchPassword(password))) {
-    const tokens = generateTokens(user._id, { 
+    // A deactivated user must never receive a working token — this was
+    // previously unchecked, so admin deactivation had no real effect on
+    // login (confirmed live: a deactivated account still authenticated
+    // successfully). Return the same generic message as a wrong password
+    // so deactivation isn't distinguishable from a wrong-credentials guess.
+    if (user.isActive === false) {
+      res.status(401);
+      throw new Error('Invalid email or password');
+    }
+
+    const tokens = generateTokens(user._id, {
       userType: 'user',
-      email: user.email 
+      email: user.email
     });
     
     // Update user login info
@@ -339,6 +349,17 @@ const loginProvider = asyncHandler(async (req, res) => {
     }
   }
 
+  // A deactivated provider must never receive a working token — same gap
+  // just fixed on the User login path, confirmed via the same live test
+  // pattern (deactivate, then attempt login).
+  if (provider.isActive === false) {
+    return res.status(401).json({
+      success: false,
+      message: 'Invalid email or password',
+      error: 'INVALID_CREDENTIALS'
+    });
+  }
+
   // ✅ Provider is approved by admin - allow login
   const tokens = generateTokens(provider._id, {
     userType: 'provider',
@@ -377,7 +398,11 @@ const loginProvider = asyncHandler(async (req, res) => {
 // @access  Public
 const googleAuth = asyncHandler(async (req, res) => {
   const { user, info } = req;
-  
+
+  if (user && user.isActive === false) {
+    return res.redirect(`${process.env.CLIENT_URL}/auth/error`);
+  }
+
   if (user) {
     const tokens = generateTokens(user._id, {
       userType: 'user',
@@ -408,7 +433,11 @@ const googleAuth = asyncHandler(async (req, res) => {
 // @access  Public
 const facebookAuth = asyncHandler(async (req, res) => {
   const { user, info } = req;
-  
+
+  if (user && user.isActive === false) {
+    return res.redirect(`${process.env.CLIENT_URL}/auth/error`);
+  }
+
   if (user) {
     const tokens = generateTokens(user._id, {
       userType: 'user',
