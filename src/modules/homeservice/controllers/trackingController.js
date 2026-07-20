@@ -47,7 +47,7 @@ const getTrackingData = asyncHandler(async (req, res) => {
       rating: p.ratings ? p.ratings.average || 0 : 0,
       reviews: p.ratings ? p.ratings.count || 0 : 0,
       experience: p.experience || '1 year',
-      verified: p.adminVerified === 'approved',
+      verified: p.adminVerified === 'active',
       category: SUBTYPE_TO_CATEGORY[p.providerSubType] || 'electricians',
     },
     providerLocation,

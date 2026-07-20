@@ -66,12 +66,12 @@ const searchProviders = asyncHandler(async (req, res, next) => {
   const match = {
     providerType: 'home_service',
     providerSubType: CATEGORY_TO_SUBTYPE[cat],
-    adminVerified: 'approved',
+    adminVerified: 'active',
     status: { $ne: 'inactive' },
   };
   if (fMinRating) match['ratings.average'] = { $gte: fMinRating };
   if (fMaxPrice) match.basePrice = { $lte: fMaxPrice };
-  if (fVerified) match.adminVerified = 'approved';
+  if (fVerified) match.adminVerified = 'active';
   if (fAvailable) match.isAvailable = true;
   if (search) {
     match.$or = [

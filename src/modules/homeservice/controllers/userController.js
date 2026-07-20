@@ -43,14 +43,14 @@ const getHome = asyncHandler(async (req, res) => {
       const providers = await Provider.find({
         providerType: 'home_service',
         providerSubType: c.providerSubType,
-        adminVerified: 'approved',
+        adminVerified: 'active',
       })
         .select('fullName profilePhoto')
         .limit(3);
       const count = await Provider.countDocuments({
         providerType: 'home_service',
         providerSubType: c.providerSubType,
-        adminVerified: 'approved',
+        adminVerified: 'active',
       });
       return {
         id: c.slug,

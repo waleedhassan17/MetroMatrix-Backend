@@ -44,7 +44,7 @@ function toProviderCard(p, extras = {}) {
     reviews: p.ratings ? p.ratings.count || 0 : 0,
     experience: p.experience || '1 year',
     price: p.basePrice || 0,
-    verified: p.adminVerified === 'approved' || p.verificationStatus === 'approved',
+    verified: p.adminVerified === 'active' || p.verificationStatus === 'approved',
     available: p.isAvailable !== false,
     isOnline: !!p.isOnline,
     responseTime: p.isOnline ? '~15 min' : '~1 hour',
