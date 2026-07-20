@@ -43,6 +43,18 @@ const app = express();
 // Trust proxy
 app.set('trust proxy', 1);
 
+// Stripe webhook MUST receive the raw body for signature verification. It is
+// mounted here, ahead of express.json(), because the global JSON parser would
+// otherwise consume the request stream first — stripe.webhooks.constructEvent
+// then receives an already-parsed object instead of the raw Buffer it needs,
+// and every webhook call fails signature verification with a silent 400.
+// (See WALLET_DESIGN.md — this was previously happening on every webhook.)
+app.post(
+  '/api/wallet/webhook',
+  express.raw({ type: 'application/json' }),
+  require('./controllers/walletController').stripeWebhook
+);
+
 // Body parser middleware
 app.use(express.json({ limit: '10mb' }));
 app.use(express.urlencoded({ extended: true, limit: '10mb' }));

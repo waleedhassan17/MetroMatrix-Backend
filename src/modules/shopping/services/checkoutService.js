@@ -178,8 +178,9 @@ const checkout = async (user, { addressId, shippingAddress, paymentMethod }) => 
           type: 'debit',
           amount: totals.total,
           description: `Payment for order ${group.odexId}`,
-          source: 'service_payment',
+          source: 'shopping_payment',
           status: 'completed',
+          relatedTo: { kind: 'OrderGroup', id: group._id },
           metadata: { orderGroupId: String(group._id) },
         });
         group.walletTransactionId = txn._id;

@@ -1,4 +1,5 @@
 const mongoose = require('mongoose');
+const { WALLET_CURRENCY } = require('../config/currency');
 
 /**
  * WalletTransaction Schema
@@ -46,7 +47,7 @@ const walletTransactionSchema = new mongoose.Schema(
      */
     currency: {
       type: String,
-      default: 'usd',
+      default: WALLET_CURRENCY,
     },
 
     /**
@@ -85,6 +86,7 @@ const walletTransactionSchema = new mongoose.Schema(
       type: String,
       enum: {
         values: [
+          // Original values — kept for migration safety, do not remove.
           'stripe_topup',
           'service_payment',
           'refund',
@@ -93,10 +95,31 @@ const walletTransactionSchema = new mongoose.Schema(
           'transfer_in',
           'transfer_out',
           'transfer_fee',
+          // Per-module payment/earning sources (one ledger, three modules).
+          'homeservice_payment',
+          'healthcare_payment',
+          'shopping_payment',
+          'homeservice_earning',
+          'healthcare_earning',
+          'shopping_earning',
+          'commission',
         ],
         message:
-          'Source must be one of: stripe_topup, service_payment, refund, admin_adjustment, payout, transfer_in, transfer_out, transfer_fee',
+          'Source must be one of: stripe_topup, service_payment, refund, admin_adjustment, payout, transfer_in, transfer_out, transfer_fee, homeservice_payment, healthcare_payment, shopping_payment, homeservice_earning, healthcare_earning, shopping_earning, commission',
       },
+    },
+
+    /**
+     * Polymorphic pointer back to whatever caused this transaction, so every
+     * entry in the ledger traces to a real booking/appointment/order rather
+     * than floating free.
+     */
+    relatedTo: {
+      kind: {
+        type: String,
+        enum: ['Booking', 'Appointment', 'Order', 'OrderGroup', 'PayoutRequest'],
+      },
+      id: { type: mongoose.Schema.Types.ObjectId },
     },
 
     /**
@@ -187,5 +210,7 @@ const walletTransactionSchema = new mongoose.Schema(
  * Allows efficient retrieval of a wallet's transactions in chronological order
  */
 walletTransactionSchema.index({ wallet: 1, createdAt: -1 });
+walletTransactionSchema.index({ 'relatedTo.kind': 1, 'relatedTo.id': 1 });
+walletTransactionSchema.index({ source: 1, createdAt: -1 });
 
 module.exports = mongoose.model('WalletTransaction', walletTransactionSchema);

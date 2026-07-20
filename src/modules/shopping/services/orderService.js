@@ -137,6 +137,7 @@ const refundToCustomer = async (order, description) => {
     description,
     source: 'refund',
     status: 'completed',
+    relatedTo: { kind: 'Order', id: order._id },
     metadata: { shoppingOrderId: String(order._id), orderGroupId: String(order.orderGroup) },
   });
   order.paymentStatus = 'refunded';
@@ -144,7 +145,10 @@ const refundToCustomer = async (order, description) => {
 
 /**
  * Vendor payout on delivery: credit the brand owner's Provider wallet with
- * order total minus platform commission (commissionPercent from settings).
+ * order total minus platform commission, and credit the commission itself
+ * to the Platform ledger (WalletService.settlePayout — Part C.3). The
+ * customer already paid at checkout; this is the deferred earn-on-delivery
+ * leg, not a fresh payer→payee transfer.
  */
 const payoutVendor = async (order) => {
   if (order.vendorPayout && order.vendorPayout.paidAt) return; // idempotent
@@ -152,20 +156,22 @@ const payoutVendor = async (order) => {
   if (!brand || !brand.owner) return; // admin-owned brand: no payout ledger
 
   const { commissionPercent } = await getShoppingSettings();
-  const commission = Math.round((order.total * commissionPercent) / 100);
-  const amount = order.total - commission;
-
-  const wallet = await WalletService.getOrCreateWallet(brand.owner, 'Provider');
-  await wallet.credit(amount);
-  const txn = await WalletService.recordTransaction(wallet._id, {
-    type: 'credit',
-    amount,
-    description: `Earnings for order ${order.odexId} (after ${commissionPercent}% platform commission)`,
-    source: 'service_payment',
-    status: 'completed',
-    metadata: { shoppingOrderId: String(order._id), commission },
+  const result = await WalletService.settlePayout({
+    payeeType: 'Provider',
+    payeeId: brand.owner,
+    amount: order.total,
+    source: 'shopping_earning',
+    relatedTo: { kind: 'Order', id: order._id },
+    description: `Earnings for order ${order.odexId}`,
+    commissionRate: commissionPercent,
   });
-  order.vendorPayout = { amount, commission, paidAt: new Date(), walletTransactionId: txn._id };
+
+  order.vendorPayout = {
+    amount: result.payeeTransaction.amount,
+    commission: result.commission,
+    paidAt: new Date(),
+    walletTransactionId: result.payeeTransaction._id,
+  };
 };
 
 /** Reverse an already-made vendor payout when the order is refunded. */
@@ -174,15 +180,10 @@ const reverseVendorPayout = async (order) => {
   const brand = await Brand.findById(order.brandId);
   if (!brand || !brand.owner) return;
 
-  const wallet = await WalletService.getOrCreateWallet(brand.owner, 'Provider');
-  await wallet.debit(order.vendorPayout.amount);
-  await WalletService.recordTransaction(wallet._id, {
-    type: 'debit',
-    amount: order.vendorPayout.amount,
-    description: `Reversal of earnings for refunded order ${order.odexId}`,
-    source: 'refund',
-    status: 'completed',
-    metadata: { shoppingOrderId: String(order._id) },
+  await WalletService.reversePayout({
+    payeeType: 'Provider',
+    payeeId: brand.owner,
+    relatedTo: { kind: 'Order', id: order._id },
   });
   order.vendorPayout.paidAt = null;
 };

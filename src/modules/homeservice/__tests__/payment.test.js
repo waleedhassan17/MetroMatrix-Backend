@@ -4,9 +4,10 @@
  * Wallet + models mocked, no DB.
  */
 jest.mock('../../../services/walletService', () => ({
-  transferFunds: jest.fn(),
+  settle: jest.fn(),
   getOrCreateWallet: jest.fn(),
   recordTransaction: jest.fn().mockResolvedValue({ _id: 'txn-1' }),
+  PLATFORM_OWNER_ID: 'platform-1',
 }));
 jest.mock('../../../models/WalletTransaction', () => ({
   aggregate: jest.fn().mockResolvedValue([]),
@@ -65,20 +66,23 @@ describe('commission arithmetic', () => {
 });
 
 describe('wallet payment path', () => {
-  it('transfers with commission feePercent and an idempotency key', async () => {
-    WalletService.transferFunds.mockResolvedValue({
-      senderTransaction: { _id: 'txn-9' },
+  it('settles with commissionRate, relatedTo and an idempotency key', async () => {
+    WalletService.settle.mockResolvedValue({
+      payerTransaction: { _id: 'txn-9' },
+      commission: 200,
     });
     const b = makeBooking();
     const { commission } = await payWithWallet(b, { _id: 'cust-1' }, 2000);
 
-    expect(WalletService.transferFunds).toHaveBeenCalledWith(
+    expect(WalletService.settle).toHaveBeenCalledWith(
       expect.objectContaining({
         amount: 2000,
-        feePercent: 10,
+        commissionRate: 10,
         idempotencyKey: 'hspay-bk-1',
-        senderOwnerType: 'User',
-        receiverOwnerType: 'Provider',
+        payerType: 'User',
+        payeeType: 'Provider',
+        source: 'homeservice_payment',
+        relatedTo: { kind: 'Booking', id: 'bk-1' },
       })
     );
     expect(commission).toBe(200);
@@ -89,7 +93,7 @@ describe('wallet payment path', () => {
   });
 
   it('surfaces insufficient balance as a clear 400', async () => {
-    WalletService.transferFunds.mockRejectedValue(new Error('Insufficient balance'));
+    WalletService.settle.mockRejectedValue(new Error('Insufficient balance'));
     const b = makeBooking();
     const err = await payWithWallet(b, { _id: 'cust-1' }, 2000).catch((e) => e);
     expect(err).toBeInstanceOf(PaymentError);
@@ -101,39 +105,45 @@ describe('wallet payment path', () => {
   it('second payment attempt is rejected before touching the wallet', async () => {
     const b = makeBooking({ payment: { status: 'paid' } });
     await expect(payWithWallet(b, { _id: 'cust-1' }, 2000)).rejects.toThrow(/already/i);
-    expect(WalletService.transferFunds).not.toHaveBeenCalled();
+    expect(WalletService.settle).not.toHaveBeenCalled();
   });
 });
 
 describe('cash payment path', () => {
-  it('debits commission from the provider wallet when balance covers it', async () => {
-    const debit = jest.fn().mockResolvedValue(undefined);
-    WalletService.getOrCreateWallet.mockResolvedValue({ _id: 'w1', balance: 1000, debit });
+  it('settles the commission (provider→Platform) when balance covers it', async () => {
+    WalletService.getOrCreateWallet.mockResolvedValue({ _id: 'w1', balance: 1000 });
+    WalletService.settle.mockResolvedValue({ payerTransaction: { _id: 'txn-commission' } });
     const b = makeBooking({ pricing: { estimatedPrice: 2000, finalPrice: 2000 } });
 
     const { commission } = await confirmCash(b, { _id: 'prov-1' });
 
     expect(commission).toBe(200);
-    expect(debit).toHaveBeenCalledWith(200);
-    expect(WalletService.recordTransaction).toHaveBeenCalledWith(
-      'w1',
-      expect.objectContaining({ type: 'debit', amount: 200, status: 'completed' })
+    expect(WalletService.settle).toHaveBeenCalledWith(
+      expect.objectContaining({
+        payerType: 'Provider',
+        payerId: 'prov-1',
+        payeeType: 'Platform',
+        amount: 200,
+        source: 'commission',
+        commissionRate: 0,
+        relatedTo: { kind: 'Booking', id: 'bk-1' },
+      })
     );
     expect(b.payment.status).toBe('paid');
     expect(b.payment.method).toBe('cash');
+    expect(b.payment.walletTransactionId).toBe('txn-commission');
   });
 
-  it('records commission as PENDING when the provider wallet cannot cover it', async () => {
-    const debit = jest.fn();
-    WalletService.getOrCreateWallet.mockResolvedValue({ _id: 'w1', balance: 50, debit });
+  it('records commission as PENDING (no settle() call) when the provider wallet cannot cover it', async () => {
+    WalletService.getOrCreateWallet.mockResolvedValue({ _id: 'w1', balance: 50 });
     const b = makeBooking({ pricing: { estimatedPrice: 2000, finalPrice: 2000 } });
 
     await confirmCash(b, { _id: 'prov-1' });
 
-    expect(debit).not.toHaveBeenCalled();
+    expect(WalletService.settle).not.toHaveBeenCalled();
     expect(WalletService.recordTransaction).toHaveBeenCalledWith(
       'w1',
-      expect.objectContaining({ status: 'pending', amount: 200 })
+      expect.objectContaining({ status: 'pending', amount: 200, source: 'commission' })
     );
   });
 

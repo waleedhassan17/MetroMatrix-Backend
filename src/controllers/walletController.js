@@ -2,8 +2,14 @@ const asyncHandler = require('express-async-handler');
 const WalletService = require('../services/walletService');
 const stripe = require('../config/stripe');
 const WalletTransaction = require('../models/WalletTransaction');
+const StripeWebhookEvent = require('../models/StripeWebhookEvent');
 const User = require('../models/User');
 const Provider = require('../models/Provider');
+const {
+  STRIPE_CHARGE_CURRENCY,
+  PKR_PER_USD,
+  pkrToUsdCents,
+} = require('../config/currency');
 
 // @desc    Get user's wallet with transaction history
 // @route   GET /api/wallet/me
@@ -36,12 +42,12 @@ const getMyWallet = asyncHandler(async (req, res) => {
 // @route   POST /api/wallet/topup/checkout
 // @access  Private
 const createCheckoutSession = asyncHandler(async (req, res) => {
-  const { amount } = req.body;
+  const { amount } = req.body; // whole PKR, matching every price shown in the app
 
   // Validate amount
   if (!amount || typeof amount !== 'number' || amount < 1 || amount > 10000) {
     res.status(400);
-    throw new Error('Amount must be a number between 1 and 10000');
+    throw new Error('Amount must be a number between 1 and 10000 PKR');
   }
 
   const ownerId = req.user._id;
@@ -50,6 +56,11 @@ const createCheckoutSession = asyncHandler(async (req, res) => {
   // Get or create wallet first
   const wallet = await WalletService.getOrCreateWallet(ownerId, ownerType);
 
+  // Stripe cannot charge PKR (unsupported currency, and Stripe does not
+  // operate in Pakistan) — the ledger amount is converted to USD test-mode
+  // cents at the fixed rate documented in config/currency.js / WALLET_DESIGN.md.
+  const usdCents = pkrToUsdCents(amount);
+
   // Create Stripe checkout session
   const session = await stripe.checkout.sessions.create({
     payment_method_types: ['card'],
@@ -57,11 +68,11 @@ const createCheckoutSession = asyncHandler(async (req, res) => {
     line_items: [
       {
         price_data: {
-          currency: process.env.STRIPE_CURRENCY || 'usd',
+          currency: STRIPE_CHARGE_CURRENCY,
           product_data: {
-            name: 'MetroMatrix Wallet Top-Up',
+            name: `MetroMatrix Wallet Top-Up (PKR ${amount})`,
           },
-          unit_amount: Math.round(amount * 100), // Convert to cents
+          unit_amount: usdCents,
         },
         quantity: 1,
       },
@@ -86,7 +97,8 @@ const createCheckoutSession = asyncHandler(async (req, res) => {
     stripeSessionId: session.id,
     metadata: {
       stripeSessionId: session.id,
-      originalAmountCents: Math.round(amount * 100),
+      originalAmountUsdCents: usdCents,
+      fxRate: PKR_PER_USD,
     },
   });
 
@@ -319,6 +331,18 @@ const topUpCancel = asyncHandler(async (req, res) => {
 // @route   POST /api/wallet/webhook
 // @access  Public
 const stripeWebhook = asyncHandler(async (req, res) => {
+  // This handler is only reachable through the raw-body mount in src/app.js.
+  // If req.body is not a Buffer here, express.json() ran first and consumed
+  // the stream — signature verification below would then fail on EVERY
+  // request, silently. Fail loudly instead so this bug can never come back
+  // unnoticed (see PART A of WALLET_DESIGN.md for the original incident).
+  if (!Buffer.isBuffer(req.body)) {
+    throw new Error(
+      'stripeWebhook received a non-Buffer body — the raw-body mount in app.js ' +
+        'was bypassed or express.json() ran first. Signature verification cannot work like this.'
+    );
+  }
+
   const sig = req.headers['stripe-signature'];
   const webhookSecret = process.env.STRIPE_WEBHOOK_SECRET;
 
@@ -332,6 +356,19 @@ const stripeWebhook = asyncHandler(async (req, res) => {
       success: false,
       error: `Webhook Error: ${err.message}`,
     });
+  }
+
+  // Idempotency: Stripe retries delivery on anything short of a fast 2xx.
+  // Recording the event id first, with a unique index, means a retried
+  // event is a guaranteed no-op rather than a double-credit race.
+  try {
+    await StripeWebhookEvent.create({ eventId: event.id, type: event.type });
+  } catch (err) {
+    if (err.code === 11000) {
+      // Already processed — tell Stripe to stop retrying, do nothing else.
+      return res.status(200).json({ received: true, alreadyProcessed: true });
+    }
+    throw err;
   }
 
   // Handle the event
@@ -606,8 +643,11 @@ const requestPayout = asyncHandler(async (req, res) => {
     throw new Error('Payouts are not yet enabled on your Stripe account. Complete onboarding.');
   }
 
-  const currency = (process.env.STRIPE_CURRENCY || 'usd').toLowerCase();
-  const amountCents = Math.round(numAmount * 100);
+  // numAmount is whole PKR (the ledger currency); Stripe Connect payouts run
+  // in USD test mode at the same fixed rate top-ups use, for the same
+  // reason: PKR is not a Stripe-supported currency (see config/currency.js).
+  const currency = STRIPE_CHARGE_CURRENCY;
+  const amountCents = pkrToUsdCents(numAmount);
 
   // 1. Reserve funds in local wallet (debit pending)
   const { wallet, transaction, alreadyProcessed } = await WalletService.initiatePayout({

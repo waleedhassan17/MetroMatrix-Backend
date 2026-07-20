@@ -18,12 +18,10 @@ const {
 } = require('../controllers/walletController');
 
 // ===== PUBLIC ROUTES =====
-// Stripe webhook - MUST use raw body parsing for signature verification
-router.post(
-  '/webhook',
-  express.raw({ type: 'application/json' }),
-  stripeWebhook
-);
+// Stripe webhook is mounted in src/app.js, BEFORE express.json(), so it can
+// receive the raw request body that signature verification requires. Do not
+// re-add it here — the global JSON body parser runs before this router and
+// would silently break signature verification again (see WALLET_DESIGN.md).
 
 // Top-up success/cancel pages (public, for Stripe redirect)
 router.get('/topup/success', topUpSuccess);

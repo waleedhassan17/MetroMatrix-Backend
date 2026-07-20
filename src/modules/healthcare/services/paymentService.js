@@ -95,8 +95,9 @@ const payAppointment = async (appointment, user, method) => {
     type: 'debit',
     amount,
     description: `Consultation fee for appointment ${appointment._id}`,
-    source: 'service_payment',
+    source: 'healthcare_payment',
     status: 'completed',
+    relatedTo: { kind: 'Appointment', id: appointment._id },
     metadata: { appointmentId: String(appointment._id) },
   });
 
@@ -145,6 +146,7 @@ const refundAppointment = async (appointment, { cancelledBy, reason, ratioOverri
     description: reason || `Refund for cancelled appointment ${appointment._id}`,
     source: 'refund',
     status: 'completed',
+    relatedTo: { kind: 'Appointment', id: appointment._id },
     metadata: { appointmentId: String(appointment._id) },
   });
 
@@ -179,21 +181,32 @@ const settleCompletedAppointment = async (appointment) => {
   const settings = await getHealthcareSettings();
   const amount = appointment.payment.amount || 0;
   if (amount <= 0) return;
-  const { commission, payout } = computePayout(amount, settings.commissionPercent);
 
   const doctor = await Doctor.findById(appointment.doctorId);
   if (!doctor) return;
-  const wallet = await WalletService.getOrCreateWallet(doctor.providerId, 'Provider');
-  await wallet.credit(payout);
-  const txn = await WalletService.recordTransaction(wallet._id, {
-    type: 'credit',
-    amount: payout,
-    description: `Consultation earnings for appointment ${appointment._id} (after ${settings.commissionPercent}% platform commission)`,
-    source: 'service_payment',
-    status: 'completed',
-    metadata: { appointmentId: String(appointment._id), commission },
+
+  // Doctor earns at completion (not at payment time) so a pre-completion
+  // cancellation never has to claw back money the doctor already received —
+  // see WalletService.settlePayout()'s doc comment for why this is a
+  // separate leg from payAppointment's debit rather than one settle() call.
+  // Commission now lands in the Platform ledger instead of being computed
+  // and discarded (the pre-existing bug WALLET_DESIGN.md documents).
+  const result = await WalletService.settlePayout({
+    payeeType: 'Provider',
+    payeeId: doctor.providerId,
+    amount,
+    source: 'healthcare_earning',
+    relatedTo: { kind: 'Appointment', id: appointment._id },
+    description: `Consultation earnings for appointment ${appointment._id}`,
+    commissionRate: settings.commissionPercent,
   });
-  appointment.payout = { amount: payout, commission, paidAt: new Date(), walletTransactionId: txn._id };
+
+  appointment.payout = {
+    amount: result.payeeTransaction.amount,
+    commission: result.commission,
+    paidAt: new Date(),
+    walletTransactionId: result.payeeTransaction._id,
+  };
   await appointment.save();
 };
 

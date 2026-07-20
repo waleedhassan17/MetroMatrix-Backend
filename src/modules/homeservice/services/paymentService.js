@@ -1,18 +1,18 @@
 /**
  * Home-services payment (FR-11).
  *
- * Money movement rides the EXISTING wallet rails (src/services/walletService):
- *  - wallet method: WalletService.transferFunds customer→provider with
- *    feePercent = platform commission and idempotencyKey `hspay-<bookingId>`,
- *    which makes double payment structurally impossible (idempotent) and
- *    atomic where the Atlas tier supports sessions (transferFunds already
- *    falls back to sequential ops with the same invariants otherwise).
+ * Money movement rides the ONE cross-module ledger primitive,
+ * WalletService.settle() (src/services/walletService.js Part C.3):
+ *  - wallet method: settle() customer→provider in one atomic call, with
+ *    idempotencyKey `hspay-<bookingId>` (double payment structurally
+ *    impossible) and commissionRate from admin settings — the commission
+ *    leg lands in the Platform ledger instead of vanishing.
  *  - cash method: no customer wallet movement; the provider confirms receipt
- *    and the platform commission is debited from the provider's wallet so
- *    platform accounting stays correct on both paths. If the provider wallet
- *    cannot cover it, the commission is recorded as a PENDING debit that
- *    payouts subtract before approving (compensating design — free Atlas
- *    tier has no cross-collection transactions for this path).
+ *    and settlePayout() credits the Platform ledger with the commission by
+ *    debiting the provider (net was already collected as cash in person).
+ *    If the provider wallet cannot cover it, the commission is recorded as a
+ *    PENDING debit that payouts subtract before approving (compensating
+ *    design — free Atlas tier has no cross-collection transactions here).
  */
 const WalletService = require('../../../services/walletService');
 const WalletTransaction = require('../../../models/WalletTransaction');
@@ -48,15 +48,17 @@ async function payWithWallet(booking, customer, amount) {
 
   let result;
   try {
-    result = await WalletService.transferFunds({
-      senderOwnerId: customer._id,
-      senderOwnerType: 'User',
-      receiverOwnerId: booking.provider._id || booking.provider,
-      receiverOwnerType: 'Provider',
+    result = await WalletService.settle({
+      payerType: 'User',
+      payerId: customer._id,
+      payeeType: 'Provider',
+      payeeId: booking.provider._id || booking.provider,
       amount,
+      source: 'homeservice_payment',
+      relatedTo: { kind: 'Booking', id: booking._id },
       description: `Home service payment — booking ${booking._id}`,
       idempotencyKey: `hspay-${booking._id}`,
-      feePercent: settings.commissionPercent,
+      commissionRate: settings.commissionPercent,
     });
   } catch (e) {
     if (/insufficient/i.test(e.message)) {
@@ -67,14 +69,14 @@ async function payWithWallet(booking, customer, amount) {
 
   booking.payment.status = 'paid';
   booking.payment.method = 'wallet';
-  booking.payment.walletTransactionId = result.senderTransaction._id;
+  booking.payment.walletTransactionId = result.payerTransaction._id;
   booking.payment.paidAt = new Date();
   if (!booking.pricing.finalPrice) booking.pricing.finalPrice = amount;
   await booking.save();
 
   return {
-    transaction: result.senderTransaction,
-    commission: commissionOf(amount, settings.commissionPercent),
+    transaction: result.payerTransaction,
+    commission: result.commission,
   };
 }
 
@@ -92,22 +94,41 @@ async function confirmCash(booking, provider) {
   const commission = commissionOf(amount, settings.commissionPercent);
 
   const wallet = await WalletService.getOrCreateWallet(provider._id, 'Provider');
+  const relatedTo = { kind: 'Booking', id: booking._id };
 
-  let commissionStatus = 'completed';
+  let tx;
   if (wallet.balance >= commission) {
-    await wallet.debit(commission);
+    // Debit the provider AND credit the Platform ledger in one call — the
+    // commission has a real destination instead of just vanishing off the
+    // provider's balance (the bug this module was built to avoid). settle()
+    // creates its own linked transaction docs; use its payer-side one.
+    const result = await WalletService.settle({
+      payerType: 'Provider',
+      payerId: provider._id,
+      payeeType: 'Platform',
+      payeeId: WalletService.PLATFORM_OWNER_ID,
+      amount: commission,
+      source: 'commission',
+      relatedTo,
+      description: `Platform commission (cash) — booking ${booking._id}`,
+      commissionRate: 0,
+    });
+    tx = result.payerTransaction;
   } else {
-    commissionStatus = 'pending'; // settled against the next payout
+    // Provider can't cover it yet — record a PENDING debit (no wallet
+    // mutation) that payouts subtract before approving (see settlePayout
+    // caller in earningsController). Not routed through settle() because
+    // settle() is all-or-nothing; this business rule needs the partial state.
+    tx = await WalletService.recordTransaction(wallet._id, {
+      type: 'debit',
+      amount: commission,
+      description: `Platform commission (cash) — booking ${booking._id}`,
+      source: 'commission',
+      status: 'pending',
+      relatedTo,
+      metadata: { bookingId: String(booking._id), method: 'cash', grossAmount: amount },
+    });
   }
-
-  const tx = await WalletService.recordTransaction(wallet._id, {
-    type: 'debit',
-    amount: commission,
-    description: `Platform commission (cash) — booking ${booking._id}`,
-    source: 'service_payment',
-    status: commissionStatus,
-    metadata: { bookingId: String(booking._id), method: 'cash', grossAmount: amount },
-  });
 
   booking.payment.status = 'paid';
   booking.payment.method = 'cash';
@@ -129,7 +150,7 @@ async function pendingCommission(providerId) {
     {
       $match: {
         wallet: wallet._id,
-        source: 'service_payment',
+        source: 'commission',
         type: 'debit',
         status: 'pending',
       },
