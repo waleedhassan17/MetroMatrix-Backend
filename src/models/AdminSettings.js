@@ -185,6 +185,45 @@ const adminSettingsSchema = new mongoose.Schema(
       },
     },
 
+    // Home Services Settings — the SAME values the booking payment (HS4) and
+    // provider matching (HS2) code reads via the homeservice settingsService.
+    // Managed via GET/PATCH /api/admin/homeservice/settings.
+    homeservice: {
+      commissionPercent: {
+        type: Number,
+        default: 10,
+        min: 0,
+        max: 100,
+      },
+      // Customer may cancel free of dispute up to this long before the slot
+      cancellationWindowHours: {
+        type: Number,
+        default: 2,
+        min: 0,
+      },
+      defaultSearchRadiusKm: {
+        type: Number,
+        default: 15,
+        min: 1,
+      },
+      // Weighted matching score (HS2). Hardcoded for FYP-I; to be learned in FYP-II.
+      matchingWeights: {
+        distance: { type: Number, default: 0.4, min: 0, max: 1 },
+        rating: { type: Number, default: 0.4, min: 0, max: 1 },
+        availability: { type: Number, default: 0.2, min: 0, max: 1 },
+      },
+      minPayoutAmount: {
+        type: Number,
+        default: 500,
+        min: 0,
+      },
+      avgUrbanSpeedKmh: {
+        type: Number,
+        default: 25,
+        min: 5,
+      },
+    },
+
     // Metadata
     lastUpdatedBy: {
       type: mongoose.Schema.Types.ObjectId,

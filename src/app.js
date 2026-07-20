@@ -1557,6 +1557,12 @@ app.use('/api/v1/admin', adminAnalyticsRoutes);
 // Healthcare admin oversight (doctor suspend, appointments, clinics, reviews, settings).
 // Mounted after adminDoctorRoutes so its static /doctors/pending wins over /doctors/:doctorId.
 app.use('/api/v1/admin', require('./routes/adminHealthcareRoutes'));
+// Home Services module (FR-01..FR-20) — peer module of healthcare/shopping.
+// Mounted BEFORE the legacy /api/providers and /api/admin mounts: its
+// GET /providers[/:id] handlers fall through (next()) for non-home-service
+// requests, and its admin routes only claim home-service-specific paths.
+app.use('/api', require('./modules/homeservice/routes/index'));
+app.use('/api/admin', require('./modules/homeservice/routes/adminRoutes'));
 app.use('/api/users', userRoutes);
 app.use('/api/providers', providerRoutes);
 app.use('/api/posts', postRoutes);

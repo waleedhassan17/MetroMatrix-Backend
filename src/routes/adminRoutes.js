@@ -8,9 +8,6 @@ const {
   adminLogin,
   getDashboardStats,
   getPendingProviders,
-  getProviderForReview,
-  approveProvider,
-  rejectProvider,
   getAllUsers,
   getAllProviders,
   deactivateUser,
@@ -133,17 +130,12 @@ router.put('/providers/:providerId/activate', activateProvider);
 router.put('/providers/:providerId/deactivate', deactivateProvider);
 router.delete('/providers/:providerId', deleteProvider);
 
-// Legacy routes
-router.get('/providers/:id', getProviderForReview);
-router.post('/providers/:id/approve', approveProvider);
-router.post(
-  '/providers/:id/reject',
-  body('reason').notEmpty().withMessage('Rejection reason is required'),
-  validate,
-  rejectProvider
-);
-router.put('/providers/:id/deactivate', deactivateProvider);
-router.put('/providers/:id/activate', activateProvider);
+// HS5: the legacy '/providers/:id' registrations that used to sit here were
+// UNREACHABLE — Express matched the '/providers/:providerId' routes above
+// first, so getProviderForReview/approveProvider (POST) were dead code with
+// different semantics from the Enhanced handlers the admin app actually calls
+// (GET /providers/:providerId + PUT .../approve|reject|activate|deactivate).
+// One canonical handler per operation now; the dead registrations are gone.
 
 // ===== USER MANAGEMENT =====
 router.get('/users', getAllUsersEnhanced);
