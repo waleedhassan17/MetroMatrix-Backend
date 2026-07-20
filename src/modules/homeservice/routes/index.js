@@ -45,6 +45,12 @@ router.get('/user/home', protect, userOnly, userC.getHome);
 router.get('/user/bookings', protect, userOnly, userC.getUserBookings);
 router.post('/user/bookings/:bookingId/cancel', protect, loadBookingWithAccess, userC.cancelUserBooking);
 router.patch('/user/bookings/:bookingId/status', protect, loadBookingWithAccess, userC.updateUserBookingStatus);
+router.post('/user/bookings/:bookingId/rate', protect, loadBookingWithAccess, (req, res, next) => {
+  // Legacy rate endpoint — same guard path as POST /reviews
+  req.body.bookingId = req.params.bookingId;
+  req.body.feedback = req.body.review || req.body.feedback;
+  require('../controllers/reviewController').submitReview(req, res, next);
+});
 router.get('/user/profile', protect, userOnly, userC.getUserProfile);
 router.patch('/user/profile', protect, userOnly, userC.updateUserProfile);
 router.post('/user/profile/avatar', protect, userOnly, userC.updateUserAvatar);
