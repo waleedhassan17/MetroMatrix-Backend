@@ -1575,6 +1575,8 @@ app.use('/api/v1/admin', require('./routes/adminHealthcareRoutes'));
 // requests, and its admin routes only claim home-service-specific paths.
 app.use('/api', require('./modules/homeservice/routes/index'));
 app.use('/api/admin', require('./modules/homeservice/routes/adminRoutes'));
+// Admin wallet oversight (Part F) — one ledger, cross-module admin view.
+app.use('/api/admin/wallets', require('./routes/adminWalletRoutes'));
 app.use('/api/users', userRoutes);
 app.use('/api/providers', providerRoutes);
 app.use('/api/posts', postRoutes);
