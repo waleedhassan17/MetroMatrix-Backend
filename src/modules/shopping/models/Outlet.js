@@ -53,11 +53,14 @@ outletSchema.set('toJSON', {
   versionKey: false,
   transform: (doc, ret) => {
     ret.outletId = String(ret._id);
-    // Populated brand → brandName/brandPrimaryColor extras the FE renders
-    if (ret.brandId && typeof ret.brandId === 'object' && ret.brandId.name) {
-      ret.brandName = ret.brandId.name;
-      ret.brandPrimaryColor = ret.brandId.primaryColor;
-      ret.brandId = String(ret.brandId._id);
+    // Populated brand → brandName/brandPrimaryColor extras the FE renders.
+    // Read the id off `doc` (raw, un-transformed), not `ret` — Brand's own
+    // toJSON runs first on nested docs and renames _id -> brandId there too,
+    // so `ret.brandId._id` is always undefined once populated.
+    if (doc.populated && doc.populated('brandId') && doc.brandId) {
+      ret.brandName = doc.brandId.name;
+      ret.brandPrimaryColor = doc.brandId.primaryColor;
+      ret.brandId = String(doc.brandId._id);
     } else if (ret.brandId) {
       ret.brandId = String(ret.brandId);
     }

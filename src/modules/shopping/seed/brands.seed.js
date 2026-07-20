@@ -12,6 +12,7 @@
  * writes, so the seeded ledger is indistinguishable from what real usage
  * would produce.
  */
+const mongoose = require('mongoose');
 const Provider = require('../../../models/Provider');
 const User = require('../../../models/User');
 const WalletService = require('../../../services/walletService');
@@ -220,10 +221,15 @@ async function upsertVendor(spec) {
     });
     log(`vendor created: ${spec.email}`);
   } else {
+    // Same email can already exist from an earlier seed script (e.g.
+    // vendor.outfitters@metromatrix.pk is also created by seed-accounts.js
+    // with a different password) — reset it so the documented Vendor@123
+    // credential genuinely works, not just on a fresh account.
     provider.providerType = 'vendor';
     provider.emailVerified = 'active';
     provider.adminVerified = 'active';
     provider.isActive = true;
+    provider.password = 'Vendor@123';
     await provider.save();
   }
   return provider;
@@ -512,12 +518,26 @@ async function advanceOrder(orderMongoId, targetStatus, vendorProviderId) {
 
 /** Shift a just-created order/group cluster into the past by `daysAgo`,
  * preserving the relative spacing of its statusHistory (all timestamps
- * happened within the same script tick, so one uniform shift is exact). */
+ * happened within the same script tick, so one uniform shift is exact).
+ *
+ * Uses the raw driver, not the Mongoose model, for the createdAt writes:
+ * Mongoose treats a schema's `timestamps: true` createdAt path as immutable
+ * and silently drops it from any $set on Model.updateOne — the call reports
+ * modifiedCount: 1 (other fields in the same $set really did change) while
+ * createdAt quietly stays whatever it already was. Confirmed by testing
+ * directly against this schema; the raw collection has no such protection. */
 async function backdate(groupMongoId, orderMongoIds, daysAgo) {
   const shiftMs = daysAgo * 86400000;
+  const db = mongoose.connection.db;
+  const orderGroups = db.collection('shoppingordergroups');
+  const orders = db.collection('shoppingorders');
+  const walletTransactions = db.collection('wallettransactions');
+
   const group = await OrderGroup.findById(groupMongoId);
-  const newGroupCreatedAt = new Date(group.createdAt.getTime() - shiftMs);
-  await OrderGroup.updateOne({ _id: groupMongoId }, { $set: { createdAt: newGroupCreatedAt } });
+  await orderGroups.updateOne(
+    { _id: group._id },
+    { $set: { createdAt: new Date(group.createdAt.getTime() - shiftMs) } }
+  );
 
   for (const orderId of orderMongoIds) {
     const order = await Order.findById(orderId);
@@ -528,17 +548,16 @@ async function backdate(groupMongoId, orderMongoIds, daysAgo) {
     }));
     const set = { createdAt: newCreatedAt, statusHistory: newHistory };
     if (order.deliveredAt) set.deliveredAt = new Date(order.deliveredAt.getTime() - shiftMs);
-    await Order.updateOne({ _id: orderId }, { $set: set });
+    await orders.updateOne({ _id: order._id }, { $set: set });
   }
 
   // Every wallet transaction tied to this checkout or its per-brand orders
   // (customer debit, vendor payout + commission, refunds) shifts together.
-  const WalletTransaction = require('../../../models/WalletTransaction');
-  await WalletTransaction.updateMany(
+  await walletTransactions.updateMany(
     {
       $or: [
-        { 'relatedTo.kind': 'OrderGroup', 'relatedTo.id': groupMongoId },
-        { 'relatedTo.kind': 'Order', 'relatedTo.id': { $in: orderMongoIds } },
+        { 'relatedTo.kind': 'OrderGroup', 'relatedTo.id': group._id },
+        { 'relatedTo.kind': 'Order', 'relatedTo.id': { $in: orderMongoIds.map((id) => new mongoose.Types.ObjectId(String(id))) } },
       ],
     },
     [{ $set: { createdAt: { $subtract: ['$createdAt', shiftMs] } } }]
@@ -729,7 +748,6 @@ module.exports = seedBrands;
 
 if (require.main === module) {
   require('dotenv').config();
-  const mongoose = require('mongoose');
   mongoose
     .connect(process.env.MONGODB_URI)
     .then(async () => {

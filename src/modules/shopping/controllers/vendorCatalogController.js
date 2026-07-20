@@ -57,11 +57,30 @@ const getMyProducts = asyncHandler(async (req, res) => {
   return paginated(res, { data: rows, page, limit, total });
 });
 
+/** salePrice must be a genuine discount, and an SKU (if given) must be
+ * unique within the brand — Product.sku has no schema-level constraint. */
+const validateProductFields = async (brandId, { basePrice, salePrice, sku }, excludeProductId) => {
+  if (salePrice !== undefined && salePrice !== null && salePrice >= basePrice) {
+    return `salePrice (${salePrice}) must be lower than basePrice (${basePrice})`;
+  }
+  if (sku) {
+    const dupeFilter = { brandId, sku };
+    if (excludeProductId) dupeFilter._id = { $ne: excludeProductId };
+    if (await Product.findOne(dupeFilter)) {
+      return `SKU "${sku}" is already used by another product in this brand`;
+    }
+  }
+  return null;
+};
+
 // @desc  POST /api/shopping/vendor/products
 const createProduct = asyncHandler(async (req, res) => {
   if (!req.body.name || req.body.basePrice === undefined) {
     return fail(res, 400, 'name and basePrice are required');
   }
+  const validationError = await validateProductFields(req.brand._id, req.body);
+  if (validationError) return fail(res, 400, validationError);
+
   const payload = { brandId: req.brand._id };
   PRODUCT_EDITABLE.forEach((f) => {
     if (req.body[f] !== undefined) payload[f] = req.body[f];
@@ -76,6 +95,18 @@ const createProduct = asyncHandler(async (req, res) => {
 const updateProduct = asyncHandler(async (req, res) => {
   const product = await Product.findOne({ _id: req.params.productId, brandId: req.brand._id });
   if (!product) return fail(res, 404, 'Product not found');
+
+  const validationError = await validateProductFields(
+    req.brand._id,
+    {
+      basePrice: req.body.basePrice !== undefined ? req.body.basePrice : product.basePrice,
+      salePrice: req.body.salePrice !== undefined ? req.body.salePrice : product.salePrice,
+      sku: req.body.sku !== undefined ? req.body.sku : product.sku,
+    },
+    product._id
+  );
+  if (validationError) return fail(res, 400, validationError);
+
   PRODUCT_EDITABLE.forEach((f) => {
     if (req.body[f] !== undefined) product[f] = req.body[f];
   });

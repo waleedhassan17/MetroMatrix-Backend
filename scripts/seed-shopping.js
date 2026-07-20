@@ -182,11 +182,15 @@ async function upsertVendor(spec) {
     });
     log(`vendor created: ${spec.email}`);
   } else {
-    // Ensure the pipeline flags are right even on re-run
+    // Ensure the pipeline flags are right even on re-run, and that the
+    // documented demo password actually works — an earlier seed script
+    // (seed-accounts.js) can create the same email first with a different
+    // password, silently making this script's printed credentials wrong.
     provider.providerType = 'vendor';
     provider.emailVerified = 'active';
     provider.adminVerified = 'active';
     provider.isActive = true;
+    provider.password = 'Vendor@123';
     await provider.save();
   }
   return provider;

@@ -40,7 +40,16 @@ returnRequestSchema.set('toJSON', {
     if (ret.order === undefined) delete ret.order;
     ret.orderId = doc.order && doc.order._id ? String(doc.order._id) : String(doc.order);
     ret.userId = ret.userId && ret.userId._id ? String(ret.userId._id) : String(ret.userId);
-    ret.brandId = ret.brandId && ret.brandId._id ? String(ret.brandId._id) : String(ret.brandId);
+    // Read off `doc`, not `ret` — if brandId is ever populated, Brand's own
+    // toJSON transform runs first and renames _id -> brandId on the nested
+    // object, so `ret.brandId._id` would always be undefined (see the same
+    // bug fixed in Order.js/Outlet.js).
+    ret.brandId =
+      doc.populated && doc.populated('brandId') && doc.brandId
+        ? String(doc.brandId._id)
+        : ret.brandId
+          ? String(ret.brandId)
+          : ret.brandId;
     delete ret._id;
     return ret;
   },

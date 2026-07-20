@@ -118,10 +118,16 @@ orderSchema.set('toJSON', {
   transform: (doc, ret) => {
     ret.orderId = String(ret._id);
     ret.userId = String(ret.userId);
-    ret.brandId =
-      ret.brandId && ret.brandId._id ? String(ret.brandId._id) : String(ret.brandId);
-    if (doc.populated && doc.populated('brandId') && doc.brandId && doc.brandId.name) {
-      ret.brandName = doc.brandId.name;
+    // Read the brand id off `doc` (the raw, un-transformed populated
+    // subdocument), not `ret` — Brand's own toJSON transform runs first on
+    // nested docs and renames _id -> brandId, so by the time this transform
+    // sees `ret.brandId` it's already a plain object with no `_id` at all,
+    // and String(plainObject) silently produces the literal "[object Object]".
+    if (doc.populated && doc.populated('brandId') && doc.brandId) {
+      ret.brandId = String(doc.brandId._id);
+      if (doc.brandId.name) ret.brandName = doc.brandId.name;
+    } else {
+      ret.brandId = ret.brandId ? String(ret.brandId) : ret.brandId;
     }
     ret.orderGroup = ret.orderGroup ? String(ret.orderGroup) : undefined;
     if (ret.trackingNumber === null) delete ret.trackingNumber;
