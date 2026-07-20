@@ -61,6 +61,11 @@ describe('buildProductQuery', () => {
     expect(() => q.$or[0].name.test('x')).not.toThrow();
     expect(q.$or[0].name.test('a+b(c) shirt')).toBe(true);
   });
+
+  it('filters by exact lowercased gender tag, not substring search', () => {
+    const q = buildProductQuery({ gender: 'Men' });
+    expect(q.tags).toBe('men');
+  });
 });
 
 describe('buildProductSort', () => {

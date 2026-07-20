@@ -17,6 +17,7 @@ const buildProductQuery = (params = {}, activeBrandIds = null) => {
   else if (activeBrandIds) query.brandId = { $in: activeBrandIds };
 
   if (params.categoryId) query.categoryId = params.categoryId;
+  if (params.gender) query.tags = String(params.gender).trim().toLowerCase();
   if (parseBool(params.isFeatured)) query.isFeatured = true;
   if (parseBool(params.isNewArrival)) query.isNewArrival = true;
   if (parseBool(params.inStock)) query.inStock = true;
