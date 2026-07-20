@@ -34,6 +34,16 @@ const server = app.listen(PORT, () => {
 
   // Register healthcare scheduled jobs (after server + DB are ready)
   require('./modules/healthcare/jobs/appointmentReminders');
+
+  // Home-services real-time layer (HS3): socket.io on the HTTP server, NOT
+  // the Express app. Unavailable on serverless (Vercel) — REST fallbacks
+  // cover every event there; see SOCKET_API.md.
+  try {
+    require('./sockets').initSockets(server);
+    console.log('✅ Socket.io attached (home-services chat + tracking)'.green);
+  } catch (e) {
+    console.log(`Socket.io not started: ${e.message}`.yellow);
+  }
 });
 
 // Handle unhandled promise rejections
