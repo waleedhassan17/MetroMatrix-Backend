@@ -2,7 +2,7 @@ const express = require('express');
 const router = express.Router();
 const { body } = require('express-validator');
 const { validate } = require('../middleware/validate');
-const { protect } = require('../middleware/authMiddleware');
+const { protect, requirePermission } = require('../middleware/authMiddleware');
 const { uploadMultipleDocuments } = require('../middleware/uploadMiddleware');
 const {
   adminLogin,
@@ -116,19 +116,24 @@ router.get('/providers/pending', getPendingProvidersEnhanced);
 router.get('/providers/:providerType(doctor|home_service|vendor)', getProvidersByType);
 router.get('/providers', getAllProvidersEnhanced);
 
-// Provider Details & Actions
+// Provider Details & Actions — reads are open to any admin; approval/
+// activation decisions require the canApproveProviders permission
+// (previously only checked isAdmin, so any admin regardless of their
+// stored permissions could approve/reject/activate/deactivate/delete a
+// provider — confirmed live during the Prompt 6 access-control sweep).
 router.get('/providers/:providerId/details', getProviderDetailsWithRoute);
 router.get('/providers/:providerId', getProviderDetails);
-router.put('/providers/:providerId/approve', approveProviderEnhanced);
+router.put('/providers/:providerId/approve', requirePermission('canApproveProviders'), approveProviderEnhanced);
 router.put(
   '/providers/:providerId/reject',
+  requirePermission('canApproveProviders'),
   body('reason').notEmpty().withMessage('Rejection reason is required'),
   validate,
   rejectProviderEnhanced
 );
-router.put('/providers/:providerId/activate', activateProvider);
-router.put('/providers/:providerId/deactivate', deactivateProvider);
-router.delete('/providers/:providerId', deleteProvider);
+router.put('/providers/:providerId/activate', requirePermission('canApproveProviders'), activateProvider);
+router.put('/providers/:providerId/deactivate', requirePermission('canApproveProviders'), deactivateProvider);
+router.delete('/providers/:providerId', requirePermission('canApproveProviders'), deleteProvider);
 
 // HS5: the legacy '/providers/:id' registrations that used to sit here were
 // UNREACHABLE — Express matched the '/providers/:providerId' routes above
@@ -137,22 +142,22 @@ router.delete('/providers/:providerId', deleteProvider);
 // (GET /providers/:providerId + PUT .../approve|reject|activate|deactivate).
 // One canonical handler per operation now; the dead registrations are gone.
 
-// ===== USER MANAGEMENT =====
+// ===== USER MANAGEMENT ===== (mutations require canManageUsers — see note above)
 router.get('/users', getAllUsersEnhanced);
 router.get('/users/:userId', getUserDetails);
-router.put('/users/:userId/activate', activateUserEnhanced);
-router.put('/users/:userId/deactivate', deactivateUserEnhanced);
-router.delete('/users/:userId', deleteUser);
+router.put('/users/:userId/activate', requirePermission('canManageUsers'), activateUserEnhanced);
+router.put('/users/:userId/deactivate', requirePermission('canManageUsers'), deactivateUserEnhanced);
+router.delete('/users/:userId', requirePermission('canManageUsers'), deleteUser);
 
 // Legacy routes
-router.put('/users/:id/deactivate', deactivateUser);
-router.put('/users/:id/activate', activateUser);
+router.put('/users/:id/deactivate', requirePermission('canManageUsers'), deactivateUser);
+router.put('/users/:id/activate', requirePermission('canManageUsers'), activateUser);
 
-// ===== NOTIFICATIONS =====
+// ===== NOTIFICATIONS ===== (reads open to any admin; bulk-clear requires canManageNotifications)
 router.get('/notifications', getNotifications);
 router.get('/notifications/unread-count', getUnreadCount);
 router.put('/notifications/read-all', markAllAsRead);
-router.delete('/notifications/clear-all', clearAllNotifications);
+router.delete('/notifications/clear-all', requirePermission('canManageNotifications'), clearAllNotifications);
 router.put('/notifications/:notificationId/read', markAsRead);
 router.delete('/notifications/:notificationId', deleteNotification);
 
@@ -165,14 +170,15 @@ router.put('/settings/security', updateSecuritySettings);
 router.put('/settings/appearance', updateAppearanceSettings);
 
 // ===== POST MANAGEMENT =====
-router.delete('/posts/:id', deletePost);
+router.delete('/posts/:id', requirePermission('canManagePosts'), deletePost);
 
 // ===== PROVIDER SUBMISSION MANAGEMENT =====
 router.get('/provider-submissions', getProviderSubmissions);
 router.get('/provider-submissions/:id', getProviderSubmissionById);
-router.post('/provider-submissions/:id/approve', approveProviderSubmission);
+router.post('/provider-submissions/:id/approve', requirePermission('canApproveProviders'), approveProviderSubmission);
 router.post(
   '/provider-submissions/:id/reject',
+  requirePermission('canApproveProviders'),
   body('rejectionReason').notEmpty().withMessage('Rejection reason is required'),
   validate,
   rejectProviderSubmission

@@ -5,10 +5,10 @@ const {
   getAppointmentAnalytics,
   getRevenueAnalytics,
 } = require('../controllers/adminAnalyticsController');
-const { protect, adminOnly } = require('../middleware/authMiddleware');
+const { protect, adminOnly, requirePermission } = require('../middleware/authMiddleware');
 
-router.get('/analytics/stats', protect, adminOnly, getStats);
-router.get('/analytics/appointments', protect, adminOnly, getAppointmentAnalytics);
-router.get('/analytics/revenue', protect, adminOnly, getRevenueAnalytics);
+router.get('/analytics/stats', protect, adminOnly, requirePermission('canViewAnalytics'), getStats);
+router.get('/analytics/appointments', protect, adminOnly, requirePermission('canViewAnalytics'), getAppointmentAnalytics);
+router.get('/analytics/revenue', protect, adminOnly, requirePermission('canViewAnalytics'), getRevenueAnalytics);
 
 module.exports = router;

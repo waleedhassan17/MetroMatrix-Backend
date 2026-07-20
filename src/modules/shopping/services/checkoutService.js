@@ -171,18 +171,30 @@ const checkout = async (user, { addressId, shippingAddress, paymentMethod }) => 
         orders.push(order);
       }
 
-      // (f) Take payment
+      // (f) Take payment. The balance mutation and its ledger record are two
+      // separate writes (no multi-doc transaction on this Atlas tier — see
+      // the note above) — if recordTransaction throws after debit()
+      // succeeded, the customer would otherwise be silently charged with no
+      // ledger trace and no order (the outer catch deletes the order/group
+      // but never reverses a wallet debit). Credit back explicitly on that
+      // specific failure, matching the stock-rollback pattern used above.
       if (paymentMethod === 'wallet') {
         await customerWallet.debit(totals.total);
-        const txn = await WalletService.recordTransaction(customerWallet._id, {
-          type: 'debit',
-          amount: totals.total,
-          description: `Payment for order ${group.odexId}`,
-          source: 'shopping_payment',
-          status: 'completed',
-          relatedTo: { kind: 'OrderGroup', id: group._id },
-          metadata: { orderGroupId: String(group._id) },
-        });
+        let txn;
+        try {
+          txn = await WalletService.recordTransaction(customerWallet._id, {
+            type: 'debit',
+            amount: totals.total,
+            description: `Payment for order ${group.odexId}`,
+            source: 'shopping_payment',
+            status: 'completed',
+            relatedTo: { kind: 'OrderGroup', id: group._id },
+            metadata: { orderGroupId: String(group._id) },
+          });
+        } catch (txnErr) {
+          await customerWallet.credit(totals.total);
+          throw txnErr;
+        }
         group.walletTransactionId = txn._id;
         group.paymentStatus = 'paid';
         for (const order of orders) {

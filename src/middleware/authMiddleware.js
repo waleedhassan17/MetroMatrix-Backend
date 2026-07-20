@@ -95,6 +95,21 @@ const adminOnly = (req, res, next) => {
   next();
 };
 
+// Enforce a specific Admin.permissions.<name> flag (isSuperAdmin bypasses
+// all of them, matching Admin.hasPermission). Run after adminOnly — a
+// stored-but-unchecked permission is the same as no permission at all.
+const requirePermission = (permission) => (req, res, next) => {
+  if (!req.isAdmin) {
+    res.status(403);
+    throw new Error('This route is for admins only');
+  }
+  if (!req.user.hasPermission(permission)) {
+    res.status(403);
+    throw new Error(`You do not have the '${permission}' permission`);
+  }
+  next();
+};
+
 // Check if provider is verified
 const verifiedProvider = (req, res, next) => {
   if (!req.isProvider) {
@@ -163,6 +178,7 @@ module.exports = {
   userOnly,
   providerOnly,
   adminOnly,
+  requirePermission,
   verifiedProvider,
   optionalAuth
 };
