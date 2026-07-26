@@ -18,3 +18,7 @@ scripts/scraped/*/
 
 # Run artifact from scripts/wallet-qa-gate.js — regenerated on every run.
 wallet-qa-results.json
+
+# Team credential sheet — consolidated demo logins incl. super admin.
+# This repo is PUBLIC; never commit this file.
+TEAM_CREDENTIALS.md
