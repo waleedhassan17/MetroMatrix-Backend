@@ -10,8 +10,6 @@ const {
   getPendingProviders,
   getAllUsers,
   getAllProviders,
-  deactivateUser,
-  activateUser,
   deactivateProvider,
   activateProvider,
   deletePost,
@@ -149,9 +147,12 @@ router.put('/users/:userId/activate', requirePermission('canManageUsers'), activ
 router.put('/users/:userId/deactivate', requirePermission('canManageUsers'), deactivateUserEnhanced);
 router.delete('/users/:userId', requirePermission('canManageUsers'), deleteUser);
 
-// Legacy routes
-router.put('/users/:id/deactivate', requirePermission('canManageUsers'), deactivateUser);
-router.put('/users/:id/activate', requirePermission('canManageUsers'), activateUser);
+// The legacy `/users/:id/activate` and `/users/:id/deactivate` registrations
+// that used to sit here were DEAD CODE: Express matches the first registration
+// for a given shape, so `/users/:userId/...` above always won and the legacy
+// handlers were never reachable. The comment further up already claimed they
+// had been removed — now they actually are. The surviving *Enhanced handlers
+// are a strict superset (they accept a `reason` and return the updated state).
 
 // ===== NOTIFICATIONS ===== (reads open to any admin; bulk-clear requires canManageNotifications)
 router.get('/notifications', getNotifications);

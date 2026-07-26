@@ -6,6 +6,7 @@ const Brand = require('../models/Brand');
 const ReturnRequest = require('../models/ReturnRequest');
 const checkoutService = require('../services/checkoutService');
 const orderService = require('../services/orderService');
+const { getShoppingSettings } = require('../services/settingsService');
 const { ok, paginated, fail, parsePagination } = require('../utils/respond');
 
 const isCastError = (e) =>
@@ -118,9 +119,18 @@ const requestReturn = asyncHandler(async (req, res) => {
     return fail(res, 400, 'Only delivered orders can be returned');
   }
 
-  // Enforce the brand's return window from the delivered date
+  // Enforce the brand's return window from the delivered date. A brand's own
+  // policy wins; otherwise fall back to the PLATFORM setting rather than a
+  // hardcoded 7. `defaultReturnDays` was previously defined in AdminSettings
+  // and surfaced in the admin settings screen, but nothing anywhere read it —
+  // an admin could change the platform return window and it would silently do
+  // nothing (SHOPPING_TRIAGE D-5).
   const brand = await Brand.findById(order.brandId);
-  const returnDays = brand && brand.policies ? brand.policies.returnDays : 7;
+  const shoppingSettings = await getShoppingSettings();
+  const returnDays =
+    brand && brand.policies && brand.policies.returnDays != null
+      ? brand.policies.returnDays
+      : shoppingSettings.defaultReturnDays;
   const deliveredAt = order.deliveredAt || order.updatedAt;
   const windowEnd = new Date(deliveredAt.getTime() + returnDays * 24 * 60 * 60 * 1000);
   if (new Date() > windowEnd) {

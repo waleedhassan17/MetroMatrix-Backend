@@ -273,6 +273,51 @@ genuinely bad input. Verified: cross-tenant inventory writes now return **404** 
 keys, found them nested under `summary`, and passed every analytics check as "not exposed" —
 i.e. vacuously. It now asserts the real nested values.
 
+## 7d. PROMPT 4 — admin path: status
+
+**`scripts/shopping-admin-gate.js`: 23/23 PASS.**
+
+**RBAC enumerated, not spot-checked:** all **22** admin routes × 3 identities (customer token,
+vendor token, no token) = **66 checks, zero leaks** — no 200s and no 500s.
+
+**D-2 FIXED — shadowed routes removed.** `PUT /users/:id/activate` and `/deactivate` were dead
+code (Express matched `/users/:userId/...` first) sitting under a comment that already claimed
+they were gone. Removed the registrations, the now-unused imports, and the two orphaned handler
+bodies (58 lines). Shadow detector re-run: **44 routes, 0 shadowed.** `app.js` loads clean.
+
+**Brand suspend trace — the highest-value admin behaviour, fully green:**
+
+| | |
+|---|---|
+| before | brand visible, 30 products browsable |
+| suspend | brand vanishes from the brand list; **30 → 0** products in browsing; **0 leaked into search** |
+| during | existing orders intact (19 → 19); a suspended brand's order still viewable by admin |
+| reactivate | **0 → 30** products restored |
+
+**Forced transition:** rejected without a reason (*"A reason is mandatory for admin status
+changes"*); with a reason it succeeds and records `actor=admin` plus the note in `statusHistory`.
+
+**Every setting verified to change LIVE behaviour** — the pack's "a setting nothing reads is a
+P0 trap":
+
+| Setting | Verified by |
+|---|---|
+| `commissionPercent` | set 25% → next delivered order's commission = 287 on a 1,149 total ✅ |
+| `shippingFeePerBrand` | set 777 → cart charged exactly 777 ✅ |
+| `freeShippingThreshold` | dropped below subtotal → shipping became 0 ✅ |
+| `lowStockThreshold` | 999999 → 80 variants flagged; 0 → 0 flagged ✅ |
+| `autoApproveBrands` | read at `vendorBrandController.js:37` (new brand active vs pending) ✅ |
+| **`defaultReturnDays`** | **was the trap — FIXED (D-5)** |
+
+**D-5 (new, P1) — `defaultReturnDays` was a setting nothing read.** It was defined in
+`AdminSettings`, editable through the admin settings screen, and consumed by **nothing**: the
+return window came from `brand.policies.returnDays` with a **hardcoded fallback of 7**. An admin
+changing the platform return window silently had no effect. Fixed in
+`orderController.js` — a brand's own policy still wins, but the fallback is now the platform
+setting instead of a literal.
+
+Backend suite after all Prompt 4 changes: **206/206**.
+
 ## 8. Recommended plan for the remaining prompts
 
 Given P0 = 0, the pack's "cut vendor or admin scope" contingency is **not needed**.

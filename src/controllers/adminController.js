@@ -449,64 +449,6 @@ const getAllProviders = asyncHandler(async (req, res) => {
   });
 });
 
-// @desc    Deactivate user
-// @route   PUT /api/admin/users/:id/deactivate
-// @access  Private/Admin
-const deactivateUser = asyncHandler(async (req, res) => {
-  const user = await User.findById(req.params.id);
-
-  if (!user) {
-    res.status(404);
-    throw new Error('User not found');
-  }
-
-  user.isActive = false;
-  await user.save();
-
-  // Log admin activity
-  req.user.logActivity(
-    'deactivate_user',
-    user._id,
-    'User',
-    `Deactivated user: ${user.fullName}`
-  );
-  await req.user.save();
-
-  res.json({
-    success: true,
-    message: 'User deactivated successfully',
-  });
-});
-
-// @desc    Activate user
-// @route   PUT /api/admin/users/:id/activate
-// @access  Private/Admin
-const activateUser = asyncHandler(async (req, res) => {
-  const user = await User.findById(req.params.id);
-
-  if (!user) {
-    res.status(404);
-    throw new Error('User not found');
-  }
-
-  user.isActive = true;
-  await user.save();
-
-  // Log admin activity
-  req.user.logActivity(
-    'activate_user',
-    user._id,
-    'User',
-    `Activated user: ${user.fullName}`
-  );
-  await req.user.save();
-
-  res.json({
-    success: true,
-    message: 'User activated successfully',
-  });
-});
-
 // @desc    Deactivate provider
 // @route   PUT /api/admin/providers/:id/deactivate
 // @access  Private/Admin
@@ -2284,8 +2226,6 @@ module.exports = {
   rejectProvider,
   getAllUsers,
   getAllProviders,
-  deactivateUser,
-  activateUser,
   deactivateProvider,
   activateProvider,
   deletePost,
