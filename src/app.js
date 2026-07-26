@@ -104,11 +104,25 @@ if (process.env.NODE_ENV === 'development') {
   app.use(morgan('dev'));
 }
 
-// Rate limiting
+// Rate limiting.
+//
+// DISABLE_RATE_LIMIT exists ONLY so the local QA scripts (shopping-triage-probe,
+// shopping-integrity, wallet-qa-gate) can run a full multi-role sweep without
+// tripping the limiter and reporting throttled requests as product failures —
+// which is exactly what happened before it existed. It is deliberately opt-in
+// and is IGNORED in production, so a stray env var can never expose the
+// deployed API.
+const rateLimitDisabled =
+  process.env.DISABLE_RATE_LIMIT === 'true' && process.env.NODE_ENV !== 'production';
+if (rateLimitDisabled) {
+  console.log('⚠ Rate limiting DISABLED (DISABLE_RATE_LIMIT=true, non-production only)');
+}
+
 const limiter = rateLimit({
   windowMs: 10 * 60 * 1000, // 10 minutes
   max: 100, // limit each IP to 100 requests per windowMs
   message: 'Too many requests from this IP, please try again later.',
+  skip: () => rateLimitDisabled,
 });
 app.use('/api/', limiter);
 
@@ -118,6 +132,7 @@ const authLimiter = rateLimit({
   max: 10, // limit each IP to 10 requests per windowMs
   skipSuccessfulRequests: true,
   message: 'Too many authentication attempts, please try again later.',
+  skip: () => rateLimitDisabled,
 });
 app.use('/api/auth/', authLimiter);
 
