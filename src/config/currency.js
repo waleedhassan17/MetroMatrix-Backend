@@ -28,10 +28,26 @@ function usdCentsToPkr(amountCents) {
   return Math.round((amountCents / 100) * PKR_PER_USD);
 }
 
+/**
+ * Top-up bounds, in PKR — defined ONCE here because they were previously
+ * duplicated in walletRoutes.js's validator and walletController.js's guard,
+ * and both still carried USD-era numbers (max 10000) after the ledger moved
+ * to PKR. PKR 10,000 is roughly USD 36, which made a realistic top-up
+ * impossible.
+ *
+ * MIN is set by Stripe, not by us: Stripe rejects charges below ~USD 0.50,
+ * and the old `min: 1` PKR converts to 0 USD cents — it could never have
+ * succeeded at Stripe even though the API accepted it.
+ */
+const MIN_TOPUP_PKR = 150; // ≈ USD 0.54 — clears Stripe's minimum charge
+const MAX_TOPUP_PKR = 500000; // ≈ USD 1,785 — sane ceiling for a demo wallet
+
 module.exports = {
   WALLET_CURRENCY,
   STRIPE_CHARGE_CURRENCY,
   PKR_PER_USD,
+  MIN_TOPUP_PKR,
+  MAX_TOPUP_PKR,
   pkrToUsdCents,
   usdCentsToPkr,
 };

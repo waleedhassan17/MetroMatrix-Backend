@@ -171,30 +171,23 @@ const checkout = async (user, { addressId, shippingAddress, paymentMethod }) => 
         orders.push(order);
       }
 
-      // (f) Take payment. The balance mutation and its ledger record are two
-      // separate writes (no multi-doc transaction on this Atlas tier — see
-      // the note above) — if recordTransaction throws after debit()
-      // succeeded, the customer would otherwise be silently charged with no
-      // ledger trace and no order (the outer catch deletes the order/group
-      // but never reverses a wallet debit). Credit back explicitly on that
-      // specific failure, matching the stock-rollback pattern used above.
+      // (f) Take payment through the ONE ledger primitive. payWithSettle()
+      // owns the debit-plus-ledger-row pair and its compensating rollback,
+      // so this path no longer hand-rolls a wallet mutation (WALLET_AUDIT.md
+      // P1-1). The vendor is deliberately NOT credited here — that happens
+      // at delivery via orderService.payoutVendor/settlePayout, so a
+      // cancellation never has to claw back money the vendor already has.
       if (paymentMethod === 'wallet') {
-        await customerWallet.debit(totals.total);
-        let txn;
-        try {
-          txn = await WalletService.recordTransaction(customerWallet._id, {
-            type: 'debit',
-            amount: totals.total,
-            description: `Payment for order ${group.odexId}`,
-            source: 'shopping_payment',
-            status: 'completed',
-            relatedTo: { kind: 'OrderGroup', id: group._id },
-            metadata: { orderGroupId: String(group._id) },
-          });
-        } catch (txnErr) {
-          await customerWallet.credit(totals.total);
-          throw txnErr;
-        }
+        const { payerTransaction: txn } = await WalletService.payWithSettle({
+          payerType: 'User',
+          payerId: user._id,
+          amount: totals.total,
+          source: 'shopping_payment',
+          relatedTo: { kind: 'OrderGroup', id: group._id },
+          description: `Payment for order ${group.odexId}`,
+          idempotencyKey: `shoppay-${group._id}`,
+          metadata: { orderGroupId: String(group._id) },
+        });
         group.walletTransactionId = txn._id;
         group.paymentStatus = 'paid';
         for (const order of orders) {
@@ -206,7 +199,22 @@ const checkout = async (user, { addressId, shippingAddress, paymentMethod }) => 
       group.orders = orders.map((o) => o._id);
       await group.save();
     } catch (err) {
-      // Compensating rollback of created documents
+      // Compensating rollback of created documents. If the wallet was
+      // already debited (payment succeeded but a later write — e.g.
+      // group.save() — did not), give the money back BEFORE deleting the
+      // group: otherwise the customer is charged for an order that no
+      // longer exists, with only an orphaned ledger row to show for it.
+      if (paymentMethod === 'wallet' && group.paymentStatus === 'paid') {
+        await WalletService.refund({
+          ownerType: 'User',
+          ownerId: user._id,
+          amount: totals.total,
+          relatedTo: { kind: 'OrderGroup', id: group._id },
+          description: `Reversal — checkout failed for order ${group.odexId}`,
+          idempotencyKey: `shoprev-${group._id}`,
+          metadata: { orderGroupId: String(group._id), reason: err.message },
+        });
+      }
       await Order.deleteMany({ orderGroup: group._id });
       await OrderGroup.deleteOne({ _id: group._id });
       throw err;

@@ -9,6 +9,10 @@ jest.mock('../../../services/walletService', () => ({
   recordTransaction: jest.fn(),
   settlePayout: jest.fn(),
   reversePayout: jest.fn(),
+  // Customer refunds now go through the shared ledger primitive
+  // (WALLET_AUDIT.md P1-2) instead of wallet.credit() + recordTransaction.
+  refund: jest.fn().mockResolvedValue({ transaction: { _id: 'txnRefund' } }),
+  payWithSettle: jest.fn().mockResolvedValue({ payerTransaction: { _id: 'txnPay' } }),
 }));
 jest.mock('../models/Brand', () => ({ findById: jest.fn() }));
 jest.mock('../models/Product', () => ({ updateOne: jest.fn(), findById: jest.fn() }));

@@ -5,6 +5,10 @@
 jest.mock('../../../services/walletService', () => ({
   getOrCreateWallet: jest.fn(),
   recordTransaction: jest.fn().mockResolvedValue({ _id: 'txn1' }),
+  // The payer leg and refunds now go through the shared ledger primitives
+  // rather than a hand-rolled wallet.debit()/credit() (WALLET_AUDIT.md P1-1/P1-2).
+  payWithSettle: jest.fn().mockResolvedValue({ payerTransaction: { _id: 'txn1' } }),
+  refund: jest.fn().mockResolvedValue({ transaction: { _id: 'txnRefund' } }),
 }));
 jest.mock('../models/Doctor', () => ({ findById: jest.fn(), findOne: jest.fn() }));
 jest.mock('../models/Appointment', () => ({}));
@@ -115,11 +119,20 @@ describe('payAppointment', () => {
   });
 
   it('debits the wallet and marks paid on success', async () => {
-    const debit = jest.fn().mockResolvedValue(true);
-    WalletService.getOrCreateWallet.mockResolvedValue({ _id: 'w1', balance: 5000, debit });
+    WalletService.getOrCreateWallet.mockResolvedValue({ _id: 'w1', balance: 5000 });
     const apt = makeAppointment();
     await payAppointment(apt, user, 'wallet');
-    expect(debit).toHaveBeenCalledWith(2000);
+    // The payer leg goes through the shared ledger primitive, which owns the
+    // debit AND its ledger row — assert the contract, not a raw wallet.debit().
+    expect(WalletService.payWithSettle).toHaveBeenCalledWith(
+      expect.objectContaining({
+        payerType: 'User',
+        payerId: 'patient1',
+        amount: 2000,
+        source: 'healthcare_payment',
+        relatedTo: { kind: 'Appointment', id: 'apt1' },
+      })
+    );
     expect(apt.payment.status).toBe('paid');
     expect(apt.payment.method).toBe('wallet');
     expect(apt.save).toHaveBeenCalled();

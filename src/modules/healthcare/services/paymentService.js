@@ -90,14 +90,16 @@ const payAppointment = async (appointment, user, method) => {
       `Insufficient wallet balance: you have PKR ${wallet.balance} but the consultation fee is PKR ${amount}`
     );
   }
-  await wallet.debit(amount);
-  const txn = await WalletService.recordTransaction(wallet._id, {
-    type: 'debit',
+  // Payer leg through the ONE ledger primitive (WALLET_AUDIT.md P1-1). The
+  // doctor is credited later, at completion, via settleCompletedAppointment.
+  const { payerTransaction: txn } = await WalletService.payWithSettle({
+    payerType: 'User',
+    payerId: user._id,
     amount,
-    description: `Consultation fee for appointment ${appointment._id}`,
     source: 'healthcare_payment',
-    status: 'completed',
     relatedTo: { kind: 'Appointment', id: appointment._id },
+    description: `Consultation fee for appointment ${appointment._id}`,
+    idempotencyKey: `hcpay-${appointment._id}`,
     metadata: { appointmentId: String(appointment._id) },
   });
 
@@ -138,15 +140,13 @@ const refundAppointment = async (appointment, { cancelledBy, reason, ratioOverri
   }
   if (refund <= 0) return 0;
 
-  const wallet = await WalletService.getOrCreateWallet(appointment.patientId, 'User');
-  await wallet.credit(refund);
-  await WalletService.recordTransaction(wallet._id, {
-    type: 'credit',
+  await WalletService.refund({
+    ownerType: 'User',
+    ownerId: appointment.patientId,
     amount: refund,
-    description: reason || `Refund for cancelled appointment ${appointment._id}`,
-    source: 'refund',
-    status: 'completed',
     relatedTo: { kind: 'Appointment', id: appointment._id },
+    description: reason || `Refund for cancelled appointment ${appointment._id}`,
+    idempotencyKey: `hcrefund-${appointment._id}`,
     metadata: { appointmentId: String(appointment._id) },
   });
 
