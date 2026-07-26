@@ -229,6 +229,50 @@ strand the user — deferred to Prompt 6 polish rather than expanded here.
 **`ShopColors` is redefined locally in 20 shopping screens** — flagged for Prompt 6, not touched
 here (it is a refactor, not a bug fix).
 
+## 7c. PROMPT 3 — vendor path: status
+
+**`scripts/shopping-vendor-gate.js`: 40/40 PASS.**
+
+| Area | Result |
+|---|---|
+| Dashboard / product validation | rejects missing fields, negative price, `salePrice > basePrice` |
+| Inventory | single update persists exactly and writes an `InventoryLog`; negative stock rejected 400 |
+| **Isolation, BOTH directions** | Outfitters→Cougar **and** Cougar→Outfitters: modify/delete product, read/modify order, modify inventory — **all 404**, target stock verified unchanged |
+| Lifecycle | `pending → confirmed → processing → shipped (tracking) → out_for_delivery → delivered` |
+| Illegal transition | `pending → delivered` rejected: *"Cannot move an order from 'pending' to 'delivered'"* |
+| Earnings | credited on delivery minus commission (+1,034 net, 115 commission) |
+| **Shared wallet** | earnings land in the polymorphic wallet `ownerType: Provider`, and the same balance is served by `/wallet/me` — **not** a shopping-only balance |
+| Return loop | stock restored exactly (+1); customer credited 1,149; vendor earning reversed −1,034; commission reversed −115 |
+
+**D-1 FIXED** — `applyStockChange` now returns `status: 404` for a variant that isn't the caller's
+(a cross-tenant reference is "no such variant for you", not a malformed request) and keeps 400 for
+genuinely bad input. Verified: cross-tenant inventory writes now return **404** in both directions.
+
+**Analytics hand-verified** against the DB using each figure's real definition:
+
+| Figure | API | DB | |
+|---|---|---|---|
+| revenue (delivered only) | 14,198 | 14,198 | ✅ |
+| order count (all) | 19 | 19 | ✅ |
+| avgOrderValue | 2,567 | 2,567 | ✅ |
+| returnsCount | 5 | 5 | ✅ |
+| refundsAmount | 9,544 | 9,544 | ✅ |
+| deliveryRate (delivered / closed) | 45.5% | 45.5% | ✅ |
+| dashboard products | 30 | 30 | ✅ |
+
+> **A correction.** I initially flagged `avgOrderValue` and `deliveryRate` as wrong because they
+> matched neither revenue/delivered nor delivered/all. Reading the controller showed both are
+> deliberate and reproduce exactly: AOV is the mean of **all** order totals, and deliveryRate is
+> delivered ÷ **closed** (delivered+cancelled+returned+refunded). The code was right.
+>
+> **P2 worth noting, not a bug:** `totalRevenue` counts only delivered orders while
+> `avgOrderValue` averages all orders, so the two use different bases. Defensible, but a viewer
+> comparing them will not get `revenue / orders = AOV`.
+
+**Also corrected:** the first version of this gate looked for flat `totalOrders`/`totalRevenue`
+keys, found them nested under `summary`, and passed every analytics check as "not exposed" —
+i.e. vacuously. It now asserts the real nested values.
+
 ## 8. Recommended plan for the remaining prompts
 
 Given P0 = 0, the pack's "cut vendor or admin scope" contingency is **not needed**.

@@ -217,12 +217,16 @@ const getInventory = asyncHandler(async (req, res) => {
 });
 
 const applyStockChange = async (brand, actor, { variantId, stockQuantity, reason }) => {
+  // The lookup is scoped by brandId, so a variant belonging to ANOTHER vendor
+  // simply isn't found — that is what enforces tenant isolation here. Report
+  // it as 404, not 400: a cross-tenant reference is "no such variant for you",
+  // not a malformed request. (WALLET/SHOPPING triage D-1.)
   const product = await Product.findOne({ brandId: brand._id, 'variants._id': variantId });
-  if (!product) return { ok: false, reason: `Variant ${variantId} not found` };
+  if (!product) return { ok: false, status: 404, reason: `Variant ${variantId} not found` };
   const variant = product.variants.id(variantId);
   const newQuantity = Number(stockQuantity);
   if (Number.isNaN(newQuantity) || newQuantity < 0) {
-    return { ok: false, reason: 'stockQuantity must be a non-negative number' };
+    return { ok: false, status: 400, reason: 'stockQuantity must be a non-negative number' };
   }
   const delta = newQuantity - variant.stockQuantity;
   variant.stockQuantity = newQuantity;
@@ -247,7 +251,7 @@ const updateStock = asyncHandler(async (req, res) => {
     stockQuantity: req.body.stockQuantity,
     reason: req.body.reason,
   });
-  if (!result.ok) return fail(res, 400, result.reason);
+  if (!result.ok) return fail(res, result.status || 400, result.reason);
   return res.json({ success: true });
 });
 
