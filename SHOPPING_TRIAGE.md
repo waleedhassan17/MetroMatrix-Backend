@@ -197,6 +197,38 @@ Money moves at two distinct lifecycle points by design: the customer pays at **c
 vendor earns at **delivery**. Verified end to end by `scripts/wallet-qa-gate.js` (34/34) — Prompt 5
 will extend rather than duplicate that.
 
+## 7b. PROMPT 2 — customer path: status
+
+**Backend integrity gate (`scripts/shopping-customer-gate.js`): 22/22 PASS.**
+Steps 8 and 10 in full, with real numbers — see the commit message and §7 for the write points.
+
+| Customer defect | Status |
+|---|---|
+| Backend happy path (browse → cart → coupon → checkout → orders → tracking) | **Fixed / verified** — was already green, now covered by an assertion script |
+| Rupee-exact multi-brand split | **Verified** — children 5,633 == group 5,633, discount 405 == 405, shipping 150 == 150 |
+| Stock decrement per variant | **Verified** — 11→9 (ordered 2), 24→23 (ordered 1) |
+| Money conservation | **Verified** — debit 5,633 == 2,199 + 2,871 + 563 commission |
+| Cart cleared, coupon `usedCount` incremented | **Verified** — 0 items remain; 2 → 3 |
+| Negative cases (empty cart, out-of-stock-after-add, insufficient balance) | **Verified** — all blocked, no partial debit, no stock change |
+| **C-1** BrandStore never rendered `error` — a failed load left a blank screen | **Fixed** |
+| **C-2** BrandStore cart badge hardcoded `cartItemCount = 0` | **Fixed** — now reads `selectCartItemCount` |
+| **C-3** ProductSearch showed *"No results found"* on a failed request | **Fixed** — error is now distinguishable from no matches |
+| **C-4** ProductReviews rendered an empty list on failure, implying "no reviews" | **Fixed** |
+| **C-5** ProductList showed *"No products found"* on a failed fetch | **Fixed** |
+| **C-6** Cart claimed *"Your cart is empty"* while loading **and** on failure | **Fixed** — the most alarming of the set; a shopper reads it as "I lost my items" |
+
+New shared component `components/Shopping/ScreenState.tsx` (LoadingState / ErrorState /
+EmptyState) matching the idiom of the screens that already did this well.
+
+**Still open (not blocking a demo):** `AddressSelection`, `CheckoutAddress`, `CheckoutPayment`,
+`CheckoutReview` show errors but have no retry affordance; `CheckoutDelivery`, `PaymentSelection`,
+`OrderConfirmation`, `ReturnRequest`, `WriteReview` have no error branch. These are
+selection/form screens operating on already-loaded data, so a failure is far less likely to
+strand the user — deferred to Prompt 6 polish rather than expanded here.
+
+**`ShopColors` is redefined locally in 20 shopping screens** — flagged for Prompt 6, not touched
+here (it is a refactor, not a bug fix).
+
 ## 8. Recommended plan for the remaining prompts
 
 Given P0 = 0, the pack's "cut vendor or admin scope" contingency is **not needed**.
