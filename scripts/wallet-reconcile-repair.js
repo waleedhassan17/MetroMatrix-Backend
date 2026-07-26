@@ -43,14 +43,16 @@ const DRY = process.argv.includes('--dry');
     const diff = w.balance - net;
     if (diff === 0) continue;
 
-    const existing = await WalletTransaction.findOne({
+    // Idempotency comes from `diff === 0` above, NOT from "has this wallet
+    // ever been adjusted before?". An earlier version skipped any wallet that
+    // already carried an adjustment row, which meant a wallet that drifted
+    // AGAIN afterwards could never be repaired — it stayed permanently
+    // broken while the script cheerfully reported success. Re-running on a
+    // reconciled wallet is already a no-op.
+    const priorAdjustments = await WalletTransaction.countDocuments({
       wallet: w._id,
       'metadata.openingBalanceAdjustment': true,
     });
-    if (existing) {
-      skipped += 1;
-      continue;
-    }
 
     console.log(
       `${DRY ? '[dry] ' : ''}${w.ownerType} ${w.owner}: balance ${w.balance}, ledger ${net} → ` +
@@ -69,6 +71,7 @@ const DRY = process.argv.includes('--dry');
         status: 'completed',
         metadata: {
           openingBalanceAdjustment: true,
+          adjustmentSequence: priorAdjustments + 1,
           balanceAtRepair: w.balance,
           ledgerNetAtRepair: net,
           repairedAt: new Date(),

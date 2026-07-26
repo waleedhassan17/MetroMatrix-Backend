@@ -140,6 +140,17 @@ const createCheckoutSession = asyncHandler(async (req, res) => {
   // cents at the fixed rate documented in config/currency.js / WALLET_DESIGN.md.
   const usdCents = pkrToUsdCents(amount);
 
+  // Stripe rejects a session whose success_url has no scheme. When
+  // STRIPE_BACKEND_URL was unset this interpolated to the literal string
+  // "undefined/api/wallet/topup/success", and EVERY top-up died at session
+  // creation with "Invalid URL: An explicit scheme (such as https) must be
+  // provided" — which is exactly what was happening in production. Fall back
+  // to the request's own origin (the same fallback the Connect onboarding
+  // path at getConnectStatus has always used) so a missing env var degrades
+  // instead of taking wallet top-ups down entirely.
+  const backendUrl =
+    process.env.STRIPE_BACKEND_URL || `${req.protocol}://${req.get('host')}`;
+
   // Create Stripe checkout session
   const session = await stripe.checkout.sessions.create({
     payment_method_types: ['card'],
@@ -156,8 +167,8 @@ const createCheckoutSession = asyncHandler(async (req, res) => {
         quantity: 1,
       },
     ],
-    success_url: `${process.env.STRIPE_BACKEND_URL}/api/wallet/topup/success?session_id={CHECKOUT_SESSION_ID}`,
-    cancel_url: `${process.env.STRIPE_BACKEND_URL}/api/wallet/topup/cancel`,
+    success_url: `${backendUrl}/api/wallet/topup/success?session_id={CHECKOUT_SESSION_ID}`,
+    cancel_url: `${backendUrl}/api/wallet/topup/cancel`,
     metadata: {
       ownerId: String(ownerId),
       ownerType,
