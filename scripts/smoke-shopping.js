@@ -17,11 +17,11 @@ const api = axios.create({ baseURL: `${BASE}/api`, validateStatus: () => true })
 
 const CUSTOMER = { email: 'customer.demo@metromatrix.pk', password: 'Customer@123' };
 const VENDORS = {
-  // brand slug → vendor login (from seed-shopping.js)
+  // brand slug → vendor login (from seed-shopping.js). The seed now ships the
+  // real scraped Cougar + Outfitters catalogue; the older synthetic brands
+  // (khaadi / servis-steps / techmart) are no longer seeded.
+  cougar: { email: 'vendor.cougar@metromatrix.pk', password: 'Vendor@123' },
   outfitters: { email: 'vendor.outfitters@metromatrix.pk', password: 'Vendor@123' },
-  khaadi: { email: 'vendor.khaadi@metromatrix.pk', password: 'Vendor@123' },
-  'servis-steps': { email: 'vendor.servis@metromatrix.pk', password: 'Vendor@123' },
-  techmart: { email: 'vendor.techmart@metromatrix.pk', password: 'Vendor@123' },
 };
 
 let passed = 0;
@@ -66,31 +66,52 @@ const auth = (token) => ({ headers: { Authorization: `Bearer ${token}` } });
   step('filter products (brand B)', res.status === 200 && productsB.length > 0, `${productsB.length} products`);
   if (!productsA.length || !productsB.length) bail('products missing', 'seed data incomplete');
 
-  const pickVariant = (p) => p.variants.find((v) => v.stockQuantity > 0);
-  const pA = productsA.find(pickVariant);
-  const pB = productsB.find(pickVariant);
+  // The real scraped catalogue has plenty of variants sitting at 0 stock, and
+  // some with only a single unit — so a variant must be picked for the
+  // quantity actually being ordered, not merely "in stock at all".
+  const pickVariant = (p, need = 1) => p.variants.find((v) => v.stockQuantity >= need);
+  const QTY_A = 1;
+  const QTY_B = 2;
+  const pA = productsA.find((p) => pickVariant(p, QTY_A));
+  const pB = productsB.find((p) => pickVariant(p, QTY_B));
+  if (!pA || !pB) bail('find in-stock products in both brands', 'seed may need re-running');
 
   // 4. Clear cart, then add 2 items from 2 different brands
   await api.delete('/shopping/cart', auth(customerToken));
   res = await api.post(
     '/shopping/cart/items',
-    { productId: pA.productId, variantId: pickVariant(pA).variantId, quantity: 1 },
+    { productId: pA.productId, variantId: pickVariant(pA, QTY_A).variantId, quantity: QTY_A },
     auth(customerToken)
   );
   const okA = res.status === 200;
   res = await api.post(
     '/shopping/cart/items',
-    { productId: pB.productId, variantId: pickVariant(pB).variantId, quantity: 2 },
+    { productId: pB.productId, variantId: pickVariant(pB, QTY_B).variantId, quantity: QTY_B },
     auth(customerToken)
   );
   const cart = res.data?.data;
   const brandCount = cart ? new Set(cart.items.map((i) => i.brandId)).size : 0;
   step('add items from 2 different brands to cart', okA && res.status === 200 && brandCount === 2, `cart has ${cart?.items.length} lines from ${brandCount} brands, total PKR ${cart?.total}`);
 
-  // 5. Apply coupon (platform-wide WELCOME10 from seed)
-  res = await api.post('/shopping/cart/coupon', { couponCode: 'WELCOME10' }, auth(customerToken));
-  const couponOk = res.status === 200 && res.data?.data?.discount > 0;
-  step('apply coupon WELCOME10', couponOk, couponOk ? `discount PKR ${res.data.data.discount}` : JSON.stringify(res.data).slice(0, 100));
+  // 5. Apply a coupon. The current seed ships brand-scoped coupons rather
+  // than the old platform-wide WELCOME10, so try the ones that match the
+  // brands actually in the cart.
+  const COUPONS = ['COUGAR15', 'OUTFIT20'];
+  let couponOk = false;
+  let couponUsed = null;
+  for (const code of COUPONS) {
+    res = await api.post('/shopping/cart/coupon', { couponCode: code }, auth(customerToken));
+    if (res.status === 200 && res.data?.data?.discount > 0) {
+      couponOk = true;
+      couponUsed = code;
+      break;
+    }
+  }
+  step(
+    'apply a seeded coupon',
+    couponOk,
+    couponOk ? `${couponUsed} → discount PKR ${res.data.data.discount}` : JSON.stringify(res.data).slice(0, 100)
+  );
 
   // 6. Checkout with wallet
   res = await api.get('/shopping/addresses', auth(customerToken));

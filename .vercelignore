@@ -1,0 +1,15 @@
+# Vercel uploads by its own rules, not .gitignore, so the ~15MB of raw
+# scraped brand feeds under scripts/scraped/*/ was being pushed on every
+# deploy and failing the upload. None of it is needed at runtime: the
+# serverless function is api/index.js + src/** (see vercel.json), and the
+# seed scripts only ever run locally against Atlas.
+scripts/scraped/*/
+
+# Local-only tooling and docs — never executed by the deployed function.
+scripts/
+*.md
+!README.md
+coverage/
+.env
+.env.*
+wallet-qa-results.json
