@@ -188,14 +188,12 @@ const refundBooking = asyncHandler(async (req, res) => {
     throw new Error('Refund amount must be positive');
   }
 
-  const wallet = await WalletService.getOrCreateWallet(b.customer, 'User');
-  await wallet.credit(refundAmount);
-  const tx = await WalletService.recordTransaction(wallet._id, {
-    type: 'credit',
+  const { transaction: tx } = await WalletService.refund({
+    ownerType: 'User',
+    ownerId: b.customer,
     amount: refundAmount,
+    relatedTo: { kind: 'Booking', id: b._id },
     description: `Admin refund — booking ${b._id}: ${reason}`,
-    source: 'refund',
-    status: 'completed',
     metadata: { bookingId: String(b._id), adminId: String(req.user._id) },
   });
 
@@ -297,29 +295,28 @@ const resolveDispute = asyncHandler(async (req, res) => {
   }
 
   if (refundAmount && Number(refundAmount) > 0 && d.booking) {
-    const wallet = await WalletService.getOrCreateWallet(d.booking.customer, 'User');
-    await wallet.credit(Number(refundAmount));
-    await WalletService.recordTransaction(wallet._id, {
-      type: 'credit',
+    await WalletService.refund({
+      ownerType: 'User',
+      ownerId: d.booking.customer,
       amount: Number(refundAmount),
+      relatedTo: { kind: 'Booking', id: d.booking._id },
       description: `Dispute refund — booking ${d.booking._id}`,
-      source: 'refund',
-      status: 'completed',
       metadata: { disputeId: String(d._id), adminId: String(req.user._id) },
     });
     d.refundAmount = Number(refundAmount);
   }
 
   if (penalizeProvider && Number(penalizeProvider) > 0 && d.booking) {
-    const pWallet = await WalletService.getOrCreateWallet(d.booking.provider, 'Provider');
-    const penalty = Number(penalizeProvider);
-    if (pWallet.balance >= penalty) await pWallet.debit(penalty);
-    await WalletService.recordTransaction(pWallet._id, {
-      type: 'debit',
-      amount: penalty,
+    // debitOrDefer reports whether the money actually moved, so an
+    // uncollectable penalty is recorded 'pending' rather than 'completed'.
+    // (The old guard `pWallet.balance >= 0` was always true — every penalty
+    // read as collected even when the provider could not cover it.)
+    await WalletService.debitOrDefer({
+      ownerType: 'Provider',
+      ownerId: d.booking.provider,
+      amount: Number(penalizeProvider),
+      relatedTo: { kind: 'Booking', id: d.booking._id },
       description: `Dispute penalty — booking ${d.booking._id}`,
-      source: 'admin_adjustment',
-      status: pWallet.balance >= 0 ? 'completed' : 'pending',
       metadata: { disputeId: String(d._id), adminId: String(req.user._id) },
     });
   }
@@ -401,13 +398,16 @@ const decidePayoutRequest = asyncHandler(async (req, res) => {
       res.status(400);
       throw new Error('Provider balance no longer covers this payout');
     }
-    await wallet.debit(p.amount);
-    const tx = await WalletService.recordTransaction(wallet._id, {
-      type: 'debit',
+    // Through the shared primitive so the debit and its ledger row move as
+    // one unit, and an approval replayed by a double-click is idempotent.
+    const { payerTransaction: tx } = await WalletService.payWithSettle({
+      payerType: 'Provider',
+      payerId: p.provider,
       amount: p.amount,
-      description: `Payout approved (${p.method})`,
       source: 'payout',
-      status: 'completed',
+      relatedTo: { kind: 'PayoutRequest', id: p._id },
+      description: `Payout approved (${p.method})`,
+      idempotencyKey: `hspayout-${p._id}`,
       metadata: { payoutRequestId: String(p._id), adminId: String(req.user._id) },
     });
     p.status = 'approved';

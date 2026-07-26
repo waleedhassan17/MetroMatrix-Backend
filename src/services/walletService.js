@@ -608,6 +608,226 @@ class WalletService {
   }
 
   /**
+   * The PAYER leg for modules that pay at one lifecycle event (booking
+   * payment / checkout) and earn at a LATER one (appointment completion /
+   * order delivery) — the counterpart to settlePayout(), and the primitive
+   * that settle()'s doc comment has always pointed callers at.
+   *
+   * Debits the payer and writes the payer-side WalletTransaction as ONE
+   * unit: the balance mutation is atomic ($inc with a >= guard), and if the
+   * ledger write fails afterwards the debit is credited straight back, so
+   * there is never a state where money left a wallet with no ledger row to
+   * explain it. Every module previously hand-rolled exactly this dance;
+   * centralising it means a payment path cannot forget the rollback.
+   *
+   * No payee is credited here by design — see settlePayout()'s doc comment
+   * for why the provider must not receive money before the service is
+   * rendered.
+   *
+   * @param {Object} params
+   * @param {string} params.payerType - 'User' | 'Provider'
+   * @param {string} params.payerId
+   * @param {number} params.amount - gross amount in PKR
+   * @param {string} params.source - one of the *_payment source values
+   * @param {{kind:string,id:string}} params.relatedTo
+   * @param {string} [params.description]
+   * @param {string} [params.idempotencyKey]
+   * @param {Object} [params.metadata]
+   * @returns {Promise<Object>} { payerWallet, payerTransaction, alreadyProcessed }
+   */
+  static async payWithSettle({
+    payerType,
+    payerId,
+    amount,
+    source,
+    relatedTo,
+    description = 'Payment',
+    idempotencyKey,
+    metadata,
+  }) {
+    if (!['User', 'Provider'].includes(payerType)) throw new Error('Invalid payerType');
+    if (typeof amount !== 'number' || !Number.isFinite(amount) || amount <= 0) {
+      throw new Error('Amount must be a positive number');
+    }
+    if (!relatedTo || !relatedTo.kind || !relatedTo.id) {
+      throw new Error('payWithSettle() requires relatedTo: { kind, id }');
+    }
+
+    if (idempotencyKey) {
+      const existing = await WalletTransaction.findOne({ idempotencyKey });
+      if (existing) {
+        return {
+          payerWallet: await Wallet.findById(existing.wallet),
+          payerTransaction: existing,
+          alreadyProcessed: true,
+        };
+      }
+    }
+
+    const payerWallet = await this.getOrCreateWallet(payerId, payerType);
+
+    // Pre-check for a clean, user-facing error message. debitAtomic below is
+    // still the real guard — this check is not load-bearing under races.
+    if (payerWallet.balance < amount) {
+      throw new Error('Insufficient balance');
+    }
+
+    await Wallet.debitAtomic(payerWallet._id, amount);
+
+    let payerTransaction;
+    try {
+      payerTransaction = await WalletTransaction.create({
+        wallet: payerWallet._id,
+        type: 'debit',
+        amount,
+        currency: payerWallet.currency,
+        description,
+        source,
+        status: 'completed',
+        relatedTo,
+        idempotencyKey: idempotencyKey || undefined,
+        metadata,
+      });
+    } catch (err) {
+      // Ledger write failed after the money moved — put it back rather than
+      // leaving a silent, untraceable debit.
+      await Wallet.creditAtomic(payerWallet._id, amount);
+      throw err;
+    }
+
+    return {
+      payerWallet: await Wallet.findById(payerWallet._id),
+      payerTransaction,
+      alreadyProcessed: false,
+    };
+  }
+
+  /**
+   * Credit a refund back to a wallet and write the matching ledger row, as
+   * one unit with the same rollback discipline as payWithSettle(). Replaces
+   * the hand-rolled `wallet.credit()` + `recordTransaction()` pairs that
+   * were scattered across the shopping, healthcare and home-service refund
+   * paths (WALLET_AUDIT.md P1-2).
+   *
+   * @param {Object} params
+   * @param {string} params.ownerType - 'User' | 'Provider'
+   * @param {string} params.ownerId
+   * @param {number} params.amount - refund amount in PKR
+   * @param {{kind:string,id:string}} [params.relatedTo]
+   * @param {string} [params.description]
+   * @param {string} [params.source] - defaults to 'refund'
+   * @param {string} [params.idempotencyKey]
+   * @param {Object} [params.metadata]
+   * @returns {Promise<Object>} { wallet, transaction, alreadyProcessed }
+   */
+  static async refund({
+    ownerType,
+    ownerId,
+    amount,
+    relatedTo,
+    description = 'Refund',
+    source = 'refund',
+    idempotencyKey,
+    metadata,
+  }) {
+    if (!['User', 'Provider'].includes(ownerType)) throw new Error('Invalid ownerType');
+    if (typeof amount !== 'number' || !Number.isFinite(amount) || amount <= 0) {
+      throw new Error('Amount must be a positive number');
+    }
+
+    if (idempotencyKey) {
+      const existing = await WalletTransaction.findOne({ idempotencyKey });
+      if (existing) {
+        return {
+          wallet: await Wallet.findById(existing.wallet),
+          transaction: existing,
+          alreadyProcessed: true,
+        };
+      }
+    }
+
+    const wallet = await this.getOrCreateWallet(ownerId, ownerType);
+    await Wallet.creditAtomic(wallet._id, amount);
+
+    let transaction;
+    try {
+      transaction = await WalletTransaction.create({
+        wallet: wallet._id,
+        type: 'credit',
+        amount,
+        currency: wallet.currency,
+        description,
+        source,
+        status: 'completed',
+        relatedTo,
+        idempotencyKey: idempotencyKey || undefined,
+        metadata,
+      });
+    } catch (err) {
+      await Wallet.debitAtomic(wallet._id, amount);
+      throw err;
+    }
+
+    return {
+      wallet: await Wallet.findById(wallet._id),
+      transaction,
+      alreadyProcessed: false,
+    };
+  }
+
+  /**
+   * Debit a wallet if it can cover the amount; otherwise record the debt as
+   * a PENDING ledger row without mutating the balance (a wallet can never go
+   * negative — see the `min: 0` on the schema). Used for admin-imposed
+   * penalties, where the charge stands even if the provider cannot pay it
+   * right now; payout approval subtracts outstanding pending debits.
+   *
+   * Returns `collected` so the caller can never mislabel an uncollected
+   * debt as settled — the bug this replaced recorded every penalty as
+   * 'completed' because its guard (`balance >= 0`) was always true.
+   *
+   * @returns {Promise<Object>} { wallet, transaction, collected }
+   */
+  static async debitOrDefer({
+    ownerType,
+    ownerId,
+    amount,
+    relatedTo,
+    description = 'Debit',
+    source = 'admin_adjustment',
+    metadata,
+  }) {
+    if (!['User', 'Provider'].includes(ownerType)) throw new Error('Invalid ownerType');
+    if (typeof amount !== 'number' || !Number.isFinite(amount) || amount <= 0) {
+      throw new Error('Amount must be a positive number');
+    }
+
+    const wallet = await this.getOrCreateWallet(ownerId, ownerType);
+
+    let collected = false;
+    try {
+      await Wallet.debitAtomic(wallet._id, amount);
+      collected = true;
+    } catch (err) {
+      if (!/Insufficient balance/.test(err.message)) throw err;
+    }
+
+    const transaction = await WalletTransaction.create({
+      wallet: wallet._id,
+      type: 'debit',
+      amount,
+      currency: wallet.currency,
+      description,
+      source,
+      status: collected ? 'completed' : 'pending',
+      relatedTo,
+      metadata,
+    });
+
+    return { wallet: await Wallet.findById(wallet._id), transaction, collected };
+  }
+
+  /**
    * The payee+commission leg for modules that pay at one lifecycle event
    * (booking payment / checkout) and earn at a LATER one (appointment
    * completion / order delivery) — healthcare and shopping both work this
@@ -772,7 +992,7 @@ class WalletService {
     }
 
     // Debit wallet immediately (reserve funds)
-    await wallet.debit(amount);
+    await Wallet.debitAtomic(wallet._id, amount);
 
     const transaction = await WalletTransaction.create({
       wallet: wallet._id,
@@ -821,7 +1041,7 @@ class WalletService {
 
     const wallet = await Wallet.findById(tx.wallet);
     if (wallet) {
-      await wallet.credit(tx.amount);
+      await Wallet.creditAtomic(wallet._id, tx.amount);
     }
     tx.status = 'failed';
     tx.metadata = { ...(tx.metadata || {}), failureReason: reason, refundedAt: new Date() };

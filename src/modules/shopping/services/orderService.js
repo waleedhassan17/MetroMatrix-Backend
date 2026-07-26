@@ -127,17 +127,20 @@ const restoreStock = async (order) => {
   }
 };
 
-/** Credit the customer's wallet with the order total. */
+/**
+ * Credit the customer's wallet with the order total, through the shared
+ * ledger primitive (WALLET_AUDIT.md P1-2) so the credit and its ledger row
+ * move as one unit. Idempotent per order — a repeated cancel/refund cannot
+ * pay the customer twice.
+ */
 const refundToCustomer = async (order, description) => {
-  const wallet = await WalletService.getOrCreateWallet(order.userId, 'User');
-  await wallet.credit(order.total);
-  await WalletService.recordTransaction(wallet._id, {
-    type: 'credit',
+  await WalletService.refund({
+    ownerType: 'User',
+    ownerId: order.userId,
     amount: order.total,
-    description,
-    source: 'refund',
-    status: 'completed',
     relatedTo: { kind: 'Order', id: order._id },
+    description,
+    idempotencyKey: `shoprefund-${order._id}`,
     metadata: { shoppingOrderId: String(order._id), orderGroupId: String(order.orderGroup) },
   });
   order.paymentStatus = 'refunded';

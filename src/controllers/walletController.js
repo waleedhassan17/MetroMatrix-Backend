@@ -796,8 +796,14 @@ const requestPayout = asyncHandler(async (req, res) => {
       // Fallback: refund by transaction id if no stripe id was attached yet
       const reloaded = await WalletTransaction.findById(transaction._id);
       if (reloaded && reloaded.status === 'pending') {
-        const w = await WalletService.getOrCreateWallet(provider._id, 'Provider');
-        await w.credit(numAmount);
+        await WalletService.refund({
+          ownerType: 'Provider',
+          ownerId: provider._id,
+          amount: numAmount,
+          description: 'Payout reversal — Stripe transfer failed',
+          idempotencyKey: `payoutrev-${transaction._id}`,
+          metadata: { payoutTransactionId: String(transaction._id) },
+        });
         reloaded.status = 'failed';
         reloaded.metadata = {
           ...(reloaded.metadata || {}),
