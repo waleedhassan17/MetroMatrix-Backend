@@ -8,6 +8,8 @@ const Provider = require('../models/Provider');
 const {
   STRIPE_CHARGE_CURRENCY,
   PKR_PER_USD,
+  MIN_TOPUP_PKR,
+  MAX_TOPUP_PKR,
   pkrToUsdCents,
 } = require('../config/currency');
 
@@ -112,10 +114,19 @@ const getMyWallet = asyncHandler(async (req, res) => {
 const createCheckoutSession = asyncHandler(async (req, res) => {
   const { amount } = req.body; // whole PKR, matching every price shown in the app
 
-  // Validate amount
-  if (!amount || typeof amount !== 'number' || amount < 1 || amount > 10000) {
+  // Validate amount. Bounds live in config/currency.js so this guard and the
+  // route validator can never drift apart again (they had both kept the
+  // USD-era max of 10000 after the ledger moved to PKR).
+  if (
+    !amount ||
+    typeof amount !== 'number' ||
+    amount < MIN_TOPUP_PKR ||
+    amount > MAX_TOPUP_PKR
+  ) {
     res.status(400);
-    throw new Error('Amount must be a number between 1 and 10000 PKR');
+    throw new Error(
+      `Amount must be a number between ${MIN_TOPUP_PKR} and ${MAX_TOPUP_PKR} PKR`
+    );
   }
 
   const ownerId = req.user._id;

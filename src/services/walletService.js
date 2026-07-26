@@ -167,56 +167,43 @@ class WalletService {
       },
     });
 
-    // Check if this is a new transaction (not a duplicate)
-    const isNewTransaction = transaction.createdAt.getTime() === Date.now() ||
-                             (Date.now() - transaction.createdAt.getTime()) < 1000;
+    // CLAIM the transaction atomically: flip pending → completed in one
+    // operation and credit only if THIS call won the flip.
+    //
+    // This used to infer "is this a new transaction?" from
+    // `Date.now() - transaction.createdAt < 1000`. That was not just fragile,
+    // it silently LOST top-ups: against a remote database, more than a second
+    // can easily pass between inserting the row and reaching this check, and
+    // when it did the entire credit block was skipped — the webhook still
+    // returned 200, the ledger row sat at 'pending' forever, and the customer
+    // was charged by Stripe with no balance to show for it. Exactly the
+    // silent failure the raw-body fix was meant to end.
+    //
+    // The conditional update is also the concurrency guard: two deliveries of
+    // the same session can both reach here, but only one can match
+    // `status: { $ne: 'completed' }`, so the credit happens exactly once.
+    const claimed = await WalletTransaction.findOneAndUpdate(
+      { _id: transaction._id, status: { $ne: 'completed' } },
+      { $set: { status: 'completed' } },
+      { new: true }
+    );
 
-    if (isNewTransaction) {
-      // Guard against double-crediting: if a previous attempt already
-      // credited the wallet and only failed on a later step, this
-      // transaction's own status tells us so — do not blindly re-credit.
-      if (transaction.status === 'completed') {
-        return { wallet: await Wallet.findById(wallet._id), transaction };
-      }
-
-      let session;
+    if (claimed) {
       try {
-        session = await mongoose.startSession();
-      } catch (e) {
-        session = null;
-      }
-
-      const applyInSession = async (s) => {
-        // Atomic $inc credit AND the status flip both happen inside the
-        // same session, so a later failure rolls the credit back too —
-        // there is no window where the wallet is credited but the
-        // transaction still reads 'pending' (or vice versa).
-        await Wallet.creditAtomic(wallet._id, amount, s);
-        transaction.status = 'completed';
-        await transaction.save({ session: s });
-      };
-
-      try {
-        if (session) {
-          await session.withTransaction(() => applyInSession(session));
-        } else {
-          // No replica set available — best effort, sequential.
-          await Wallet.creditAtomic(wallet._id, amount);
-          transaction.status = 'completed';
-          await transaction.save();
-        }
+        await Wallet.creditAtomic(wallet._id, amount);
       } catch (err) {
-        transaction.status = 'failed';
-        await transaction.save();
+        // Could not move the money — release the claim so the row reflects
+        // reality and a Stripe retry can legitimately try again.
+        await WalletTransaction.findByIdAndUpdate(transaction._id, {
+          $set: { status: 'failed' },
+        });
         throw new Error(`Failed to apply top-up: ${err.message}`);
-      } finally {
-        if (session) await session.endSession();
       }
     }
 
     return {
-      wallet,
-      transaction,
+      wallet: await Wallet.findById(wallet._id),
+      transaction: claimed || transaction,
     };
   }
 
@@ -947,7 +934,7 @@ class WalletService {
     // else: provider already spent/paid out the balance — record the
     // reversal anyway so the ledger shows the intent; admin reconciliation
     // (Part F) will surface the shortfall rather than hiding it.
-    return WalletTransaction.create({
+    const reversal = await WalletTransaction.create({
       wallet: payeeWallet._id,
       type: 'debit',
       amount: original.amount,
@@ -958,6 +945,47 @@ class WalletService {
       relatedTo,
       metadata: { reversedTransactionId: String(original._id) },
     });
+
+    // Reverse the COMMISSION too. This method's contract always claimed to do
+    // this, but it never did: the customer got a full refund and the payee
+    // lost their net, while the Platform quietly kept its cut — inventing
+    // money on every refund and breaking reconciliation by exactly the
+    // commission each time.
+    const commissionTxn = await WalletTransaction.findOne({
+      'relatedTo.kind': relatedTo.kind,
+      'relatedTo.id': relatedTo.id,
+      source: 'commission',
+      type: 'credit',
+      status: 'completed',
+    });
+    if (commissionTxn) {
+      const platformWallet = await this.getPlatformWallet();
+      const alreadyReversed = await WalletTransaction.findOne({
+        wallet: platformWallet._id,
+        'relatedTo.kind': relatedTo.kind,
+        'relatedTo.id': relatedTo.id,
+        source: 'commission',
+        type: 'debit',
+      });
+      if (!alreadyReversed) {
+        if (platformWallet.balance >= commissionTxn.amount) {
+          await Wallet.debitAtomic(platformWallet._id, commissionTxn.amount);
+        }
+        await WalletTransaction.create({
+          wallet: platformWallet._id,
+          type: 'debit',
+          amount: commissionTxn.amount,
+          currency: platformWallet.currency,
+          description: `Commission reversal for ${relatedTo.kind} ${relatedTo.id}`,
+          source: 'commission',
+          status: 'completed',
+          relatedTo,
+          metadata: { reversedTransactionId: String(commissionTxn._id) },
+        });
+      }
+    }
+
+    return reversal;
   }
 
   /**

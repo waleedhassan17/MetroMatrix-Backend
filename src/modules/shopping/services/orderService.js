@@ -105,6 +105,12 @@ const transition = async (order, nextStatus, actor, { note, trackingNumber } = {
     }
     order.paymentStatus = 'refunded';
     await reverseVendorPayout(order);
+    // Returned goods go back into sellable inventory. Without this the money
+    // was reversed on every leg (customer, vendor, commission) but the units
+    // stayed deducted forever, so stock silently shrank with every return.
+    // Only reachable via delivered → returned → refunded ('cancelled' is
+    // terminal and restores stock on its own), so there is no double-restore.
+    await restoreStock(order);
   }
 
   await order.save();

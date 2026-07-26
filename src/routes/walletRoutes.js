@@ -3,6 +3,7 @@ const router = express.Router();
 const { body } = require('express-validator');
 const { protect } = require('../middleware/authMiddleware');
 const { validate } = require('../middleware/validate');
+const { MIN_TOPUP_PKR, MAX_TOPUP_PKR } = require('../config/currency');
 const {
   getMyWallet,
   getMyTransactions,
@@ -45,8 +46,8 @@ router.get('/transactions', getMyTransactions);
 // Create Stripe checkout session for top-up
 const checkoutValidationRules = [
   body('amount')
-    .isFloat({ min: 1, max: 10000 })
-    .withMessage('Amount must be between 1 and 10000'),
+    .isFloat({ min: MIN_TOPUP_PKR, max: MAX_TOPUP_PKR })
+    .withMessage(`Amount must be between ${MIN_TOPUP_PKR} and ${MAX_TOPUP_PKR} PKR`),
 ];
 router.post('/topup/checkout', checkoutValidationRules, validate, createCheckoutSession);
 
