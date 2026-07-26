@@ -25,3 +25,5 @@ TEAM_CREDENTIALS.md
 
 # Run artifact from scripts/shopping-triage-probe.js
 shopping-triage-results.json
+
+shopping-integrity-results.json
