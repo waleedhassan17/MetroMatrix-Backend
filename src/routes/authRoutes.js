@@ -33,6 +33,9 @@ const {
 } = require('../controllers/authController');
 const { protect } = require('../middleware/authMiddleware');
 const { validate } = require('../middleware/validate');
+const googleAuthStatus = require('../config/googleAuthStatus');
+const { isFirebaseInitialized } = require('../config/firebase');
+const facebookAuthStatus = require('../config/facebookAuthStatus');
 
 // ===== LOGGING MIDDLEWARE FOR DEBUGGING =====
 // Logs all auth requests with timestamp, method, URL, and body (excluding password)
@@ -98,9 +101,23 @@ router.post('/provider/resend-verification',
 );
 
 // ===== GOOGLE OAUTH ROUTES =====
+// Without this guard, passport.authenticate('google', ...) throws
+// synchronously ("Unknown authentication strategy \"google\"") when
+// GOOGLE_CLIENT_ID/SECRET are unset, because config/passport.js never
+// registers the strategy in that case — that would 500/crash the request
+// instead of failing cleanly. googleAuthStatus.configured mirrors exactly
+// whether the strategy was registered (set in config/passport.js).
 router.get('/google', (req, res, next) => {
+  if (!googleAuthStatus.configured) {
+    return res.status(503).json({
+      success: false,
+      message: 'Google login is not configured on this server.',
+      error: 'GOOGLE_AUTH_NOT_CONFIGURED',
+    });
+  }
+
   const { type = 'user' } = req.query;
-  
+
   passport.authenticate('google', {
     scope: ['profile', 'email'],
     state: type, // Pass type through state parameter
@@ -110,7 +127,15 @@ router.get('/google', (req, res, next) => {
 
 router.get('/google/callback',
   (req, res, next) => {
-    passport.authenticate('google', { 
+    if (!googleAuthStatus.configured) {
+      return res.status(503).json({
+        success: false,
+        message: 'Google login is not configured on this server.',
+        error: 'GOOGLE_AUTH_NOT_CONFIGURED',
+      });
+    }
+
+    passport.authenticate('google', {
       session: false,
       failureRedirect: `${process.env.CLIENT_URL || 'http://localhost:3000'}/auth/error`,
     })(req, res, next);
@@ -119,9 +144,20 @@ router.get('/google/callback',
 );
 
 // ===== FACEBOOK OAUTH ROUTES =====
+// Same guard as Google: without it, passport.authenticate('facebook', ...)
+// throws synchronously when FACEBOOK_APP_ID/SECRET are unset, because
+// config/passport.js never registers the strategy in that case.
 router.get('/facebook', (req, res, next) => {
+  if (!facebookAuthStatus.configured) {
+    return res.status(503).json({
+      success: false,
+      message: 'Facebook login is not configured on this server.',
+      error: 'FACEBOOK_AUTH_NOT_CONFIGURED',
+    });
+  }
+
   const { type = 'user' } = req.query;
-  
+
   passport.authenticate('facebook', {
     scope: ['email', 'public_profile'],
     state: type, // Pass type through state parameter
@@ -131,7 +167,15 @@ router.get('/facebook', (req, res, next) => {
 
 router.get('/facebook/callback',
   (req, res, next) => {
-    passport.authenticate('facebook', { 
+    if (!facebookAuthStatus.configured) {
+      return res.status(503).json({
+        success: false,
+        message: 'Facebook login is not configured on this server.',
+        error: 'FACEBOOK_AUTH_NOT_CONFIGURED',
+      });
+    }
+
+    passport.authenticate('facebook', {
       session: false,
       failureRedirect: `${process.env.CLIENT_URL || 'http://localhost:3000'}/auth/error`,
     })(req, res, next);
@@ -263,6 +307,27 @@ router.post('/manual-verify', manualVerifyEmail);
 
 // Get verification status by email (GET route)
 router.get('/verification-status/:email', getVerificationStatus);
+
+// ===== AUTH CONFIG HEALTH CHECK =====
+// GET /api/auth/health — confirm what's actually wired on THIS deployment
+// after setting env vars in Vercel and redeploying, without exposing any
+// secret values. This is what to hit before attempting the real browser/
+// mobile OAuth flow (see GOOGLE_AUTH_TEST.md).
+router.get('/health', (req, res) => {
+  res.status(200).json({
+    success: true,
+    nodeEnv: process.env.NODE_ENV || null,
+    google: {
+      configured: googleAuthStatus.configured,
+      callbackURL: googleAuthStatus.callbackURL,
+    },
+    facebook: {
+      configured: facebookAuthStatus.configured,
+      callbackURL: facebookAuthStatus.callbackURL,
+    },
+    firebaseAdminInitialized: isFirebaseInitialized(),
+  });
+});
 
 // OAuth success/error pages
 router.get('/success', (req, res) => {

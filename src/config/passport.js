@@ -5,6 +5,8 @@ const JwtStrategy = require('passport-jwt').Strategy;
 const ExtractJwt = require('passport-jwt').ExtractJwt;
 const User = require('../models/User');
 const Provider = require('../models/Provider');
+const googleAuthStatus = require('./googleAuthStatus');
+const facebookAuthStatus = require('./facebookAuthStatus');
 
 // JWT Strategy
 // Fallback keeps require() from crashing when JWT_SECRET is absent at build
@@ -36,14 +38,41 @@ passport.use(
 
 // Google Strategy
 if (process.env.GOOGLE_CLIENT_ID && process.env.GOOGLE_CLIENT_SECRET) {
+  // Prefer the explicit callback URL (set this in Vercel) over deriving it
+  // from BACKEND_URL, so the deployed URL doesn't silently drift when
+  // BACKEND_URL changes for unrelated reasons (Stripe redirects, etc).
+  const googleCallbackURL = process.env.GOOGLE_CALLBACK_URL
+    || `${process.env.BACKEND_URL || 'http://localhost:5000'}/api/auth/google/callback`;
+
+  googleAuthStatus.configured = true;
+  googleAuthStatus.callbackURL = googleCallbackURL;
+
+  console.log(`🔗 Google OAuth callback URL in effect: ${googleCallbackURL}`);
+
+  // Vercel/most serverless hosts leave NODE_ENV unset rather than 'production',
+  // so treat unset the same as production for this warning — a dev-looking
+  // callback URL in a real deployment is always wrong and Google will reject
+  // it as redirect_uri_mismatch.
+  const nodeEnv = process.env.NODE_ENV;
+  const looksLikeProduction = nodeEnv === 'production' || !nodeEnv;
+  const looksLikeDevUrl = googleCallbackURL.startsWith('http://') || googleCallbackURL.includes('localhost');
+  if (looksLikeProduction && looksLikeDevUrl) {
+    console.warn(
+      `⚠️⚠️⚠️  GOOGLE OAUTH MISCONFIGURED: callback URL "${googleCallbackURL}" looks like a local/dev URL ` +
+      `but NODE_ENV=${nodeEnv || '(unset)'}. Set GOOGLE_CALLBACK_URL to the deployed HTTPS URL ` +
+      `(https://metro-matrix-backend.vercel.app/api/auth/google/callback) or Google will reject real logins ` +
+      `with redirect_uri_mismatch.`
+    );
+  }
+
   passport.use(
     new GoogleStrategy(
       {
         clientID: process.env.GOOGLE_CLIENT_ID,
         clientSecret: process.env.GOOGLE_CLIENT_SECRET,
-        callbackURL: `${process.env.BACKEND_URL || 'http://localhost:5000'}/api/auth/google/callback`,
+        callbackURL: googleCallbackURL,
         passReqToCallback: true,
-        proxy: true, // Important for Heroku deployment
+        proxy: true, // Important behind Vercel's proxy layer too — keeps req.protocol accurate
       },
       async (req, accessToken, refreshToken, profile, done) => {
         try {
@@ -120,15 +149,40 @@ if (process.env.GOOGLE_CLIENT_ID && process.env.GOOGLE_CLIENT_SECRET) {
 
 // Facebook Strategy
 if (process.env.FACEBOOK_APP_ID && process.env.FACEBOOK_APP_SECRET) {
+  // Prefer the explicit callback URL (set this in Vercel) over deriving it
+  // from BACKEND_URL. This matters even more than for Google: the Facebook
+  // app has Strict Mode ON for redirect URIs, so this must match the
+  // console's Valid OAuth Redirect URIs character-for-character or Facebook
+  // rejects the whole flow before it reaches this code.
+  const facebookCallbackURL = process.env.FACEBOOK_CALLBACK_URL
+    || `${process.env.BACKEND_URL || 'http://localhost:5000'}/api/auth/facebook/callback`;
+
+  facebookAuthStatus.configured = true;
+  facebookAuthStatus.callbackURL = facebookCallbackURL;
+
+  console.log(`🔗 Facebook OAuth callback URL in effect: ${facebookCallbackURL}`);
+
+  const nodeEnv = process.env.NODE_ENV;
+  const looksLikeProduction = nodeEnv === 'production' || !nodeEnv;
+  const looksLikeDevUrl = facebookCallbackURL.startsWith('http://') || facebookCallbackURL.includes('localhost');
+  if (looksLikeProduction && looksLikeDevUrl) {
+    console.warn(
+      `⚠️⚠️⚠️  FACEBOOK OAUTH MISCONFIGURED: callback URL "${facebookCallbackURL}" looks like a local/dev URL ` +
+      `but NODE_ENV=${nodeEnv || '(unset)'}. With Strict Mode ON, Facebook will reject this outright — ` +
+      `set FACEBOOK_CALLBACK_URL to the deployed HTTPS URL ` +
+      `(https://metro-matrix-backend.vercel.app/api/auth/facebook/callback).`
+    );
+  }
+
   passport.use(
     new FacebookStrategy(
       {
         clientID: process.env.FACEBOOK_APP_ID,
         clientSecret: process.env.FACEBOOK_APP_SECRET,
-        callbackURL: `${process.env.BACKEND_URL || 'http://localhost:5000'}/api/auth/facebook/callback`,
+        callbackURL: facebookCallbackURL,
         profileFields: ['id', 'emails', 'name', 'picture.type(large)'],
         passReqToCallback: true,
-        proxy: true, // Important for Heroku deployment
+        proxy: true, // Important behind Vercel's proxy layer too
       },
       async (req, accessToken, refreshToken, profile, done) => {
         try {
@@ -204,7 +258,12 @@ if (process.env.FACEBOOK_APP_ID && process.env.FACEBOOK_APP_SECRET) {
   console.warn('⚠️  Facebook OAuth not configured - missing FACEBOOK_APP_ID or FACEBOOK_APP_SECRET'.yellow);
 }
 
-// Serialize/Deserialize (required by Passport even though we use JWT)
+// Serialize/Deserialize — kept only because passport.authenticate() checks
+// for these functions on a strategy that supports sessions; passport.session()
+// is never registered (see app.js — only passport.initialize()) and every
+// authenticate() call below passes { session: false }, so these never
+// actually run. Safe for Vercel's stateless serverless functions: no process
+// memory or session store is required between requests.
 passport.serializeUser((user, done) => {
   done(null, { id: user.id, type: user.constructor.modelName });
 });

@@ -11,6 +11,7 @@ const { generateTokens } = require('../utils/generateToken');
 const { sendEmail, emailTemplates } = require('../services/emailService');
 const EmailVerificationService = require('../services/emailVerificationService');
 const { verifyGoogleIdToken } = require('../config/firebase');
+const { isFacebookConfigured, validateFacebookAccessToken } = require('../config/facebook');
 
 // @desc    Register user
 // @route   POST /api/auth/register
@@ -466,6 +467,15 @@ const facebookAuth = asyncHandler(async (req, res) => {
 // @desc    Google login for mobile apps (Firebase ID Token verification)
 // @route   POST /api/auth/google-login
 // @access  Public
+//
+// COUPLING: verifyGoogleIdToken() checks the token's audience/issuer against
+// Firebase project FIREBASE_PROJECT_ID (metromatrix-c44c6). That only works
+// if the Google OAuth web client the mobile app signs in with belongs to
+// THAT SAME Firebase project — if someone points GOOGLE_CLIENT_ID at a
+// different GCP/Firebase project, every real Google login will fail
+// token verification (mapped to 401 below) even though the token is
+// perfectly valid for its own project. Check this coupling first if valid
+// logins start getting rejected.
 const googleLogin = asyncHandler(async (req, res) => {
   console.log('============ GOOGLE LOGIN DEBUG ============');
   console.log('Request received at:', new Date().toISOString());
@@ -520,7 +530,17 @@ const googleLogin = asyncHandler(async (req, res) => {
     // Determine model based on userType
     const Model = userType === 'provider' ? Provider : User;
 
-    // Find or create user/provider
+    // Single find-or-create, matched by Google sub id OR email.
+    //
+    // LINKING POLICY (Part D): a Google sign-in whose email already exists
+    // as a password account is AUTO-LINKED — we attach googleId to that
+    // existing document below rather than creating a second account or
+    // rejecting the login. This is a deliberate choice (not the "reject with
+    // 'already registered, sign in with password'" alternative): it means
+    // the same person can always get in with either method once they've
+    // used Google once, which matches this app's "any of Google/Facebook/
+    // password should just work" mobile UX. If that's ever unwanted, this
+    // is the one spot to change to reject-with-message instead.
     let user = await Model.findOne({
       $or: [{ googleId: uid }, { email: email.toLowerCase() }]
     });
@@ -530,7 +550,7 @@ const googleLogin = asyncHandler(async (req, res) => {
     if (!user) {
       // Create new user/provider
       console.log(`📝 Creating new ${userType}: ${email}`);
-      
+
       const userData = {
         email: email.toLowerCase(),
         fullName: name || email.split('@')[0],
@@ -554,9 +574,29 @@ const googleLogin = asyncHandler(async (req, res) => {
         userData.onboardingStatus = 'email_verified';
       }
 
-      user = await Model.create(userData);
-      isNewUser = true;
-      console.log(`✅ New ${userType} created via Google: ${email}`);
+      try {
+        user = await Model.create(userData);
+        isNewUser = true;
+        console.log(`✅ New ${userType} created via Google: ${email}`);
+      } catch (createError) {
+        // DB safeguard against the race: two concurrent Google logins for
+        // the same brand-new email both pass the findOne-not-found check,
+        // then both call create(). The email unique index lets only one
+        // insert win; the loser gets a MongoDB E11000 here instead of a
+        // second account. Re-fetch and continue as a normal login rather
+        // than surfacing a 500 for what is really just "you're logged in."
+        if (createError.code === 11000) {
+          console.warn(`⚠️ Concurrent Google signup race for ${email} — refetching the winner instead of duplicating`);
+          user = await Model.findOne({
+            $or: [{ googleId: uid }, { email: email.toLowerCase() }]
+          });
+          if (!user) {
+            throw createError; // Unexpected: unique violation but no doc found — surface the real error.
+          }
+        } else {
+          throw createError;
+        }
+      }
     } else {
       // Update existing user login info
       console.log(`✅ Existing ${userType} found: ${email}`);
@@ -623,18 +663,29 @@ const googleLogin = asyncHandler(async (req, res) => {
   } catch (error) {
     console.error('❌ Error in google-login:', error);
     console.error('Error stack:', error.stack);
-    
-    // More specific error messages
-    if (error.message?.includes('Firebase')) {
-      return res.status(401).json({ 
-        success: false, 
-        message: 'Invalid Google token. Please try signing in again.',
-        error: error.message 
+
+    // Not the caller's fault — env/config is broken (missing Firebase creds,
+    // or FIREBASE_PRIVATE_KEY failed to parse on Vercel). Fail clean with
+    // 503 so the app can show "try again later" instead of "wrong password".
+    if (error.code === 'FIREBASE_NOT_CONFIGURED') {
+      return res.status(503).json({
+        success: false,
+        message: 'Google sign-in is temporarily unavailable. Please try again shortly or use email/password.',
+        error: 'GOOGLE_AUTH_NOT_CONFIGURED',
       });
     }
-    
-    res.status(500).json({ 
-      success: false, 
+
+    // The token itself is invalid/expired/tampered.
+    if (error.code === 'INVALID_TOKEN') {
+      return res.status(401).json({
+        success: false,
+        message: 'Invalid Google token. Please try signing in again.',
+        error: error.message,
+      });
+    }
+
+    res.status(500).json({
+      success: false,
       message: 'Google login failed. Please try again.',
       error: error.message
     });
@@ -704,7 +755,22 @@ const googleSignup = asyncHandler(async (req, res) => {
       userData.isApproved = false;
     }
 
-    const user = await Model.create(userData);
+    // DB safeguard against the race: two concurrent /google-signup calls for
+    // the same brand-new email both pass the existingUser check above, then
+    // both try to create(). The email unique index lets only one insert
+    // win; the loser gets a MongoDB E11000 here — map it to the same clean
+    // 409 the explicit existingUser check above returns, instead of a 500.
+    let user;
+    try {
+      user = await Model.create(userData);
+    } catch (createError) {
+      if (createError.code === 11000) {
+        console.warn(`⚠️ Concurrent Google signup race for ${email} — responding 409 instead of duplicating`);
+        res.status(409);
+        throw new Error('An account with this email already exists. Please use login instead.');
+      }
+      throw createError;
+    }
     console.log(`✅ New ${userType} created via Google signup: ${email}`);
 
     // Generate tokens
@@ -749,13 +815,26 @@ const googleSignup = asyncHandler(async (req, res) => {
 
   } catch (error) {
     console.error('❌ Google signup error:', error.message);
-    
-    // Handle specific Firebase errors
+
+    // Not the caller's fault — env/config is broken. 503, not a crash.
+    if (error.code === 'FIREBASE_NOT_CONFIGURED') {
+      res.status(503);
+      throw new Error('Google sign-in is temporarily unavailable. Please try again shortly or use email/password.');
+    }
+
+    // The token itself is invalid/expired/tampered.
+    if (error.code === 'INVALID_TOKEN') {
+      res.status(401);
+      throw new Error('Invalid or expired Google token. Please try again.');
+    }
+
+    // Legacy string-matching fallback for any error not carrying a `.code`
+    // (kept for anything upstream that still throws a bare Error).
     if (error.message.includes('Firebase') || error.message.includes('token')) {
       res.status(401);
       throw new Error('Invalid or expired Google token. Please try again.');
     }
-    
+
     if (error.statusCode) {
       res.status(error.statusCode);
     }
@@ -766,6 +845,15 @@ const googleSignup = asyncHandler(async (req, res) => {
 // @desc    Facebook login for mobile apps (Access Token verification)
 // @route   POST /api/auth/facebook-login
 // @access  Public
+//
+// NO-EMAIL POLICY (Part D): Facebook may return no email — the user can
+// decline the email permission, or the account may simply have none. This
+// endpoint picks option (b): require email and return a clear, clean-failing
+// message rather than creating a facebookId-only account. Reasoning: email
+// is a required unique field elsewhere in this codebase (password reset,
+// notifications, the `email: unique` index on User/Provider), so silently
+// allowing a null-email account would just move the crash to some other
+// code path later. This never throws/crashes — it's a controlled 400.
 const facebookLogin = asyncHandler(async (req, res) => {
   const { accessToken, userType = 'user' } = req.body;
 
@@ -780,8 +868,23 @@ const facebookLogin = asyncHandler(async (req, res) => {
     throw new Error('Invalid userType. Must be "user" or "provider"');
   }
 
+  // Not the caller's fault — env/config is broken. Fail clean, not a crash,
+  // and skip the Graph API calls entirely rather than attempting them with
+  // undefined credentials.
+  if (!isFacebookConfigured()) {
+    return res.status(503).json({
+      success: false,
+      message: 'Facebook login is temporarily unavailable. Please try again shortly or use email/password.',
+      error: 'FACEBOOK_AUTH_NOT_CONFIGURED',
+    });
+  }
+
   try {
-    // Verify token with Facebook Graph API
+    // Validate the token belongs to THIS app before trusting anything else
+    // about it (see config/facebook.js for why /me alone isn't enough).
+    await validateFacebookAccessToken(accessToken);
+
+    // Now safe to fetch profile fields with the same token.
     const fbResponse = await axios.get(
       `https://graph.facebook.com/me`,
       {
@@ -804,7 +907,10 @@ const facebookLogin = asyncHandler(async (req, res) => {
     // Determine model based on userType
     const Model = userType === 'provider' ? Provider : User;
 
-    // Check if user/provider exists
+    // Single find-or-create, matched by Facebook id OR email — same linking
+    // policy as Google (Part E): a Facebook login whose email already
+    // exists as a password/Google account gets auto-linked (facebookId
+    // attached below) rather than creating a duplicate or being rejected.
     let user = await Model.findOne({
       $or: [{ facebookId }, { email: email.toLowerCase() }]
     });
@@ -819,6 +925,7 @@ const facebookLogin = asyncHandler(async (req, res) => {
         fullName: name || email.split('@')[0],
         profilePhoto: profilePhotoUrl,
         facebookId,
+        authProvider: 'facebook',
         isVerified: true, // Facebook accounts are pre-verified
         emailVerified: true,
         phoneNumber: '', // Required field - user needs to complete profile
@@ -832,8 +939,27 @@ const facebookLogin = asyncHandler(async (req, res) => {
         userData.isApproved = false;
       }
 
-      user = await Model.create(userData);
-      console.log(`✅ New ${userType} created via Facebook: ${email}`);
+      try {
+        user = await Model.create(userData);
+        console.log(`✅ New ${userType} created via Facebook: ${email}`);
+      } catch (createError) {
+        // DB safeguard against the race: two concurrent Facebook logins for
+        // the same brand-new identity both pass the findOne-not-found
+        // check, then both call create(). The email unique index lets only
+        // one insert win; re-fetch and continue as a normal login instead
+        // of surfacing a 500 for what is really "you're logged in."
+        if (createError.code === 11000) {
+          console.warn(`⚠️ Concurrent Facebook signup race for ${email} — refetching the winner instead of duplicating`);
+          user = await Model.findOne({
+            $or: [{ facebookId }, { email: email.toLowerCase() }]
+          });
+          if (!user) {
+            throw createError;
+          }
+        } else {
+          throw createError;
+        }
+      }
     } else {
       // Update existing user
       if (!user.facebookId) {
@@ -892,16 +1018,41 @@ const facebookLogin = asyncHandler(async (req, res) => {
   } catch (error) {
     console.error('❌ Facebook login error:', error.message);
 
-    // Handle Facebook API errors
+    // Not the caller's fault — env/config broken (shouldn't reach here given
+    // the guard above, but defense in depth if config changes mid-request).
+    if (error.code === 'FACEBOOK_NOT_CONFIGURED') {
+      return res.status(503).json({
+        success: false,
+        message: 'Facebook login is temporarily unavailable. Please try again shortly or use email/password.',
+        error: 'FACEBOOK_AUTH_NOT_CONFIGURED',
+      });
+    }
+
+    // The token itself is invalid/expired/not-ours (from validateFacebookAccessToken).
+    if (error.code === 'INVALID_TOKEN') {
+      res.status(401);
+      throw new Error(error.message || 'Invalid Facebook token. Please try signing in again.');
+    }
+
+    // Handle Facebook /me API errors (e.g. token expired between validate and fetch)
     if (error.response?.data?.error) {
       const fbError = error.response.data.error;
       console.error('Facebook API Error:', fbError);
-      
+
       res.status(401);
       throw new Error(fbError.message || 'Invalid Facebook token. Please try signing in again.');
     }
 
-    res.status(error.statusCode || 500);
+    // Preserve a status already set earlier in the try block (e.g. the 400
+    // for "no email" above) — only default to 500 for a status nothing set.
+    // (The original code unconditionally did `res.status(error.statusCode ||
+    // 500)` here, which silently clobbered that 400 back to 500 every time,
+    // since nothing in this file ever sets `error.statusCode`.)
+    if (error.statusCode) {
+      res.status(error.statusCode);
+    } else if (res.statusCode === 200) {
+      res.status(500);
+    }
     throw new Error(error.message || 'Facebook login failed. Please try again.');
   }
 });
@@ -923,8 +1074,19 @@ const facebookSignup = asyncHandler(async (req, res) => {
     throw new Error('Invalid userType. Must be "user" or "provider"');
   }
 
+  if (!isFacebookConfigured()) {
+    return res.status(503).json({
+      success: false,
+      message: 'Facebook login is temporarily unavailable. Please try again shortly or use email/password.',
+      error: 'FACEBOOK_AUTH_NOT_CONFIGURED',
+    });
+  }
+
   try {
-    // Verify token with Facebook Graph API
+    // Validate the token belongs to THIS app before trusting anything else.
+    await validateFacebookAccessToken(accessToken);
+
+    // Now safe to fetch profile fields with the same token.
     const fbResponse = await axios.get(
       `https://graph.facebook.com/me`,
       {
@@ -937,6 +1099,8 @@ const facebookSignup = asyncHandler(async (req, res) => {
 
     const { id: facebookId, name, email, picture } = fbResponse.data;
 
+    // No-email policy: see the comment above facebookLogin — same choice,
+    // same reasoning. Clean 400, never a null-email account.
     if (!email) {
       res.status(400);
       throw new Error('Email permission is required. Please grant email access in Facebook settings and try again.');
@@ -979,7 +1143,22 @@ const facebookSignup = asyncHandler(async (req, res) => {
       userData.isApproved = false;
     }
 
-    const user = await Model.create(userData);
+    // DB safeguard against the race: two concurrent /facebook-signup calls
+    // for the same brand-new identity both pass the existingUser check
+    // above, then both try create(). The email unique index lets only one
+    // insert win; map the loser's E11000 to the same clean 409 above
+    // instead of a 500.
+    let user;
+    try {
+      user = await Model.create(userData);
+    } catch (createError) {
+      if (createError.code === 11000) {
+        console.warn(`⚠️ Concurrent Facebook signup race for ${email} — responding 409 instead of duplicating`);
+        res.status(409);
+        throw new Error('An account with this email already exists. Please use login instead.');
+      }
+      throw createError;
+    }
     console.log(`✅ New ${userType} created via Facebook signup: ${email}`);
 
     // Generate tokens
@@ -1025,11 +1204,27 @@ const facebookSignup = asyncHandler(async (req, res) => {
   } catch (error) {
     console.error('❌ Facebook signup error:', error.message);
 
-    // Handle Facebook API errors
+    // Not the caller's fault — env/config broken (defense in depth; the
+    // guard above should already have caught this before any Graph API call).
+    if (error.code === 'FACEBOOK_NOT_CONFIGURED') {
+      return res.status(503).json({
+        success: false,
+        message: 'Facebook login is temporarily unavailable. Please try again shortly or use email/password.',
+        error: 'FACEBOOK_AUTH_NOT_CONFIGURED',
+      });
+    }
+
+    // The token itself is invalid/expired/not-ours.
+    if (error.code === 'INVALID_TOKEN') {
+      res.status(401);
+      throw new Error(error.message || 'Invalid Facebook token. Please try again.');
+    }
+
+    // Handle Facebook /me API errors (e.g. token expired between validate and fetch)
     if (error.response?.data?.error) {
       const fbError = error.response.data.error;
       console.error('Facebook API Error:', fbError);
-      
+
       res.status(401);
       throw new Error(fbError.message || 'Invalid Facebook token. Please try again.');
     }
