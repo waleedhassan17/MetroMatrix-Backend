@@ -69,7 +69,12 @@ class TransitionError extends Error {
  * append-only statusHistory, and runs side effects (COD payment capture,
  * vendor payout on delivered, stock restore on cancel).
  */
-const transition = async (order, nextStatus, actor, { note, trackingNumber } = {}) => {
+const transition = async (
+  order,
+  nextStatus,
+  actor,
+  { note, trackingNumber, stockAlreadyRestored = false } = {}
+) => {
   const check = assertActorAllowed(order.orderStatus, nextStatus, actor.role);
   if (!check.ok) throw new TransitionError(check.reason);
 
@@ -108,9 +113,14 @@ const transition = async (order, nextStatus, actor, { note, trackingNumber } = {
     // Returned goods go back into sellable inventory. Without this the money
     // was reversed on every leg (customer, vendor, commission) but the units
     // stayed deducted forever, so stock silently shrank with every return.
-    // Only reachable via delivered → returned → refunded ('cancelled' is
-    // terminal and restores stock on its own), so there is no double-restore.
-    await restoreStock(order);
+    //
+    // The vendor return flow restores stock itself, because a ReturnRequest
+    // knows which lines actually came back and a partial return must not put
+    // the whole order back. It passes stockAlreadyRestored so the two do not
+    // both fire — that double-restore inflated stock by the returned quantity
+    // on every refunded return. Admin force-transitions pass nothing and are
+    // still restored here.
+    if (!stockAlreadyRestored) await restoreStock(order);
   }
 
   await order.save();

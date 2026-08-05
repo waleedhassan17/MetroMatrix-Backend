@@ -129,7 +129,13 @@ const updateReturnRequest = asyncHandler(async (req, res) => {
       }
     }
     if (order && order.orderStatus === 'returned') {
-      await orderService.transition(order, 'refunded', actor, { note: 'Refund issued for return' });
+      // Stock for the returned lines went back above, using the request's own
+      // items so a partial return restores only what came back. Tell the state
+      // machine not to restore the whole order on top of that.
+      await orderService.transition(order, 'refunded', actor, {
+        note: 'Refund issued for return',
+        stockAlreadyRestored: true,
+      });
     }
   }
 

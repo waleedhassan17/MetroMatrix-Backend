@@ -260,16 +260,34 @@ const bulkUpdateStock = asyncHandler(async (req, res) => {
   if (!Array.isArray(req.body.updates) || req.body.updates.length === 0) {
     return fail(res, 400, 'updates[] is required');
   }
-  const results = [];
+  const applied = [];
+  const failed = [];
   for (const update of req.body.updates) {
     const result = await applyStockChange(
       req.brand,
       { id: req.user._id, role: 'vendor' },
       update
     );
-    results.push({ variantId: update.variantId, ...result });
+    if (result.ok) applied.push({ variantId: update.variantId, stockQuantity: Number(update.stockQuantity) });
+    else failed.push({ variantId: update.variantId, status: result.status || 400, reason: result.reason });
   }
-  return ok(res, results);
+
+  // Every rejected row used to come back inside a 200, so a bulk write that
+  // applied nothing — a variant belonging to another brand, say — looked like
+  // a success and the vendor saw "stock updated". Fail loudly instead, and name
+  // the rows that did land so a partial apply is never silent.
+  if (failed.length) {
+    const noneApplied = applied.length === 0;
+    return fail(
+      res,
+      noneApplied ? failed[0].status : 400,
+      noneApplied
+        ? 'No stock updates were applied'
+        : `${applied.length} of ${req.body.updates.length} stock updates applied, ${failed.length} failed`,
+      failed
+    );
+  }
+  return ok(res, applied);
 });
 
 module.exports = {
