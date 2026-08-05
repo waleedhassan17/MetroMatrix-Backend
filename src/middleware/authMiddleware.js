@@ -68,11 +68,17 @@ const protect = asyncHandler(async (req, res, next) => {
   }
 });
 
-// User only middleware
+// User only middleware. Name the account type the caller actually presented —
+// a bare "users only" gives the client no way to tell a wrong-token bug from a
+// genuinely wrong account, which is exactly how a stale admin/provider token
+// got mistaken for a broken cart.
 const userOnly = (req, res, next) => {
   if (req.isProvider || req.isAdmin) {
+    const actual = req.isAdmin ? 'an admin' : 'a provider';
     res.status(403);
-    throw new Error('This route is for users only');
+    throw new Error(
+      `This route is for user accounts only — you are signed in as ${actual}. Sign in with a user account to continue.`
+    );
   }
   next();
 };
