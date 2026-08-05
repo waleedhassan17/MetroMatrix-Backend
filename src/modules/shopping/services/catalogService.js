@@ -110,7 +110,15 @@ const listProducts = async (params, { page, limit, skip }) => {
     queryParams.brandId = brand._id;
   }
   if (params.categoryId && mongoose.isValidObjectId(params.categoryId)) {
-    queryParams.categoryId = new mongoose.Types.ObjectId(String(params.categoryId));
+    const categoryId = new mongoose.Types.ObjectId(String(params.categoryId));
+    // Categories are a 2-level tree and products hang off leaf categories only,
+    // while getBrandCategories rolls child counts up into the parent. Matching
+    // the id exactly meant tapping a parent the UI labelled "Men (6)" opened an
+    // empty store — so match its children too.
+    const children = await Category.find({ parentId: categoryId }).select('_id');
+    queryParams.categoryId = children.length
+      ? { $in: [categoryId, ...children.map((c) => c._id)] }
+      : categoryId;
   }
 
   const query = buildProductQuery(queryParams, activeBrands);
