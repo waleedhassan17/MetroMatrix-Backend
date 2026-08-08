@@ -5,13 +5,21 @@ const validate = (req, res, next) => {
   const errors = validationResult(req);
   
   if (!errors.isEmpty()) {
-    const extractedErrors = [];
-    errors.array().map((err) => extractedErrors.push({ [err.param]: err.msg }));
-    
+    // express-validator v7 renamed `param` to `path`. This still read `param`,
+    // so every entry serialised as {"undefined": "..."} — the field name was
+    // lost and clients looking for `message` found nothing, leaving them with
+    // a bare "Validation failed" and no way to see the real reason. Shape
+    // matches handleValidationErrors in the healthcare modules.
+    const details = errors.array().map((err) => ({
+      field: err.path ?? err.type ?? null,
+      message: err.msg,
+    }));
+
     return res.status(400).json({
       success: false,
       error: 'Validation failed',
-      errors: extractedErrors,
+      message: details.map((d) => d.message).join('; '),
+      errors: details,
     });
   }
   
