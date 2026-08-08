@@ -1,29 +1,51 @@
 const nodemailer = require('nodemailer');
 
+/**
+ * True when this deployment has real SMTP credentials configured.
+ *
+ * The transporter used to be chosen by NODE_ENV alone, so anything that
+ * wasn't `production` silently got a dummy Ethereal account and no mail ever
+ * reached a real inbox (task.md Issue 4, root cause A). Configuration — not
+ * the environment name — decides now: if you gave us a host/user, we send
+ * for real, whether that's local dev, staging or Vercel.
+ */
+const isSmtpConfigured = () =>
+  Boolean(process.env.EMAIL_HOST || process.env.EMAIL_USER);
+
 // Create transporter
 const createTransporter = () => {
-  if (process.env.NODE_ENV === 'production') {
-    // Production transporter (use your email service)
+  if (isSmtpConfigured()) {
+    const port = Number(process.env.EMAIL_PORT) || 587;
+
     return nodemailer.createTransport({
-      host: process.env.EMAIL_HOST,
-      port: process.env.EMAIL_PORT,
-      secure: false,
+      host: process.env.EMAIL_HOST || 'smtp.gmail.com',
+      port,
+      // 465 is implicit TLS; 587 is STARTTLS, which is what Gmail wants and
+      // which nodemailer upgrades to automatically when secure is false.
+      secure: port === 465,
       auth: {
         user: process.env.EMAIL_USER,
         pass: process.env.EMAIL_PASS,
       },
     });
-  } else {
-    // Development transporter (use Ethereal for testing)
-    return nodemailer.createTransport({
-      host: 'smtp.ethereal.email',
-      port: 587,
-      auth: {
-        user: 'ethereal.user@ethereal.email',
-        pass: 'ethereal.pass',
-      },
-    });
   }
+
+  // Nothing configured — fall back to Ethereal so dev doesn't crash. These
+  // credentials are not real, so sending will fail loudly rather than
+  // pretending to have delivered.
+  console.warn(
+    '⚠️  No SMTP configured (EMAIL_HOST/EMAIL_USER unset) — falling back to Ethereal. ' +
+    'No mail will reach real inboxes.'
+  );
+  return nodemailer.createTransport({
+    host: 'smtp.ethereal.email',
+    port: 587,
+    secure: false,
+    auth: {
+      user: 'ethereal.user@ethereal.email',
+      pass: 'ethereal.pass',
+    },
+  });
 };
 
 // Send email function
@@ -40,16 +62,21 @@ const sendEmail = async (options) => {
 
   try {
     const info = await transporter.sendMail(mailOptions);
-    
-    if (process.env.NODE_ENV === 'development') {
-      console.log('Message sent: %s', info.messageId);
+
+    // Worth a line in every environment: "did the mail actually go out" is
+    // the single most common question when debugging the signup flow.
+    console.log(`📨 Mail accepted for ${options.email} (messageId: ${info.messageId})`);
+
+    if (!isSmtpConfigured()) {
       console.log('Preview URL: %s', nodemailer.getTestMessageUrl(info));
     }
-    
+
     return info;
   } catch (error) {
+    // Keep the real reason — "Invalid login", "self signed certificate",
+    // ECONNREFUSED — instead of flattening every failure to one string.
     console.error('Email send error:', error);
-    throw new Error('Failed to send email');
+    throw new Error(`Failed to send email: ${error.message}`);
   }
 };
 
@@ -152,4 +179,6 @@ const emailTemplates = {
 module.exports = {
   sendEmail,
   emailTemplates,
+  createTransporter,
+  isSmtpConfigured,
 };

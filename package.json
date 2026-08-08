@@ -12,6 +12,8 @@
     "lint:fix": "eslint src/ --fix",
     "seed": "node scripts/seed.js",
     "smoke:wallet": "node scripts/smoke-wallet.js",
+    "smoke:auth-email": "node scripts/smoke-auth-email.js",
+    "smoke:auth": "node scripts/smoke-auth.js",
     "seed:shopping": "node scripts/seed-shopping.js",
     "smoke:shopping": "node scripts/smoke-shopping.js",
     "seed:healthcare": "node scripts/seed-healthcare.js",

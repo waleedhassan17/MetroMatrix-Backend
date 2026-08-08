@@ -1,6 +1,6 @@
 # MetroMatrix Backend API Documentation
 
-**Base URL:** `https://metromatrix-api-2e35f5f074df.herokuapp.com/api`
+**Base URL:** `https://metro-matrix-backend.vercel.app/api`
 
 **Version:** v73
 
@@ -1178,7 +1178,7 @@ Authorization: Bearer <accessToken>
 
 For API issues or questions:
 - **Email:** waleedhassansfd@gmail.com
-- **Base URL:** https://metromatrix-api-2e35f5f074df.herokuapp.com
+- **Base URL:** https://metro-matrix-backend.vercel.app
 
 ---
 

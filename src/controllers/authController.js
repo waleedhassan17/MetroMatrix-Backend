@@ -12,6 +12,15 @@ const { sendEmail, emailTemplates } = require('../services/emailService');
 const EmailVerificationService = require('../services/emailVerificationService');
 const { verifyGoogleIdToken } = require('../config/firebase');
 const { isFacebookConfigured, validateFacebookAccessToken } = require('../config/facebook');
+const { buildVerificationUrl, buildPublicUrl } = require('../utils/publicUrl');
+
+/**
+ * The one reply every password-reset request gets, real account or not, so
+ * the endpoint can't be used to discover which emails are registered.
+ */
+const GENERIC_RESET_MESSAGE = 'If an account exists, a reset code has been sent.';
+
+const { verifiedEmailFlag } = require('../utils/verificationFlags');
 
 // @desc    Register user
 // @route   POST /api/auth/register
@@ -55,12 +64,15 @@ const registerUser = asyncHandler(async (req, res) => {
       userType: 'user',
     });
     
-    // Create verification URL
-    const baseUrl = process.env.API_URL || process.env.CLIENT_URL || 'http://localhost:5000';
-    const verificationUrl = `${baseUrl}/verify-email?token=${token}&type=user`;
-    
+    // Create verification URL (backend's own public origin — see utils/publicUrl.js)
+    const verificationUrl = buildVerificationUrl(token, 'user');
+
     console.log('📧 Sending user signup verification email to:', email);
-    console.log('🔗 Verification URL:', verificationUrl);
+    // Contains the raw verification token — anyone with log access could
+    // verify the account. Non-production only.
+    if (process.env.NODE_ENV !== 'production') {
+      console.log('🔗 Verification URL:', verificationUrl);
+    }
     
     // Send verification email
     await sendEmail({
@@ -246,11 +258,14 @@ const registerProvider = asyncHandler(async (req, res) => {
   // 7. Try to send verification email (non-critical - provider can resend)
   let emailSent = false;
   try {
-    const baseUrl = process.env.API_URL || process.env.CLIENT_URL || 'http://localhost:5000';
-    const verificationUrl = `${baseUrl}/verify-email?token=${token}&type=provider`;
-    
+    const verificationUrl = buildVerificationUrl(token, 'provider');
+
     console.log('📧 Sending provider signup verification email to:', normalizedEmail);
-    console.log('🔗 Verification URL:', verificationUrl);
+    // Contains the raw verification token — anyone with log access could
+    // verify the account. Non-production only.
+    if (process.env.NODE_ENV !== 'production') {
+      console.log('🔗 Verification URL:', verificationUrl);
+    }
     
     await sendEmail({
       email: normalizedEmail,
@@ -477,11 +492,13 @@ const facebookAuth = asyncHandler(async (req, res) => {
 // perfectly valid for its own project. Check this coupling first if valid
 // logins start getting rejected.
 const googleLogin = asyncHandler(async (req, res) => {
-  console.log('============ GOOGLE LOGIN DEBUG ============');
+  // NB: never log req.body here — it carries the Firebase ID token verbatim,
+  // which is replayable until it expires. Log only its shape.
+  console.log('============ GOOGLE LOGIN ============');
   console.log('Request received at:', new Date().toISOString());
-  console.log('Request body:', JSON.stringify(req.body, null, 2));
-  console.log('===========================================');
-  
+  console.log('idToken present:', Boolean(req.body?.idToken), '| userType:', req.body?.userType || 'user');
+  console.log('======================================');
+
   const { idToken, userType = 'user' } = req.body;
 
   // Validate input
@@ -559,7 +576,9 @@ const googleLogin = asyncHandler(async (req, res) => {
         authProvider: 'google',
         isVerified: true,
         emailVerified: true,
-        phoneNumber: '',
+        // Left unset rather than '': the app prompts for it during profile
+        // completion. An empty string trips the phone-number validators.
+        phoneNumber: undefined,
         lastLoginDate: new Date(),
       };
 
@@ -571,7 +590,7 @@ const googleLogin = asyncHandler(async (req, res) => {
         userData.emailVerified = 'active';
         userData.adminVerified = 'pending';
         userData.status = 'email_verified';
-        userData.onboardingStatus = 'email_verified';
+        userData.onboardingStatus = 'pending_documents';
       }
 
       try {
@@ -744,7 +763,8 @@ const googleSignup = asyncHandler(async (req, res) => {
       authProvider: 'google',
       isVerified: true, // Google accounts are pre-verified
       emailVerified: true,
-      phoneNumber: '', // Required field - user needs to complete profile
+      // Left unset rather than '' — see the note in googleLogin.
+      phoneNumber: undefined, // Collected during profile completion
       lastLoginDate: new Date(),
     };
 
@@ -753,6 +773,12 @@ const googleSignup = asyncHandler(async (req, res) => {
       userData.providerType = 'pending';
       userData.canLogin = true;
       userData.isApproved = false;
+      // Provider.emailVerified is an enum, not a boolean — see
+      // utils/verificationFlags.js.
+      userData.emailVerified = 'active';
+      userData.adminVerified = 'pending';
+      userData.status = 'email_verified';
+      userData.onboardingStatus = 'pending_documents';
     }
 
     // DB safeguard against the race: two concurrent /google-signup calls for
@@ -928,7 +954,8 @@ const facebookLogin = asyncHandler(async (req, res) => {
         authProvider: 'facebook',
         isVerified: true, // Facebook accounts are pre-verified
         emailVerified: true,
-        phoneNumber: '', // Required field - user needs to complete profile
+        // Left unset rather than '' — see the note in googleLogin.
+      phoneNumber: undefined, // Collected during profile completion
         lastLoginDate: new Date(),
       };
 
@@ -937,6 +964,13 @@ const facebookLogin = asyncHandler(async (req, res) => {
         userData.providerType = 'pending';
         userData.canLogin = true;
         userData.isApproved = false;
+        // Provider.emailVerified is an enum of 'pending'|'active'|'inactive',
+        // not a boolean — assigning `true` casts to the string "true" and
+        // fails enum validation, so provider Facebook signup always threw.
+        userData.emailVerified = 'active';
+        userData.adminVerified = 'pending';
+        userData.status = 'email_verified';
+        userData.onboardingStatus = 'pending_documents';
       }
 
       try {
@@ -970,7 +1004,11 @@ const facebookLogin = asyncHandler(async (req, res) => {
       }
       user.lastLoginDate = new Date();
       user.isVerified = true;
-      user.emailVerified = true;
+      // Same enum-vs-boolean split as the create path above.
+      user.emailVerified = userType === 'provider' ? 'active' : true;
+      if (userType === 'provider' && !user.canLogin) {
+        user.canLogin = true;
+      }
       await user.save();
       console.log(`✅ Existing ${userType} logged in via Facebook: ${email}`);
     }
@@ -1132,7 +1170,8 @@ const facebookSignup = asyncHandler(async (req, res) => {
       authProvider: 'facebook',
       isVerified: true, // Facebook accounts are pre-verified
       emailVerified: true,
-      phoneNumber: '', // Required field - user needs to complete profile
+      // Left unset rather than '' — see the note in googleLogin.
+      phoneNumber: undefined, // Collected during profile completion
       lastLoginDate: new Date(),
     };
 
@@ -1141,6 +1180,12 @@ const facebookSignup = asyncHandler(async (req, res) => {
       userData.providerType = 'pending';
       userData.canLogin = true;
       userData.isApproved = false;
+      // Provider.emailVerified is an enum, not a boolean — see
+      // utils/verificationFlags.js.
+      userData.emailVerified = 'active';
+      userData.adminVerified = 'pending';
+      userData.status = 'email_verified';
+      userData.onboardingStatus = 'pending_documents';
     }
 
     // DB safeguard against the race: two concurrent /facebook-signup calls
@@ -1291,8 +1336,16 @@ const refreshToken = asyncHandler(async (req, res) => {
 // @route   POST /api/auth/forgot-password
 // @access  Public
 // ✅ UPDATED: Now sends OTP instead of direct reset link
+//
+// ANTI-ENUMERATION (task.md Issue 3): this endpoint must not reveal whether
+// an email is registered. It always answers with the same generic 200, and
+// only actually sends mail when the account exists. The app used to gate
+// this behind a GET /auth/check-email-exists preflight that never existed on
+// the server — the 404 was read as "no such account", so password reset was
+// impossible even for real users. That preflight is gone from the client;
+// this endpoint is now called directly.
 const forgotPassword = asyncHandler(async (req, res) => {
-  const { email, userType } = req.body;
+  const { email } = req.body;
 
   if (!email) {
     res.status(400);
@@ -1308,9 +1361,16 @@ const forgotPassword = asyncHandler(async (req, res) => {
     type = 'provider';
   }
 
+  // Same response shape and timing-insensitive wording whether or not the
+  // account exists. Callers advance to the OTP screen either way.
   if (!user) {
-    res.status(404);
-    throw new Error('No account found with this email');
+    console.log(`ℹ️ Password reset requested for unknown email: ${email} — responding generically, no mail sent`);
+    return res.json({
+      success: true,
+      message: GENERIC_RESET_MESSAGE,
+      email,
+      expiresIn: 600,
+    });
   }
 
   // Check if account is already locked due to too many attempts
@@ -1384,8 +1444,8 @@ const forgotPassword = asyncHandler(async (req, res) => {
             <div style="text-align: center; margin-top: 30px; padding-top: 20px; border-top: 1px solid #e5e7eb; color: #9ca3af; font-size: 12px;">
               <p style="margin: 0;">© 2024 MetroMatrix. All rights reserved.</p>
               <p style="margin: 8px 0 0 0;">
-                <a href="https://metromatrix-api-2e35f5f074df.herokuapp.com/privacy-policy" style="color: #6b7280; text-decoration: none;">Privacy Policy</a> | 
-                <a href="https://metromatrix-api-2e35f5f074df.herokuapp.com/terms-of-service" style="color: #6b7280; text-decoration: none;">Terms of Service</a>
+                <a href="${buildPublicUrl('/privacy-policy')}" style="color: #6b7280; text-decoration: none;">Privacy Policy</a> |
+                <a href="${buildPublicUrl('/terms-of-service')}" style="color: #6b7280; text-decoration: none;">Terms of Service</a>
               </p>
             </div>
           </div>
@@ -1395,7 +1455,7 @@ const forgotPassword = asyncHandler(async (req, res) => {
 
     res.json({
       success: true,
-      message: 'Password reset code sent to your email',
+      message: GENERIC_RESET_MESSAGE,
       email: user.email,
       expiresIn: 600, // 10 minutes in seconds
     });
@@ -1521,9 +1581,14 @@ const resendResetOTP = asyncHandler(async (req, res) => {
     type = 'provider';
   }
 
+  // Anti-enumeration, same as forgot-password above.
   if (!user) {
-    res.status(404);
-    throw new Error('No account found with this email');
+    console.log(`ℹ️ OTP resend requested for unknown email: ${email} — responding generically, no mail sent`);
+    return res.json({
+      success: true,
+      message: GENERIC_RESET_MESSAGE,
+      expiresIn: 600,
+    });
   }
 
   // Generate new OTP
@@ -1581,7 +1646,7 @@ const resendResetOTP = asyncHandler(async (req, res) => {
 
     res.json({
       success: true,
-      message: 'New password reset code sent to your email',
+      message: GENERIC_RESET_MESSAGE,
       email: user.email,
       expiresIn: 600,
     });
@@ -1634,7 +1699,14 @@ const resetPassword = asyncHandler(async (req, res) => {
 
   // Update password
   user.password = password;
-  
+
+  // Kill every existing session. Resetting a password is the standard
+  // response to "someone else may be in my account", so leaving the old
+  // refreshToken valid would let the attacker keep renewing access
+  // indefinitely. Clearing it means the next /auth/refresh from any old
+  // session fails and the app forces a fresh login.
+  user.refreshToken = undefined;
+
   // Clear any existing reset tokens if using old model fields
   if (user.resetPasswordToken) {
     user.resetPasswordToken = undefined;
@@ -1681,12 +1753,12 @@ const verifyEmail = asyncHandler(async (req, res) => {
   }
   
   // Set both emailVerified and isVerified
-  user.emailVerified = true;
+  user.emailVerified = verifiedEmailFlag(userType);
   user.isVerified = true;
   user.emailVerificationToken = undefined;
   user.emailVerificationExpire = undefined;
   user.emailVerificationAttempts = 0;
-  
+
   // For providers, also enable login
   if (userType === 'provider') {
     user.canLogin = true;
@@ -2122,7 +2194,7 @@ const manualVerifyEmail = asyncHandler(async (req, res) => {
   }
 
   // Manually verify the email
-  user.emailVerified = true;
+  user.emailVerified = verifiedEmailFlag(userType);
   user.isVerified = true;
   user.emailVerificationToken = undefined;
   user.emailVerificationExpire = undefined;
@@ -2217,7 +2289,11 @@ const resendProviderVerification = asyncHandler(async (req, res) => {
   const verificationUrl = `${baseUrl}/verify-email?token=${token}&type=provider`;
   
   console.log('📧 Resending provider verification email to:', email);
-  console.log('🔗 Verification URL:', verificationUrl);
+  // Contains the raw verification token — anyone with log access could
+    // verify the account. Non-production only.
+    if (process.env.NODE_ENV !== 'production') {
+      console.log('🔗 Verification URL:', verificationUrl);
+    }
   
   // Send verification email
   try {

@@ -2,6 +2,8 @@ const crypto = require('crypto');
 const User = require('../models/User');
 const Provider = require('../models/Provider');
 const { sendEmail } = require('./emailService');
+const { getPublicBaseUrl, buildVerificationUrl } = require('../utils/publicUrl');
+const { verifiedEmailFlag } = require('../utils/verificationFlags');
 
 class EmailVerificationService {
   /**
@@ -17,14 +19,12 @@ class EmailVerificationService {
   }
 
   /**
-   * Get the base URL for verification links
-   * In production, this should be your Heroku backend URL
-   * The backend will handle the verification and redirect to mobile app
+   * Get the base URL for verification links.
+   * This must be the BACKEND's own public origin, because the /verify-email
+   * page is served by this Express app. See utils/publicUrl.js.
    */
   static getVerificationBaseUrl() {
-    // Use the API URL for verification (backend handles the web page)
-    // This ensures the link is always accessible from email
-    return process.env.API_URL || process.env.CLIENT_URL || 'http://localhost:5000';
+    return getPublicBaseUrl();
   }
 
   /**
@@ -61,11 +61,14 @@ class EmailVerificationService {
     await user.save();
 
     // Create verification URL - points to backend web page
-    const baseUrl = this.getVerificationBaseUrl();
-    const verificationUrl = `${baseUrl}/verify-email?token=${token}&type=user`;
-    
+    const verificationUrl = buildVerificationUrl(token, 'user');
+
     console.log('📧 Sending verification email to:', email);
-    console.log('🔗 Verification URL:', verificationUrl);
+    // Contains the raw verification token — anyone with log access could
+    // verify the account. Non-production only.
+    if (process.env.NODE_ENV !== 'production') {
+      console.log('🔗 Verification URL:', verificationUrl);
+    }
 
     try {
       await sendEmail({
@@ -122,11 +125,14 @@ class EmailVerificationService {
     await provider.save();
 
     // Create verification URL - points to backend web page
-    const baseUrl = this.getVerificationBaseUrl();
-    const verificationUrl = `${baseUrl}/verify-email?token=${token}&type=provider`;
+    const verificationUrl = buildVerificationUrl(token, 'provider');
 
     console.log('📧 Sending provider verification email to:', email);
-    console.log('🔗 Verification URL:', verificationUrl);
+    // Contains the raw verification token — anyone with log access could
+    // verify the account. Non-production only.
+    if (process.env.NODE_ENV !== 'production') {
+      console.log('🔗 Verification URL:', verificationUrl);
+    }
 
     try {
       await sendEmail({
@@ -169,8 +175,9 @@ class EmailVerificationService {
       throw new Error('Invalid or expired verification token');
     }
 
-    // Mark email as verified
-    user.emailVerified = true;
+    // Mark email as verified. Provider.emailVerified is an enum, not a
+    // boolean — see utils/verificationFlags.js.
+    user.emailVerified = verifiedEmailFlag(userType);
     user.isVerified = true;
     user.emailVerificationToken = undefined;
     user.emailVerificationExpire = undefined;

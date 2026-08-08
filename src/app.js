@@ -26,6 +26,8 @@ const Provider = require('./models/Provider');
 const PendingSignup = require('./models/PendingSignup');
 const EmailVerification = require('./models/EmailVerification');
 const { generateTokens } = require('./utils/generateToken');
+const { getPublicBaseUrl } = require('./utils/publicUrl');
+const { verifiedEmailFlag } = require('./utils/verificationFlags');
 
 const healthcareDoctorRoutes = require('./routes/healthcareDoctorRoutes');
 
@@ -455,7 +457,9 @@ app.get('/verify-email', async (req, res) => {
     }
 
     // This is an existing user's email verification
-    user.emailVerified = true;
+    // Provider.emailVerified is an enum, not a boolean — see
+    // utils/verificationFlags.js.
+    user.emailVerified = verifiedEmailFlag(type);
     user.isVerified = true;
     user.emailVerificationToken = undefined;
     user.emailVerificationExpire = undefined;
@@ -1008,7 +1012,7 @@ app.get('/privacy-policy', (req, res) => {
             <ul>
                 <li><strong>Email:</strong> sp23-bcs-104@cuilahore.edu.pk</li>
                 <li><strong>Application:</strong> MetroMatrix</li>
-                <li><strong>Website:</strong> https://metromatrix-api.herokuapp.com</li>
+                <li><strong>Website:</strong> ${getPublicBaseUrl()}</li>
             </ul>
             <p>We will respond to your inquiry within 30 days.</p>
         </div>

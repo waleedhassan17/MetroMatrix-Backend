@@ -31,21 +31,62 @@ const {
   getVerificationStatus,
   resendProviderVerification, // ✅ NEW - Resend verification email
 } = require('../controllers/authController');
-const { protect } = require('../middleware/authMiddleware');
+const { protect, adminOnly } = require('../middleware/authMiddleware');
 const { validate } = require('../middleware/validate');
 const googleAuthStatus = require('../config/googleAuthStatus');
 const { isFirebaseInitialized } = require('../config/firebase');
 const facebookAuthStatus = require('../config/facebookAuthStatus');
+const { getPublicBaseUrl } = require('../utils/publicUrl');
+const { isSmtpConfigured } = require('../services/emailService');
 
 // ===== LOGGING MIDDLEWARE FOR DEBUGGING =====
-// Logs all auth requests with timestamp, method, URL, and body (excluding password)
+// Logs auth requests with timestamp, method, URL and a REDACTED body.
+//
+// This used to redact only `password`, so Vercel's logs collected Google/
+// Firebase ID tokens, Facebook access tokens, reset OTPs and reset tokens in
+// plaintext — each one directly replayable to take over an account. Anything
+// bearer-shaped is redacted now, and full bodies are only logged outside
+// production at all.
+const SENSITIVE_BODY_FIELDS = new Set([
+  'password',
+  'newPassword',
+  'currentPassword',
+  'confirmPassword',
+  'idToken',
+  'accessToken',
+  'refreshToken',
+  'token',
+  'resetToken',
+  'verificationToken',
+  'otp',
+  'code',
+  'authorization',
+]);
+
+const redactBody = (body) => {
+  if (!body || typeof body !== 'object') return body;
+
+  return Object.fromEntries(
+    Object.entries(body).map(([key, value]) => {
+      if (SENSITIVE_BODY_FIELDS.has(key)) return [key, '[REDACTED]'];
+      if (value && typeof value === 'object' && !Array.isArray(value)) {
+        return [key, redactBody(value)];
+      }
+      return [key, value];
+    })
+  );
+};
+
+const isProduction = () => process.env.NODE_ENV === 'production';
+
 router.use((req, res, next) => {
-  const sanitizedBody = { ...req.body };
-  if (sanitizedBody.password) sanitizedBody.password = '[REDACTED]';
-  
   console.log(`\n📥 ${new Date().toISOString()} - ${req.method} /api/auth${req.path}`);
-  console.log('📋 Body:', JSON.stringify(sanitizedBody, null, 2));
-  
+
+  // Even redacted, a body can carry PII (emails, names). Keep it to non-prod.
+  if (!isProduction()) {
+    console.log('📋 Body:', JSON.stringify(redactBody(req.body), null, 2));
+  }
+
   // Track response status
   const originalSend = res.send;
   res.send = function(body) {
@@ -61,9 +102,27 @@ router.use((req, res, next) => {
     }
     return originalSend.call(this, body);
   };
-  
+
   next();
 });
+
+/**
+ * Gate for the debug/maintenance routes below.
+ *
+ * `manual-verify` could verify ANY email and flip a provider's canLogin — an
+ * unauthenticated auth bypass, reachable on the public deployment. These now
+ * require an authenticated admin AND a non-production environment, so they
+ * stay usable while developing and are simply absent in production.
+ */
+const debugRouteOnly = (req, res, next) => {
+  if (isProduction()) {
+    return res.status(404).json({
+      success: false,
+      message: 'Not found',
+    });
+  }
+  return next();
+};
 
 // Validation rules
 const userRegistrationRules = [
@@ -298,15 +357,17 @@ router.post('/check-verification-status', checkEmailVerificationStatus);
 // ============================================
 // 🔧 DEBUGGING ROUTES (Development only)
 // ============================================
+// Gated behind: non-production + authenticated admin. Previously public.
 
 // Reset rate limiting for verification emails
-router.post('/reset-verification-limit', resetVerificationLimit);
+router.post('/reset-verification-limit', debugRouteOnly, protect, adminOnly, resetVerificationLimit);
 
-// Manually verify email (bypass email flow)
-router.post('/manual-verify', manualVerifyEmail);
+// Manually verify email (bypass email flow) — an auth bypass if left open.
+router.post('/manual-verify', debugRouteOnly, protect, adminOnly, manualVerifyEmail);
 
-// Get verification status by email (GET route)
-router.get('/verification-status/:email', getVerificationStatus);
+// Get verification status by email (GET route) — discloses whether an email
+// is registered, so it gets the same gate.
+router.get('/verification-status/:email', debugRouteOnly, protect, adminOnly, getVerificationStatus);
 
 // ===== AUTH CONFIG HEALTH CHECK =====
 // GET /api/auth/health — confirm what's actually wired on THIS deployment
@@ -314,6 +375,8 @@ router.get('/verification-status/:email', getVerificationStatus);
 // secret values. This is what to hit before attempting the real browser/
 // mobile OAuth flow (see GOOGLE_AUTH_TEST.md).
 router.get('/health', (req, res) => {
+  const publicBaseUrl = getPublicBaseUrl();
+
   res.status(200).json({
     success: true,
     nodeEnv: process.env.NODE_ENV || null,
@@ -326,6 +389,20 @@ router.get('/health', (req, res) => {
       callbackURL: facebookAuthStatus.callbackURL,
     },
     firebaseAdminInitialized: isFirebaseInitialized(),
+
+    // Added so a deploy can be checked without shell access: this is where
+    // emailed verification/reset links will actually point, and whether
+    // real mail can go out at all. No secret values, only presence.
+    publicBaseUrl,
+    publicBaseUrlLooksStale: /herokuapp\.com/i.test(publicBaseUrl),
+    email: {
+      smtpConfigured: isSmtpConfigured(),
+      host: process.env.EMAIL_HOST || null,
+      port: Number(process.env.EMAIL_PORT) || 587,
+      from: process.env.EMAIL_FROM || null,
+      userConfigured: Boolean(process.env.EMAIL_USER),
+      passConfigured: Boolean(process.env.EMAIL_PASS),
+    },
   });
 });
 

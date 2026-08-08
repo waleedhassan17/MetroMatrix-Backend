@@ -4,7 +4,7 @@ Complete reference for wallet, top-up, P2P transfer, and payout endpoints.
 
 ## Base URL
 
-- **Production**: `https://metromatrix-backend-8758842b3e4c.herokuapp.com/api/wallet`
+- **Production**: `https://metro-matrix-backend.vercel.app/api/wallet`
 - **Development**: `http://localhost:5000/api/wallet`
 
 ## Authentication
@@ -24,7 +24,7 @@ STRIPE_PUBLISHABLE_KEY=pk_test_...
 STRIPE_SECRET_KEY=sk_test_...
 STRIPE_WEBHOOK_SECRET=whsec_...
 STRIPE_CURRENCY=usd
-STRIPE_BACKEND_URL=https://metromatrix-backend-8758842b3e4c.herokuapp.com
+STRIPE_BACKEND_URL=https://metro-matrix-backend.vercel.app
 APP_DEEP_LINK_SCHEME=metromatrix
 WALLET_TRANSFER_FEE_PERCENT=0   # optional, default 0
 ```
@@ -295,7 +295,7 @@ Events handled:
 
 Go to <https://dashboard.stripe.com/test/webhooks>, add endpoint:
 
-- URL: `https://metromatrix-backend-8758842b3e4c.herokuapp.com/api/wallet/webhook`
+- URL: `https://metro-matrix-backend.vercel.app/api/wallet/webhook`
 - Events: `checkout.session.completed`, `checkout.session.expired`, `checkout.session.async_payment_failed`, `account.updated`, `payout.paid`, `payout.failed`, `payout.canceled`
 
 For Connect events, also check "Listen to events on Connected accounts" so the Connect events are forwarded to the platform endpoint.

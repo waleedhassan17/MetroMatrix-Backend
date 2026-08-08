@@ -7,8 +7,8 @@ Implementation: `src/sockets/{index,chatHandler,trackingHandler,lastLocationStor
 
 The production Vercel deployment is serverless — WebSockets do not work there.
 **Every socket event below has a REST fallback**, so the app degrades to
-polling on Vercel; run the backend locally (`npm run dev`) or on a
-socket-capable host (Heroku dyno) for the live real-time demo.
+polling on Vercel; run the backend locally (`npm run dev`) or on any
+long-lived socket-capable host for the live real-time demo.
 
 ## Connection & auth
 

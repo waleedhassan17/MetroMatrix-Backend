@@ -1,6 +1,7 @@
 const mongoose = require('mongoose');
 const bcrypt = require('bcryptjs');
 const crypto = require('crypto');
+const { hashPasswordPreSave } = require('../utils/hashPassword');
 
 const providerSchema = new mongoose.Schema(
   {
@@ -30,8 +31,18 @@ const providerSchema = new mongoose.Schema(
     },
     phoneNumber: {
       type: String,
-      required: true,
-      match: [/^[0-9]{10,15}$/, 'Please provide a valid phone number'],
+      // Same as User.phoneNumber: social sign-ups have no phone number yet,
+      // and requiring one made Model.create() throw for them.
+      required: [
+        function () {
+          return !this.googleId && !this.facebookId;
+        },
+        'Please provide a phone number',
+      ],
+      validate: {
+        validator: (value) => value == null || value === '' || /^[0-9]{10,15}$/.test(value),
+        message: 'Please provide a valid phone number',
+      },
     },
     profilePhoto: {
       type: String,
@@ -392,15 +403,9 @@ providerSchema.pre('save', function (next) {
   next();
 });
 
-// Hash password before saving
-providerSchema.pre('save', async function (next) {
-  if (!this.isModified('password')) {
-    next();
-  }
-
-  const salt = await bcrypt.genSalt(10);
-  this.password = await bcrypt.hash(this.password, salt);
-});
+// Hash password before saving (shared hook — see utils/hashPassword.js for
+// the double-hash bug it fixes)
+providerSchema.pre('save', hashPasswordPreSave);
 
 // Create wallet for new providers
 providerSchema.post('save', async function (doc, next) {
@@ -417,6 +422,9 @@ providerSchema.post('save', async function (doc, next) {
 
 // Match passwords
 providerSchema.methods.matchPassword = async function (enteredPassword) {
+  // See User.matchPassword — no password loaded/set means "doesn't match",
+  // not a 500 from bcrypt.compare(x, undefined).
+  if (!this.password) return false;
   return await bcrypt.compare(enteredPassword, this.password);
 };
 

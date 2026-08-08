@@ -1,6 +1,6 @@
 # MetroMatrix Admin Panel API Guide
 
-**Base URL:** `https://metromatrix-api-2e35f5f074df.herokuapp.com/api`  
+**Base URL:** `https://metro-matrix-backend.vercel.app/api`  
 **Version:** v74  
 **Last Updated:** December 9, 2025
 
@@ -1107,7 +1107,7 @@ const recent = response.data.recentRegistrations;
 ## Contact
 
 **API Support:** waleedhassansfd@gmail.com  
-**Base URL:** https://metromatrix-api-2e35f5f074df.herokuapp.com/api
+**Base URL:** https://metro-matrix-backend.vercel.app/api
 
 ---
 

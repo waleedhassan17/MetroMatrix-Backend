@@ -1,6 +1,7 @@
 const mongoose = require('mongoose');
 const bcrypt = require('bcryptjs');
 const crypto = require('crypto');
+const { hashPasswordPreSave } = require('../utils/hashPassword');
 
 const adminSchema = new mongoose.Schema(
   {
@@ -172,18 +173,15 @@ adminSchema.index({ email: 1 });
 adminSchema.index({ role: 1 });
 adminSchema.index({ isActive: 1 });
 
-// Hash password before saving
-adminSchema.pre('save', async function (next) {
-  if (!this.isModified('password')) {
-    next();
-  }
-
-  const salt = await bcrypt.genSalt(10);
-  this.password = await bcrypt.hash(this.password, salt);
-});
+// Hash password before saving (shared hook — see utils/hashPassword.js for
+// the double-hash bug it fixes). Admin had the identical missing-`return`,
+// so admin logins were corrupting their own hash too.
+adminSchema.pre('save', hashPasswordPreSave);
 
 // Match passwords
 adminSchema.methods.matchPassword = async function (enteredPassword) {
+  // See User.matchPassword.
+  if (!this.password) return false;
   return await bcrypt.compare(enteredPassword, this.password);
 };
 

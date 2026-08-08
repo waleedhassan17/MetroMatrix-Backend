@@ -6,7 +6,8 @@
  *
  * Attached to the HTTP server in src/server.js. On serverless hosts (Vercel)
  * WebSockets are unavailable — every socket event has a REST fallback, so the
- * app degrades to polling there; run locally/Heroku for the live demo.
+ * app degrades to polling there; run locally, or on any long-lived
+ * socket-capable host, for the live demo.
  */
 const jwt = require('jsonwebtoken');
 const User = require('../models/User');

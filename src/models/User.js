@@ -1,6 +1,7 @@
 const mongoose = require('mongoose');
 const bcrypt = require('bcryptjs');
 const crypto = require('crypto');
+const { hashPasswordPreSave } = require('../utils/hashPassword');
 
 const userSchema = new mongoose.Schema(
   {
@@ -30,8 +31,22 @@ const userSchema = new mongoose.Schema(
     },
     phoneNumber: {
       type: String,
-      required: [true, 'Please provide a phone number'],
-      match: [/^[0-9]{10,15}$/, 'Please provide a valid phone number'],
+      // Google/Facebook never give us a phone number. This used to be
+      // unconditionally required, so creating a social account threw a
+      // ValidationError and every brand-new Google/Facebook sign-in 500'd.
+      // The app collects the number during profile completion instead.
+      required: [
+        function () {
+          return !this.googleId && !this.facebookId;
+        },
+        'Please provide a phone number',
+      ],
+      validate: {
+        // Only shape-check a number that's actually present — an absent one
+        // is the social case handled by `required` above.
+        validator: (value) => value == null || value === '' || /^[0-9]{10,15}$/.test(value),
+        message: 'Please provide a valid phone number',
+      },
     },
 
     // Profile Information
@@ -170,15 +185,9 @@ userSchema.pre('save', function (next) {
   next();
 });
 
-// Hash password before saving
-userSchema.pre('save', async function (next) {
-  if (!this.isModified('password')) {
-    next();
-  }
-
-  const salt = await bcrypt.genSalt(10);
-  this.password = await bcrypt.hash(this.password, salt);
-});
+// Hash password before saving (shared hook — see utils/hashPassword.js for
+// the double-hash bug it fixes)
+userSchema.pre('save', hashPasswordPreSave);
 
 // Create wallet for new users
 userSchema.post('save', async function (doc, next) {
@@ -195,6 +204,11 @@ userSchema.post('save', async function (doc, next) {
 
 // Match passwords
 userSchema.methods.matchPassword = async function (enteredPassword) {
+  // A social-only account has no password, and a doc fetched without
+  // `.select('+password')` has none loaded. bcrypt.compare throws on an
+  // undefined hash, which surfaced as a 500 instead of a clean "wrong
+  // credentials" — treat it as simply not matching.
+  if (!this.password) return false;
   return await bcrypt.compare(enteredPassword, this.password);
 };
 
