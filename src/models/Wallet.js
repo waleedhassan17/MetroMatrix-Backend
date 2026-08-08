@@ -54,6 +54,19 @@ const walletSchema = new mongoose.Schema(
       default: WALLET_CURRENCY,
       uppercase: true,
     },
+
+    /**
+     * Stripe Customer id for this wallet's owner, created lazily on the first
+     * top-up. Checkout only prefills a previously saved card when the session
+     * is tied to the same Customer, so without this every top-up would ask
+     * for card details again. Holds no card data itself — the card lives at
+     * Stripe and we only ever see the last four digits.
+     */
+    stripeCustomerId: {
+      type: String,
+      default: null,
+      index: true,
+    },
   },
   {
     timestamps: true,

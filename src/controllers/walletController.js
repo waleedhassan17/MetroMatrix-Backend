@@ -151,10 +151,50 @@ const createCheckoutSession = asyncHandler(async (req, res) => {
   const backendUrl =
     process.env.STRIPE_BACKEND_URL || `${req.protocol}://${req.get('host')}`;
 
+  // Checkout only prefills a saved card when the session is tied to the same
+  // Stripe Customer, so create one lazily on first top-up and reuse it after.
+  // Recreating it if Stripe no longer recognises the stored id (deleted in the
+  // dashboard, or a key rotated to a different account) keeps a stale id from
+  // failing every future top-up.
+  let stripeCustomerId = wallet.stripeCustomerId;
+  if (stripeCustomerId) {
+    try {
+      const existing = await stripe.customers.retrieve(stripeCustomerId);
+      if (existing?.deleted) stripeCustomerId = null;
+    } catch (err) {
+      console.warn(
+        `⚠️ Stored Stripe customer ${stripeCustomerId} unusable (${err.message}) — creating a new one`
+      );
+      stripeCustomerId = null;
+    }
+  }
+
+  if (!stripeCustomerId) {
+    const customer = await stripe.customers.create({
+      email: req.user.email,
+      name: req.user.fullName,
+      metadata: { ownerId: String(ownerId), ownerType },
+    });
+    stripeCustomerId = customer.id;
+    wallet.stripeCustomerId = stripeCustomerId;
+    await wallet.save();
+  }
+
   // Create Stripe checkout session
   const session = await stripe.checkout.sessions.create({
     payment_method_types: ['card'],
     mode: 'payment',
+    customer: stripeCustomerId,
+    // Shows a "save my payment details" checkbox and, once ticked, prefills
+    // that card on every later top-up with a control to switch or remove it.
+    //
+    // NOT payment_intent_data.setup_future_usage: that also saves the card but
+    // stores it with allow_redisplay 'limited', which Stripe deliberately
+    // refuses to prefill. Only payment_method_save saves with 'always'.
+    saved_payment_method_options: {
+      payment_method_save: 'enabled',
+      payment_method_remove: 'enabled',
+    },
     line_items: [
       {
         price_data: {
