@@ -836,7 +836,7 @@ const getMyAppointments = asyncHandler(async (req, res) => {
     throw new Error('Doctor profile not found');
   }
 
-  const { status, date, page = 1, limit = 10 } = req.query;
+  const { status, date, from, to, page = 1, limit = 10 } = req.query;
   const pageNum = parseInt(page);
   const limitNum = parseInt(limit);
   const query = { doctorId: doctor._id };
@@ -868,6 +868,20 @@ const getMyAppointments = asyncHandler(async (req, res) => {
     .populate('clinicId', 'name')
     .sort({ createdAt: -1 });
 
+  // Inclusive date RANGE. The doctor app's schedule screen shows a week at a
+  // time; without this it had to request `status=upcoming` and filter in
+  // memory, so past days were always empty and anything past the page limit
+  // was invisible. `date` (exact day) is unchanged.
+  if (from || to) {
+    const fromTs = from ? new Date(`${from}T00:00:00.000Z`).getTime() : -Infinity;
+    const toTs = to ? new Date(`${to}T23:59:59.999Z`).getTime() : Infinity;
+    appointments = appointments.filter((appt) => {
+      if (!appt.slotId) return false;
+      const ts = new Date(appt.slotId.date).getTime();
+      return ts >= fromTs && ts <= toTs;
+    });
+  }
+
   // Filter by date if provided (exact date match)
   if (date) {
     const filterDate = new Date(date);
@@ -883,6 +897,11 @@ const getMyAppointments = asyncHandler(async (req, res) => {
   today.setHours(0, 0, 0, 0);
   const filtered = appointments.filter(appt => {
     const slotDate = appt.slotId ? new Date(appt.slotId.date) : null;
+    // An explicit range (or day) already says which dates are wanted — applying
+    // the upcoming/past heuristic on top would silently drop past days again.
+    if (from || to || date) {
+      return true;
+    }
     if (status === 'upcoming') {
       return slotDate && slotDate >= today;
     } else if (status === 'past') {
