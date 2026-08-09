@@ -12,6 +12,8 @@
  *   - 20 appointments covering EVERY status (pending/confirmed/completed/cancelled)
  *     incl. paid, unpaid, refunded and rescheduled examples
  *   - prescriptions on completed appointments, health records, reviews
+ *   - a full clinic day TODAY for doctor 1 (3 completed + 3 upcoming) so the
+ *     doctor dashboard, patient queue and earnings are not empty on sign-in
  *
  * Run: node scripts/seed-healthcare.js
  */
@@ -309,6 +311,95 @@ async function main() {
     }
   }
   log(`appointments created: ${created} (skipped ${APPOINTMENT_PLAN.length - created} already present)`);
+
+
+  // 4b. TODAY's clinic day for the demo doctor.
+  //
+  // Every appointment above is deliberately 2-11 days in the past or future,
+  // so a doctor signing in saw 0 TOTAL / 0 SEEN / 0 PENDING on the dashboard,
+  // "0 waiting · 0 completed" in the patient queue, and PKR 0 earnings — the
+  // doctor view looked broken when it was simply showing an empty day. This
+  // gives doctor 1 a realistic day: three consultations already done and three
+  // still to come.
+  //
+  // Idempotent PER DAY: the marker carries the date, so re-running tomorrow
+  // seeds tomorrow without duplicating today.
+  const demo = doctors[0];
+  const todayKey = new Date().toISOString().slice(0, 10);
+  const TODAY_PLAN = [
+    { n: 1, time: ['09:00', '09:30'], status: 'completed' },
+    { n: 2, time: ['10:00', '10:30'], status: 'completed' },
+    { n: 3, time: ['11:00', '11:30'], status: 'completed' },
+    { n: 4, time: ['15:00', '15:30'], status: 'confirmed' },
+    { n: 5, time: ['16:00', '16:30'], status: 'confirmed' },
+    { n: 6, time: ['17:00', '17:30'], status: 'confirmed', video: true },
+  ];
+
+  let todayCreated = 0;
+  for (const plan of TODAY_PLAN) {
+    const marker = `SEED-HC-TODAY-${todayKey}-${plan.n}`;
+    if (await Appointment.findOne({ symptoms: new RegExp(`^${marker}`) })) continue;
+
+    const patient = patients[plan.n % patients.length];
+    const isDone = plan.status === 'completed';
+    const type = plan.video ? 'video' : 'in-clinic';
+
+    const slot = await Slot.create({
+      doctorId: demo.doctor._id,
+      clinicId: demo.clinics[0]._id,
+      date: new Date(todayKey),
+      startTime: plan.time[0],
+      endTime: plan.time[1],
+      type,
+      status: 'booked',
+      maxPatients: 1,
+      bookedCount: 1,
+    });
+
+    const appointment = await Appointment.create({
+      patientId: patient._id,
+      doctorId: demo.doctor._id,
+      slotId: slot._id,
+      clinicId: demo.clinics[0]._id,
+      type,
+      status: plan.status,
+      // Real age/gender: the app only renders the demographics line when the
+      // backend actually supplies them.
+      patientInfo: {
+        name: patient.fullName,
+        phone: '03007770000',
+        age: 24 + plan.n * 3,
+        gender: plan.n % 2 ? 'male' : 'female',
+      },
+      symptoms: `${marker}: ${isDone ? 'Follow-up review' : 'General consultation'}`,
+      fee: demo.fee,
+      discount: 0,
+      totalAmount: demo.fee,
+      payment: {
+        status: 'paid',
+        method: plan.n % 3 === 0 ? 'cash_at_clinic' : 'wallet',
+        amount: demo.fee,
+        paidAt: new Date(),
+      },
+      completedAt: isDone ? new Date() : null,
+      createdAt: new Date(Date.now() - DAY),
+    });
+
+    if (isDone) {
+      await Prescription.create({
+        appointmentId: appointment._id,
+        doctorId: demo.doctor._id,
+        patientId: patient._id,
+        diagnosis: 'Hypertension follow-up (demo)',
+        medications: [
+          { name: 'Amlodipine', dosage: '5mg', frequency: 'OD', duration: '30 days', instructions: 'Morning, after breakfast' },
+        ],
+        advice: 'Monitor blood pressure daily and reduce salt intake.',
+      });
+    }
+    todayCreated += 1;
+  }
+  log(`today's appointments for ${DOCTORS[0][0]}: ${todayCreated} created (${TODAY_PLAN.length - todayCreated} already present)`);
 
   // 5. A couple of health records per patient
   for (const patient of patients.slice(0, 3)) {
