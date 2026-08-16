@@ -21,7 +21,9 @@
     "seed:homeservice": "node scripts/seed-homeservice.js",
     "smoke:homeservice": "node scripts/smoke-homeservice.js",
     "smoke:wallet-stripe": "node scripts/wallet-smoke.js",
-    "integrity:wallet-shop": "node scripts/wallet-shop-integrity.js"
+    "integrity:wallet-shop": "node scripts/wallet-shop-integrity.js",
+    "fix:variants": "node scripts/fix-variant-size-color.js",
+    "normalise:catalog": "node scripts/normalise-catalog-variants.js"
   },
   "keywords": [
     "metromatrix",

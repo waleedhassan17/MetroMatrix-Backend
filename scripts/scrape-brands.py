@@ -150,12 +150,27 @@ def normalise_outfitters(raw_products, target_count=30):
 
     normalised = []
     for p in picked:
+        # Map Shopify options BY NAME, not by position. Outfitters declares its
+        # options as [Color, Size, Season], so reading option1 as the size and
+        # option2 as the colour silently inverted every variant in the catalog.
+        # This mirrors the Cougar path below and survives the store reordering
+        # its options.
+        option_pos = {}
+        for o in p.get('options', []):
+            name = (o.get('name') or '').strip().lower()
+            if name:
+                option_pos[name] = o.get('position')
+
+        def option_value(variant, option_name):
+            pos = option_pos.get(option_name)
+            return variant.get(f'option{pos}') if pos else None
+
         variants = []
         for v in p['variants']:
             variants.append({
                 'sku': v.get('sku') or f"OTF-{p['id']}-{v['id']}",
-                'size': v.get('option1'),
-                'color': v.get('option2'),
+                'size': option_value(v, 'size'),
+                'color': option_value(v, 'color') or option_value(v, 'colour'),
                 'price': float(v['price']),
                 'compareAtPrice': float(v['compare_at_price']) if v.get('compare_at_price') else None,
                 'available': bool(v.get('available', True)),

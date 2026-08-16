@@ -32,33 +32,37 @@
         "sku": "LT2447-0XS-BRN",
         "size": "XS",
         "color": "Brown",
-        "price": 999.0,
-        "compareAtPrice": 1999.0,
-        "available": true
+        "price": 999,
+        "compareAtPrice": 1999,
+        "available": true,
+        "colorCode": "#8B5E3C"
       },
       {
         "sku": "LT2447-00S-BRN",
         "size": "S",
         "color": "Brown",
-        "price": 999.0,
-        "compareAtPrice": 1999.0,
-        "available": false
+        "price": 999,
+        "compareAtPrice": 1999,
+        "available": false,
+        "colorCode": "#8B5E3C"
       },
       {
         "sku": "LT2447-00M-BRN",
         "size": "M",
         "color": "Brown",
-        "price": 999.0,
-        "compareAtPrice": 1999.0,
-        "available": false
+        "price": 999,
+        "compareAtPrice": 1999,
+        "available": false,
+        "colorCode": "#8B5E3C"
       },
       {
         "sku": "LT2447-00L-BRN",
         "size": "L",
         "color": "Brown",
-        "price": 999.0,
-        "compareAtPrice": 1999.0,
-        "available": false
+        "price": 999,
+        "compareAtPrice": 1999,
+        "available": false,
+        "colorCode": "#8B5E3C"
       }
     ]
   },
@@ -98,41 +102,46 @@
         "sku": "MATS07-00S-BLU",
         "size": "S",
         "color": "Blue",
-        "price": 1349.0,
-        "compareAtPrice": 2699.0,
-        "available": true
+        "price": 1349,
+        "compareAtPrice": 2699,
+        "available": true,
+        "colorCode": "#3498DB"
       },
       {
         "sku": "MATS07-00M-BLU",
         "size": "M",
         "color": "Blue",
-        "price": 1349.0,
-        "compareAtPrice": 2699.0,
-        "available": true
+        "price": 1349,
+        "compareAtPrice": 2699,
+        "available": true,
+        "colorCode": "#3498DB"
       },
       {
         "sku": "MATS07-00L-BLU",
         "size": "L",
         "color": "Blue",
-        "price": 1349.0,
-        "compareAtPrice": 2699.0,
-        "available": true
+        "price": 1349,
+        "compareAtPrice": 2699,
+        "available": true,
+        "colorCode": "#3498DB"
       },
       {
         "sku": "MATS07-0XL-BLU",
         "size": "XL",
         "color": "Blue",
-        "price": 1349.0,
-        "compareAtPrice": 2699.0,
-        "available": true
+        "price": 1349,
+        "compareAtPrice": 2699,
+        "available": true,
+        "colorCode": "#3498DB"
       },
       {
         "sku": "MATS07-2XL-BLU",
         "size": "XXL",
         "color": "Blue",
-        "price": 1349.0,
-        "compareAtPrice": 2699.0,
-        "available": true
+        "price": 1349,
+        "compareAtPrice": 2699,
+        "available": true,
+        "colorCode": "#3498DB"
       }
     ]
   },
@@ -140,7 +149,7 @@
     "source": "real",
     "title": "Grey Slim Fit Shorts",
     "handle": "grey-slim-fit-paneled-shorts-online",
-    "bodyHtml": "<p style=\"margin-bottom: 0in; line-height: normal; vertical-align: baseline;\" class=\"MsoNormal\"><span style=\"font-size: 12.0pt; font-family: 'Helvetica',sans-serif; mso-fareast-font-family: 'Times New Roman'; mso-bidi-font-family: Poppins; color: black; mso-themecolor: text1;\">Throw on these Grey Slim Fit Shorts for a casual day out.</span><span></span></p>\n<p style=\"margin-bottom: 0in; line-height: normal; vertical-align: baseline;\" class=\"MsoNormal\"><span style=\"font-size: 12.0pt; font-family: 'Helvetica',sans-serif; mso-fareast-font-family: 'Times New Roman'; mso-bidi-font-family: Poppins; color: black; mso-themecolor: text1;\">Design Details: </span><span>Side pockets, contrast drawcords, contrast panels</span><span style=\"font-size: 12.0pt; font-family: 'Times New Roman',serif; mso-fareast-font-family: 'Times New Roman';\"></span></p>\n<p style=\"margin-bottom: 0in; line-height: normal; vertical-align: baseline;\" class=\"MsoNormal\"><span style=\"font-size: 12.0pt; font-family: 'Helvetica',sans-serif; mso-fareast-font-family: 'Times New Roman'; mso-bidi-font-family: Poppins; color: black; mso-themecolor: text1;\">Style: </span><span style=\"font-size: 12.0pt; font-family: 'Helvetica',sans-serif; mso-fareast-font-family: 'Times New Roman'; mso-bidi-font-family: Poppins; color: black; mso-themecolor: text1;\">Panelled</span><span style=\"font-size: 12.0pt; font-family: 'Times New Roman',serif; mso-fareast-font-family: 'Times New Roman';\"></span></p>\n<p style=\"margin-bottom: 0in; line-height: normal; vertical-align: baseline;\" class=\"MsoNormal\"><span style=\"font-size: 12.0pt; font-family: 'Helvetica',sans-serif; mso-fareast-font-family: 'Times New Roman'; mso-bidi-font-family: Poppins; color: black; mso-themecolor: text1;\">Fabric: </span><span style=\"font-size: 12.0pt; font-family: 'Helvetica',sans-serif; mso-fareast-font-family: 'Times New Roman'; mso-bidi-font-family: Poppins; color: black; mso-themecolor: text1;\">Polyester</span><span style=\"font-size: 12.0pt; font-family: 'Times New Roman',serif; mso-fareast-font-family: 'Times New Roman';\"></span></p>\n<p>\u00a0</p>",
+    "bodyHtml": "<p style=\"margin-bottom: 0in; line-height: normal; vertical-align: baseline;\" class=\"MsoNormal\"><span style=\"font-size: 12.0pt; font-family: 'Helvetica',sans-serif; mso-fareast-font-family: 'Times New Roman'; mso-bidi-font-family: Poppins; color: black; mso-themecolor: text1;\">Throw on these Grey Slim Fit Shorts for a casual day out.</span><span></span></p>\n<p style=\"margin-bottom: 0in; line-height: normal; vertical-align: baseline;\" class=\"MsoNormal\"><span style=\"font-size: 12.0pt; font-family: 'Helvetica',sans-serif; mso-fareast-font-family: 'Times New Roman'; mso-bidi-font-family: Poppins; color: black; mso-themecolor: text1;\">Design Details: </span><span>Side pockets, contrast drawcords, contrast panels</span><span style=\"font-size: 12.0pt; font-family: 'Times New Roman',serif; mso-fareast-font-family: 'Times New Roman';\"></span></p>\n<p style=\"margin-bottom: 0in; line-height: normal; vertical-align: baseline;\" class=\"MsoNormal\"><span style=\"font-size: 12.0pt; font-family: 'Helvetica',sans-serif; mso-fareast-font-family: 'Times New Roman'; mso-bidi-font-family: Poppins; color: black; mso-themecolor: text1;\">Style: </span><span style=\"font-size: 12.0pt; font-family: 'Helvetica',sans-serif; mso-fareast-font-family: 'Times New Roman'; mso-bidi-font-family: Poppins; color: black; mso-themecolor: text1;\">Panelled</span><span style=\"font-size: 12.0pt; font-family: 'Times New Roman',serif; mso-fareast-font-family: 'Times New Roman';\"></span></p>\n<p style=\"margin-bottom: 0in; line-height: normal; vertical-align: baseline;\" class=\"MsoNormal\"><span style=\"font-size: 12.0pt; font-family: 'Helvetica',sans-serif; mso-fareast-font-family: 'Times New Roman'; mso-bidi-font-family: Poppins; color: black; mso-themecolor: text1;\">Fabric: </span><span style=\"font-size: 12.0pt; font-family: 'Helvetica',sans-serif; mso-fareast-font-family: 'Times New Roman'; mso-bidi-font-family: Poppins; color: black; mso-themecolor: text1;\">Polyester</span><span style=\"font-size: 12.0pt; font-family: 'Times New Roman',serif; mso-fareast-font-family: 'Times New Roman';\"></span></p>\n<p> </p>",
     "productType": "Men Shorts",
     "tags": [
       "28-01-2025",
@@ -169,33 +178,37 @@
         "sku": "MS2424-00S-SIL",
         "size": "S",
         "color": "Grey",
-        "price": 2149.0,
-        "compareAtPrice": 4299.0,
-        "available": true
+        "price": 2149,
+        "compareAtPrice": 4299,
+        "available": true,
+        "colorCode": "#95A5A6"
       },
       {
         "sku": "MS2424-00M-SIL",
         "size": "M",
         "color": "Grey",
-        "price": 2149.0,
-        "compareAtPrice": 4299.0,
-        "available": true
+        "price": 2149,
+        "compareAtPrice": 4299,
+        "available": true,
+        "colorCode": "#95A5A6"
       },
       {
         "sku": "MS2424-00L-SIL",
         "size": "L",
         "color": "Grey",
-        "price": 2149.0,
-        "compareAtPrice": 4299.0,
-        "available": false
+        "price": 2149,
+        "compareAtPrice": 4299,
+        "available": false,
+        "colorCode": "#95A5A6"
       },
       {
         "sku": "MS2424-0XL-SIL",
         "size": "XL",
         "color": "Grey",
-        "price": 2149.0,
-        "compareAtPrice": 4299.0,
-        "available": false
+        "price": 2149,
+        "compareAtPrice": 4299,
+        "available": false,
+        "colorCode": "#95A5A6"
       }
     ]
   },
@@ -232,33 +245,37 @@
         "sku": "SF2406-00S-GRY",
         "size": "S",
         "color": "Grey",
-        "price": 2249.0,
-        "compareAtPrice": 4499.0,
-        "available": true
+        "price": 2249,
+        "compareAtPrice": 4499,
+        "available": true,
+        "colorCode": "#95A5A6"
       },
       {
         "sku": "SF2406-00M-GRY",
         "size": "M",
         "color": "Grey",
-        "price": 2249.0,
-        "compareAtPrice": 4499.0,
-        "available": false
+        "price": 2249,
+        "compareAtPrice": 4499,
+        "available": false,
+        "colorCode": "#95A5A6"
       },
       {
         "sku": "SF2406-00L-GRY",
         "size": "L",
         "color": "Grey",
-        "price": 2249.0,
-        "compareAtPrice": 4499.0,
-        "available": true
+        "price": 2249,
+        "compareAtPrice": 4499,
+        "available": true,
+        "colorCode": "#95A5A6"
       },
       {
         "sku": "SF2406-0XL-GRY",
         "size": "XL",
         "color": "Grey",
-        "price": 2249.0,
-        "compareAtPrice": 4499.0,
-        "available": true
+        "price": 2249,
+        "compareAtPrice": 4499,
+        "available": true,
+        "colorCode": "#95A5A6"
       }
     ]
   },
@@ -295,41 +312,46 @@
         "sku": "DS2506-w30-SKB",
         "size": "30",
         "color": "Blue",
-        "price": 2999.0,
-        "compareAtPrice": 5999.0,
-        "available": false
+        "price": 2999,
+        "compareAtPrice": 5999,
+        "available": false,
+        "colorCode": "#3498DB"
       },
       {
         "sku": "DS2506-w32-SKB",
         "size": "32",
         "color": "Blue",
-        "price": 2999.0,
-        "compareAtPrice": 5999.0,
-        "available": false
+        "price": 2999,
+        "compareAtPrice": 5999,
+        "available": false,
+        "colorCode": "#3498DB"
       },
       {
         "sku": "DS2506-w34-SKB",
         "size": "34",
         "color": "Blue",
-        "price": 2999.0,
-        "compareAtPrice": 5999.0,
-        "available": false
+        "price": 2999,
+        "compareAtPrice": 5999,
+        "available": false,
+        "colorCode": "#3498DB"
       },
       {
         "sku": "DS2506-w36-SKB",
         "size": "36",
         "color": "Blue",
-        "price": 2999.0,
-        "compareAtPrice": 5999.0,
-        "available": true
+        "price": 2999,
+        "compareAtPrice": 5999,
+        "available": true,
+        "colorCode": "#3498DB"
       },
       {
         "sku": "DS2506-w38-SKB",
         "size": "38",
         "color": "Blue",
-        "price": 2999.0,
-        "compareAtPrice": 5999.0,
-        "available": false
+        "price": 2999,
+        "compareAtPrice": 5999,
+        "available": false,
+        "colorCode": "#3498DB"
       }
     ]
   },
@@ -363,41 +385,46 @@
         "sku": "JS2503-w26-GRN",
         "size": "26",
         "color": "Green",
-        "price": 2749.0,
-        "compareAtPrice": 5499.0,
-        "available": true
+        "price": 2749,
+        "compareAtPrice": 5499,
+        "available": true,
+        "colorCode": "#27AE60"
       },
       {
         "sku": "JS2503-w28-GRN",
         "size": "28",
         "color": "Green",
-        "price": 2749.0,
-        "compareAtPrice": 5499.0,
-        "available": true
+        "price": 2749,
+        "compareAtPrice": 5499,
+        "available": true,
+        "colorCode": "#27AE60"
       },
       {
         "sku": "JS2503-w30-GRN",
         "size": "30",
         "color": "Green",
-        "price": 2749.0,
-        "compareAtPrice": 5499.0,
-        "available": true
+        "price": 2749,
+        "compareAtPrice": 5499,
+        "available": true,
+        "colorCode": "#27AE60"
       },
       {
         "sku": "JS2503-w32-GRN",
         "size": "32",
         "color": "Green",
-        "price": 2749.0,
-        "compareAtPrice": 5499.0,
-        "available": true
+        "price": 2749,
+        "compareAtPrice": 5499,
+        "available": true,
+        "colorCode": "#27AE60"
       },
       {
         "sku": "JS2503-w34-GRN",
         "size": "34",
         "color": "Green",
-        "price": 2749.0,
-        "compareAtPrice": 5499.0,
-        "available": true
+        "price": 2749,
+        "compareAtPrice": 5499,
+        "available": true,
+        "colorCode": "#27AE60"
       }
     ]
   },
@@ -432,33 +459,37 @@
         "sku": "ET2506-0XS-SKB",
         "size": "XS",
         "color": "Blue",
-        "price": 1999.0,
-        "compareAtPrice": 3999.0,
-        "available": false
+        "price": 1999,
+        "compareAtPrice": 3999,
+        "available": false,
+        "colorCode": "#3498DB"
       },
       {
         "sku": "ET2506-00S-SKB",
         "size": "S",
         "color": "Blue",
-        "price": 1999.0,
-        "compareAtPrice": 3999.0,
-        "available": false
+        "price": 1999,
+        "compareAtPrice": 3999,
+        "available": false,
+        "colorCode": "#3498DB"
       },
       {
         "sku": "ET2506-00M-SKB",
         "size": "M",
         "color": "Blue",
-        "price": 1999.0,
-        "compareAtPrice": 3999.0,
-        "available": true
+        "price": 1999,
+        "compareAtPrice": 3999,
+        "available": true,
+        "colorCode": "#3498DB"
       },
       {
         "sku": "ET2506-00L-SKB",
         "size": "L",
         "color": "Blue",
-        "price": 1999.0,
-        "compareAtPrice": 3999.0,
-        "available": false
+        "price": 1999,
+        "compareAtPrice": 3999,
+        "available": false,
+        "colorCode": "#3498DB"
       }
     ]
   },
@@ -466,7 +497,7 @@
     "source": "real",
     "title": "Drawstring-Hem Striped Shirt",
     "handle": "ft2513-grn",
-    "bodyHtml": "<p>Design Details: Collar, V-neck, button-through, turn up cuffs, drawstring-hem, cropped<br>Style: Shirt<br>Color: Light Green<br>Fabric: Cotton \u00a0</p>",
+    "bodyHtml": "<p>Design Details: Collar, V-neck, button-through, turn up cuffs, drawstring-hem, cropped<br>Style: Shirt<br>Color: Light Green<br>Fabric: Cotton  </p>",
     "productType": "Women Fashion Top",
     "tags": [
       "18-02-2025",
@@ -494,33 +525,37 @@
         "sku": "FT2513-0XS-GRN",
         "size": "XS",
         "color": "Green",
-        "price": 1649.0,
-        "compareAtPrice": 3299.0,
-        "available": false
+        "price": 1649,
+        "compareAtPrice": 3299,
+        "available": false,
+        "colorCode": "#27AE60"
       },
       {
         "sku": "FT2513-00S-GRN",
         "size": "S",
         "color": "Green",
-        "price": 1649.0,
-        "compareAtPrice": 3299.0,
-        "available": false
+        "price": 1649,
+        "compareAtPrice": 3299,
+        "available": false,
+        "colorCode": "#27AE60"
       },
       {
         "sku": "FT2513-00M-GRN",
         "size": "M",
         "color": "Green",
-        "price": 1649.0,
-        "compareAtPrice": 3299.0,
-        "available": false
+        "price": 1649,
+        "compareAtPrice": 3299,
+        "available": false,
+        "colorCode": "#27AE60"
       },
       {
         "sku": "FT2513-00L-GRN",
         "size": "L",
         "color": "Green",
-        "price": 1649.0,
-        "compareAtPrice": 3299.0,
-        "available": true
+        "price": 1649,
+        "compareAtPrice": 3299,
+        "available": true,
+        "colorCode": "#27AE60"
       }
     ]
   },
@@ -554,25 +589,28 @@
         "sku": "LATS06-00S-LPR",
         "size": "S",
         "color": "Purple",
-        "price": 1249.0,
-        "compareAtPrice": 2499.0,
-        "available": false
+        "price": 1249,
+        "compareAtPrice": 2499,
+        "available": false,
+        "colorCode": "#8B5CF6"
       },
       {
         "sku": "LATS06-00M-LPR",
         "size": "M",
         "color": "Purple",
-        "price": 1249.0,
-        "compareAtPrice": 2499.0,
-        "available": false
+        "price": 1249,
+        "compareAtPrice": 2499,
+        "available": false,
+        "colorCode": "#8B5CF6"
       },
       {
         "sku": "LATS06-00L-LPR",
         "size": "L",
         "color": "Purple",
-        "price": 1249.0,
-        "compareAtPrice": 2499.0,
-        "available": false
+        "price": 1249,
+        "compareAtPrice": 2499,
+        "available": false,
+        "colorCode": "#8B5CF6"
       }
     ]
   },
@@ -611,41 +649,46 @@
         "sku": "CS2503-w30-GEY",
         "size": "30",
         "color": "Grey",
-        "price": 2999.0,
-        "compareAtPrice": 5999.0,
-        "available": true
+        "price": 2999,
+        "compareAtPrice": 5999,
+        "available": true,
+        "colorCode": "#95A5A6"
       },
       {
         "sku": "CS2503-w32-GEY",
         "size": "32",
         "color": "Grey",
-        "price": 2999.0,
-        "compareAtPrice": 5999.0,
-        "available": true
+        "price": 2999,
+        "compareAtPrice": 5999,
+        "available": true,
+        "colorCode": "#95A5A6"
       },
       {
         "sku": "CS2503-w34-GEY",
         "size": "34",
         "color": "Grey",
-        "price": 2999.0,
-        "compareAtPrice": 5999.0,
-        "available": true
+        "price": 2999,
+        "compareAtPrice": 5999,
+        "available": true,
+        "colorCode": "#95A5A6"
       },
       {
         "sku": "CS2503-w36-GEY",
         "size": "36",
         "color": "Grey",
-        "price": 2999.0,
-        "compareAtPrice": 5999.0,
-        "available": false
+        "price": 2999,
+        "compareAtPrice": 5999,
+        "available": false,
+        "colorCode": "#95A5A6"
       },
       {
         "sku": "CS2503-w38-GEY",
         "size": "38",
         "color": "Grey",
-        "price": 2999.0,
-        "compareAtPrice": 5999.0,
-        "available": false
+        "price": 2999,
+        "compareAtPrice": 5999,
+        "available": false,
+        "colorCode": "#95A5A6"
       }
     ]
   },
@@ -681,33 +724,37 @@
         "sku": "ST2507-0XS-SKN",
         "size": "XS",
         "color": "Beige",
-        "price": 1649.0,
-        "compareAtPrice": 3299.0,
-        "available": true
+        "price": 1649,
+        "compareAtPrice": 3299,
+        "available": true,
+        "colorCode": "#E8DCC4"
       },
       {
         "sku": "ST2507-00S-SKN",
         "size": "S",
         "color": "Beige",
-        "price": 1649.0,
-        "compareAtPrice": 3299.0,
-        "available": false
+        "price": 1649,
+        "compareAtPrice": 3299,
+        "available": false,
+        "colorCode": "#E8DCC4"
       },
       {
         "sku": "ST2507-00M-SKN",
         "size": "M",
         "color": "Beige",
-        "price": 1649.0,
-        "compareAtPrice": 3299.0,
-        "available": false
+        "price": 1649,
+        "compareAtPrice": 3299,
+        "available": false,
+        "colorCode": "#E8DCC4"
       },
       {
         "sku": "ST2507-00L-SKN",
         "size": "L",
         "color": "Beige",
-        "price": 1649.0,
-        "compareAtPrice": 3299.0,
-        "available": true
+        "price": 1649,
+        "compareAtPrice": 3299,
+        "available": true,
+        "colorCode": "#E8DCC4"
       }
     ]
   },
@@ -747,41 +794,46 @@
         "sku": "TM2523-w30-BLK",
         "size": "30",
         "color": "Black",
-        "price": 2999.0,
-        "compareAtPrice": 5999.0,
-        "available": false
+        "price": 2999,
+        "compareAtPrice": 5999,
+        "available": false,
+        "colorCode": "#000000"
       },
       {
         "sku": "TM2523-w32-BLK",
         "size": "32",
         "color": "Black",
-        "price": 2999.0,
-        "compareAtPrice": 5999.0,
-        "available": false
+        "price": 2999,
+        "compareAtPrice": 5999,
+        "available": false,
+        "colorCode": "#000000"
       },
       {
         "sku": "TM2523-w34-BLK",
         "size": "34",
         "color": "Black",
-        "price": 2999.0,
-        "compareAtPrice": 5999.0,
-        "available": false
+        "price": 2999,
+        "compareAtPrice": 5999,
+        "available": false,
+        "colorCode": "#000000"
       },
       {
         "sku": "TM2523-w36-BLK",
         "size": "36",
         "color": "Black",
-        "price": 2999.0,
-        "compareAtPrice": 5999.0,
-        "available": true
+        "price": 2999,
+        "compareAtPrice": 5999,
+        "available": true,
+        "colorCode": "#000000"
       },
       {
         "sku": "TM2523-w38-BLK",
         "size": "38",
         "color": "Black",
-        "price": 2999.0,
-        "compareAtPrice": 5999.0,
-        "available": true
+        "price": 2999,
+        "compareAtPrice": 5999,
+        "available": true,
+        "colorCode": "#000000"
       }
     ]
   },
@@ -819,41 +871,46 @@
         "sku": "CJS501-5Y6-NVY",
         "size": "5-6 Y",
         "color": "Navy",
-        "price": 1999.0,
-        "compareAtPrice": 3999.0,
-        "available": true
+        "price": 1999,
+        "compareAtPrice": 3999,
+        "available": true,
+        "colorCode": "#1B2838"
       },
       {
         "sku": "CJS501-7Y8-NVY",
         "size": "7-8 Y",
         "color": "Navy",
-        "price": 1999.0,
-        "compareAtPrice": 3999.0,
-        "available": true
+        "price": 1999,
+        "compareAtPrice": 3999,
+        "available": true,
+        "colorCode": "#1B2838"
       },
       {
         "sku": "CJS501-10Y-NVY",
         "size": "9-10 Y",
         "color": "Navy",
-        "price": 1999.0,
-        "compareAtPrice": 3999.0,
-        "available": true
+        "price": 1999,
+        "compareAtPrice": 3999,
+        "available": true,
+        "colorCode": "#1B2838"
       },
       {
         "sku": "CJS501-12Y-NVY",
         "size": "11-12 Y",
         "color": "Navy",
-        "price": 1999.0,
-        "compareAtPrice": 3999.0,
-        "available": true
+        "price": 1999,
+        "compareAtPrice": 3999,
+        "available": true,
+        "colorCode": "#1B2838"
       },
       {
         "sku": "CJS501-14Y-NVY",
         "size": "13-14 Y",
         "color": "Navy",
-        "price": 1999.0,
-        "compareAtPrice": 3999.0,
-        "available": false
+        "price": 1999,
+        "compareAtPrice": 3999,
+        "available": false,
+        "colorCode": "#1B2838"
       }
     ]
   },
@@ -891,41 +948,46 @@
         "sku": "DJS501-5Y6-GRY",
         "size": "5-6 Y",
         "color": "Grey",
-        "price": 1999.0,
-        "compareAtPrice": 3999.0,
-        "available": true
+        "price": 1999,
+        "compareAtPrice": 3999,
+        "available": true,
+        "colorCode": "#95A5A6"
       },
       {
         "sku": "DJS501-7Y8-GRY",
         "size": "7-8 Y",
         "color": "Grey",
-        "price": 1999.0,
-        "compareAtPrice": 3999.0,
-        "available": true
+        "price": 1999,
+        "compareAtPrice": 3999,
+        "available": true,
+        "colorCode": "#95A5A6"
       },
       {
         "sku": "DJS501-10Y-GRY",
         "size": "9-10 Y",
         "color": "Grey",
-        "price": 1999.0,
-        "compareAtPrice": 3999.0,
-        "available": true
+        "price": 1999,
+        "compareAtPrice": 3999,
+        "available": true,
+        "colorCode": "#95A5A6"
       },
       {
         "sku": "DJS501-12Y-GRY",
         "size": "11-12 Y",
         "color": "Grey",
-        "price": 1999.0,
-        "compareAtPrice": 3999.0,
-        "available": true
+        "price": 1999,
+        "compareAtPrice": 3999,
+        "available": true,
+        "colorCode": "#95A5A6"
       },
       {
         "sku": "DJS501-14Y-GRY",
         "size": "13-14 Y",
         "color": "Grey",
-        "price": 1999.0,
-        "compareAtPrice": 3999.0,
-        "available": false
+        "price": 1999,
+        "compareAtPrice": 3999,
+        "available": false,
+        "colorCode": "#95A5A6"
       }
     ]
   },
@@ -933,7 +995,7 @@
     "source": "real",
     "title": "Basic Polo",
     "handle": "pjs501-ofw",
-    "bodyHtml": "<p style=\"margin-bottom: 0in; text-align: justify; line-height: normal; background: white;\" class=\"MsoNormal\"><span style=\"font-family: Montserrat; mso-fareast-font-family: 'Times New Roman'; mso-bidi-font-family: 'Times New Roman'; color: #212529; letter-spacing: .45pt;\">Design Details: 2</span><span style=\"font-family: Montserrat; mso-fareast-font-family: 'Times New Roman'; mso-bidi-font-family: 'Times New Roman'; color: #212529; letter-spacing: .45pt;\">-button placket, short sleeves, straight-cut hem</span></p>\n<p style=\"margin-bottom: 0in; text-align: justify; line-height: normal; background: white;\" class=\"MsoNormal\"><span style=\"font-family: Montserrat; mso-fareast-font-family: 'Times New Roman'; mso-bidi-font-family: 'Times New Roman'; color: #212529; letter-spacing: .45pt;\">Style:</span><span style=\"font-family: Montserrat; mso-fareast-font-family: 'Times New Roman'; mso-bidi-font-family: 'Times New Roman'; color: #212529; letter-spacing: .45pt;\"> Polo</span></p>\n<p style=\"margin-bottom: 0in; text-align: justify; line-height: normal; background: white;\" class=\"MsoNormal\"><span style=\"font-family: Montserrat; mso-fareast-font-family: 'Times New Roman'; mso-bidi-font-family: 'Times New Roman'; color: #212529; letter-spacing: .45pt;\">Color: </span><span style=\"font-family: Montserrat; mso-fareast-font-family: 'Times New Roman'; mso-bidi-font-family: 'Times New Roman'; color: #212529; letter-spacing: .45pt;\">White</span></p>\n<p style=\"margin-bottom: 0in; text-align: justify; line-height: normal; background: white;\" class=\"MsoNormal\"><span style=\"font-family: Montserrat; mso-fareast-font-family: 'Times New Roman'; mso-bidi-font-family: 'Times New Roman'; color: #212529; letter-spacing: .45pt;\">Fabric:</span><span style=\"font-family: Montserrat; mso-fareast-font-family: 'Times New Roman'; mso-bidi-font-family: 'Times New Roman'; color: #212529; letter-spacing: .45pt;\"> 100% Pique Cotton\u00a0</span></p>",
+    "bodyHtml": "<p style=\"margin-bottom: 0in; text-align: justify; line-height: normal; background: white;\" class=\"MsoNormal\"><span style=\"font-family: Montserrat; mso-fareast-font-family: 'Times New Roman'; mso-bidi-font-family: 'Times New Roman'; color: #212529; letter-spacing: .45pt;\">Design Details: 2</span><span style=\"font-family: Montserrat; mso-fareast-font-family: 'Times New Roman'; mso-bidi-font-family: 'Times New Roman'; color: #212529; letter-spacing: .45pt;\">-button placket, short sleeves, straight-cut hem</span></p>\n<p style=\"margin-bottom: 0in; text-align: justify; line-height: normal; background: white;\" class=\"MsoNormal\"><span style=\"font-family: Montserrat; mso-fareast-font-family: 'Times New Roman'; mso-bidi-font-family: 'Times New Roman'; color: #212529; letter-spacing: .45pt;\">Style:</span><span style=\"font-family: Montserrat; mso-fareast-font-family: 'Times New Roman'; mso-bidi-font-family: 'Times New Roman'; color: #212529; letter-spacing: .45pt;\"> Polo</span></p>\n<p style=\"margin-bottom: 0in; text-align: justify; line-height: normal; background: white;\" class=\"MsoNormal\"><span style=\"font-family: Montserrat; mso-fareast-font-family: 'Times New Roman'; mso-bidi-font-family: 'Times New Roman'; color: #212529; letter-spacing: .45pt;\">Color: </span><span style=\"font-family: Montserrat; mso-fareast-font-family: 'Times New Roman'; mso-bidi-font-family: 'Times New Roman'; color: #212529; letter-spacing: .45pt;\">White</span></p>\n<p style=\"margin-bottom: 0in; text-align: justify; line-height: normal; background: white;\" class=\"MsoNormal\"><span style=\"font-family: Montserrat; mso-fareast-font-family: 'Times New Roman'; mso-bidi-font-family: 'Times New Roman'; color: #212529; letter-spacing: .45pt;\">Fabric:</span><span style=\"font-family: Montserrat; mso-fareast-font-family: 'Times New Roman'; mso-bidi-font-family: 'Times New Roman'; color: #212529; letter-spacing: .45pt;\"> 100% Pique Cotton </span></p>",
     "productType": "Boy Polo",
     "tags": [
       "22-02-2025",
@@ -962,41 +1024,46 @@
         "sku": "PJS501-5Y6-OFW",
         "size": "5-6 Y",
         "color": "White",
-        "price": 1249.0,
-        "compareAtPrice": 2499.0,
-        "available": false
+        "price": 1249,
+        "compareAtPrice": 2499,
+        "available": false,
+        "colorCode": "#FFFFFF"
       },
       {
         "sku": "PJS501-7Y8-OFW",
         "size": "7-8 Y",
         "color": "White",
-        "price": 1249.0,
-        "compareAtPrice": 2499.0,
-        "available": true
+        "price": 1249,
+        "compareAtPrice": 2499,
+        "available": true,
+        "colorCode": "#FFFFFF"
       },
       {
         "sku": "PJS501-910-OFW",
         "size": "9-10 Y",
         "color": "White",
-        "price": 1249.0,
-        "compareAtPrice": 2499.0,
-        "available": true
+        "price": 1249,
+        "compareAtPrice": 2499,
+        "available": true,
+        "colorCode": "#FFFFFF"
       },
       {
         "sku": "PJS501-12Y-OFW",
         "size": "11-12 Y",
         "color": "White",
-        "price": 1249.0,
-        "compareAtPrice": 2499.0,
-        "available": true
+        "price": 1249,
+        "compareAtPrice": 2499,
+        "available": true,
+        "colorCode": "#FFFFFF"
       },
       {
         "sku": "PJS501-14Y-OFW",
         "size": "13-14 Y",
         "color": "White",
-        "price": 1249.0,
-        "compareAtPrice": 2499.0,
-        "available": false
+        "price": 1249,
+        "compareAtPrice": 2499,
+        "available": false,
+        "colorCode": "#FFFFFF"
       }
     ]
   },
@@ -1004,7 +1071,7 @@
     "source": "real",
     "title": "Tropical Printed Shorts",
     "handle": "njs501-grn",
-    "bodyHtml": "<p style=\"margin-bottom: 0in; line-height: normal; background: white; vertical-align: baseline;\" class=\"MsoNormal\"><span style=\"font-family: Montserrat; mso-fareast-font-family: 'Times New Roman'; mso-bidi-font-family: Helvetica; color: #454545; letter-spacing: .45pt;\">Design Details: Side slanted pockets, rear patch pocket, drawcords, tropical printed\u00a0</span><span style=\"font-family: Montserrat; mso-fareast-font-family: 'Times New Roman'; mso-bidi-font-family: 'Times New Roman'; color: #454545; letter-spacing: .45pt;\"></span></p>\n<p style=\"margin-bottom: 0in; line-height: normal; background: white; vertical-align: baseline;\" class=\"MsoNormal\"><span style=\"font-family: Montserrat; mso-fareast-font-family: 'Times New Roman'; mso-bidi-font-family: Helvetica; color: #454545; letter-spacing: .45pt;\">Style:\u00a0Shorts</span><span style=\"font-family: Montserrat; mso-fareast-font-family: 'Times New Roman'; mso-bidi-font-family: 'Times New Roman'; color: #454545; letter-spacing: .45pt;\"></span></p>\n<p style=\"margin-bottom: 0in; line-height: normal; background: white; vertical-align: baseline;\" class=\"MsoNormal\"><span style=\"font-family: Montserrat; mso-fareast-font-family: 'Times New Roman'; mso-bidi-font-family: Helvetica; color: #454545; letter-spacing: .45pt;\">Color:\u00a0Green</span><span style=\"font-family: Montserrat; mso-fareast-font-family: 'Times New Roman'; mso-bidi-font-family: 'Times New Roman'; color: #454545; letter-spacing: .45pt;\"></span></p>\n<p style=\"margin-bottom: 0in; line-height: normal; background: white; vertical-align: baseline;\" class=\"MsoNormal\"><span style=\"font-family: Montserrat; mso-fareast-font-family: 'Times New Roman'; mso-bidi-font-family: Helvetica; color: #454545; letter-spacing: .45pt;\">Fabric:\u00a098% Cotton, 2% Elastane</span><span style=\"font-family: Montserrat; mso-fareast-font-family: 'Times New Roman'; mso-bidi-font-family: 'Times New Roman'; color: #454545; letter-spacing: .45pt;\"></span></p>",
+    "bodyHtml": "<p style=\"margin-bottom: 0in; line-height: normal; background: white; vertical-align: baseline;\" class=\"MsoNormal\"><span style=\"font-family: Montserrat; mso-fareast-font-family: 'Times New Roman'; mso-bidi-font-family: Helvetica; color: #454545; letter-spacing: .45pt;\">Design Details: Side slanted pockets, rear patch pocket, drawcords, tropical printed </span><span style=\"font-family: Montserrat; mso-fareast-font-family: 'Times New Roman'; mso-bidi-font-family: 'Times New Roman'; color: #454545; letter-spacing: .45pt;\"></span></p>\n<p style=\"margin-bottom: 0in; line-height: normal; background: white; vertical-align: baseline;\" class=\"MsoNormal\"><span style=\"font-family: Montserrat; mso-fareast-font-family: 'Times New Roman'; mso-bidi-font-family: Helvetica; color: #454545; letter-spacing: .45pt;\">Style: Shorts</span><span style=\"font-family: Montserrat; mso-fareast-font-family: 'Times New Roman'; mso-bidi-font-family: 'Times New Roman'; color: #454545; letter-spacing: .45pt;\"></span></p>\n<p style=\"margin-bottom: 0in; line-height: normal; background: white; vertical-align: baseline;\" class=\"MsoNormal\"><span style=\"font-family: Montserrat; mso-fareast-font-family: 'Times New Roman'; mso-bidi-font-family: Helvetica; color: #454545; letter-spacing: .45pt;\">Color: Green</span><span style=\"font-family: Montserrat; mso-fareast-font-family: 'Times New Roman'; mso-bidi-font-family: 'Times New Roman'; color: #454545; letter-spacing: .45pt;\"></span></p>\n<p style=\"margin-bottom: 0in; line-height: normal; background: white; vertical-align: baseline;\" class=\"MsoNormal\"><span style=\"font-family: Montserrat; mso-fareast-font-family: 'Times New Roman'; mso-bidi-font-family: Helvetica; color: #454545; letter-spacing: .45pt;\">Fabric: 98% Cotton, 2% Elastane</span><span style=\"font-family: Montserrat; mso-fareast-font-family: 'Times New Roman'; mso-bidi-font-family: 'Times New Roman'; color: #454545; letter-spacing: .45pt;\"></span></p>",
     "productType": "Boy Short",
     "tags": [
       "22-02-2025",
@@ -1033,41 +1100,46 @@
         "sku": "NJS501-5Y6-GRN",
         "size": "5-6 Y",
         "color": "Green",
-        "price": 1449.0,
-        "compareAtPrice": 2899.0,
-        "available": false
+        "price": 1449,
+        "compareAtPrice": 2899,
+        "available": false,
+        "colorCode": "#27AE60"
       },
       {
         "sku": "NJS501-7Y8-GRN",
         "size": "7-8 Y",
         "color": "Green",
-        "price": 1449.0,
-        "compareAtPrice": 2899.0,
-        "available": true
+        "price": 1449,
+        "compareAtPrice": 2899,
+        "available": true,
+        "colorCode": "#27AE60"
       },
       {
         "sku": "NJS501-10Y-GRN",
         "size": "9-10 Y",
         "color": "Green",
-        "price": 1449.0,
-        "compareAtPrice": 2899.0,
-        "available": false
+        "price": 1449,
+        "compareAtPrice": 2899,
+        "available": false,
+        "colorCode": "#27AE60"
       },
       {
         "sku": "NJS501-12Y-GRN",
         "size": "11-12 Y",
         "color": "Green",
-        "price": 1449.0,
-        "compareAtPrice": 2899.0,
-        "available": true
+        "price": 1449,
+        "compareAtPrice": 2899,
+        "available": true,
+        "colorCode": "#27AE60"
       },
       {
         "sku": "NJS501-14Y-GRN",
         "size": "13-14 Y",
         "color": "Green",
-        "price": 1449.0,
-        "compareAtPrice": 2899.0,
-        "available": false
+        "price": 1449,
+        "compareAtPrice": 2899,
+        "available": false,
+        "colorCode": "#27AE60"
       }
     ]
   },
@@ -1075,7 +1147,7 @@
     "source": "real",
     "title": "Smiley Graphic T-Shirt",
     "handle": "tjs501-cwt",
-    "bodyHtml": "<p style=\"margin-bottom: 0in; text-align: justify; line-height: normal; background: white;\" class=\"MsoNormal\"><span style=\"font-family: Montserrat; mso-fareast-font-family: 'Times New Roman'; mso-bidi-font-family: 'Times New Roman'; color: #212529; letter-spacing: .45pt;\">Design Details:\u00a0</span><span style=\"font-family: Montserrat; mso-fareast-font-family: 'Times New Roman'; mso-bidi-font-family: 'Times New Roman'; color: #212529; letter-spacing: .45pt;\">Crew neck, short sleeves, straight-cut hem, graphic print</span></p>\n<p style=\"margin-bottom: 0in; text-align: justify; line-height: normal; background: white;\" class=\"MsoNormal\"><span style=\"font-family: Montserrat; mso-fareast-font-family: 'Times New Roman'; mso-bidi-font-family: 'Times New Roman'; color: #212529; letter-spacing: .45pt;\">Style:</span><span style=\"font-family: Montserrat; mso-fareast-font-family: 'Times New Roman'; mso-bidi-font-family: 'Times New Roman'; color: #212529; letter-spacing: .45pt;\"> T-Shirt</span></p>\n<p style=\"margin-bottom: 0in; text-align: justify; line-height: normal; background: white;\" class=\"MsoNormal\"><span style=\"font-family: Montserrat; mso-fareast-font-family: 'Times New Roman'; mso-bidi-font-family: 'Times New Roman'; color: #212529; letter-spacing: .45pt;\">Color: </span><span style=\"font-family: Montserrat; mso-fareast-font-family: 'Times New Roman'; mso-bidi-font-family: 'Times New Roman'; color: #212529; letter-spacing: .45pt;\">Off-White</span></p>\n<p style=\"margin-bottom: 0in; text-align: justify; line-height: normal; background: white;\" class=\"MsoNormal\"><span style=\"font-family: Montserrat; mso-fareast-font-family: 'Times New Roman'; mso-bidi-font-family: 'Times New Roman'; color: #212529; letter-spacing: .45pt;\">Fabric:\u00a0</span><span style=\"font-family: Montserrat; mso-fareast-font-family: 'Times New Roman'; mso-bidi-font-family: 'Times New Roman'; color: #212529; letter-spacing: .45pt;\">Cotton\u00a0</span></p>",
+    "bodyHtml": "<p style=\"margin-bottom: 0in; text-align: justify; line-height: normal; background: white;\" class=\"MsoNormal\"><span style=\"font-family: Montserrat; mso-fareast-font-family: 'Times New Roman'; mso-bidi-font-family: 'Times New Roman'; color: #212529; letter-spacing: .45pt;\">Design Details: </span><span style=\"font-family: Montserrat; mso-fareast-font-family: 'Times New Roman'; mso-bidi-font-family: 'Times New Roman'; color: #212529; letter-spacing: .45pt;\">Crew neck, short sleeves, straight-cut hem, graphic print</span></p>\n<p style=\"margin-bottom: 0in; text-align: justify; line-height: normal; background: white;\" class=\"MsoNormal\"><span style=\"font-family: Montserrat; mso-fareast-font-family: 'Times New Roman'; mso-bidi-font-family: 'Times New Roman'; color: #212529; letter-spacing: .45pt;\">Style:</span><span style=\"font-family: Montserrat; mso-fareast-font-family: 'Times New Roman'; mso-bidi-font-family: 'Times New Roman'; color: #212529; letter-spacing: .45pt;\"> T-Shirt</span></p>\n<p style=\"margin-bottom: 0in; text-align: justify; line-height: normal; background: white;\" class=\"MsoNormal\"><span style=\"font-family: Montserrat; mso-fareast-font-family: 'Times New Roman'; mso-bidi-font-family: 'Times New Roman'; color: #212529; letter-spacing: .45pt;\">Color: </span><span style=\"font-family: Montserrat; mso-fareast-font-family: 'Times New Roman'; mso-bidi-font-family: 'Times New Roman'; color: #212529; letter-spacing: .45pt;\">Off-White</span></p>\n<p style=\"margin-bottom: 0in; text-align: justify; line-height: normal; background: white;\" class=\"MsoNormal\"><span style=\"font-family: Montserrat; mso-fareast-font-family: 'Times New Roman'; mso-bidi-font-family: 'Times New Roman'; color: #212529; letter-spacing: .45pt;\">Fabric: </span><span style=\"font-family: Montserrat; mso-fareast-font-family: 'Times New Roman'; mso-bidi-font-family: 'Times New Roman'; color: #212529; letter-spacing: .45pt;\">Cotton </span></p>",
     "productType": "Boy Tee",
     "tags": [
       "22-02-2025",
@@ -1105,41 +1177,46 @@
         "sku": "TJS501-5Y6-CWT",
         "size": "5-6 Y",
         "color": "White",
-        "price": 949.0,
-        "compareAtPrice": 1899.0,
-        "available": false
+        "price": 949,
+        "compareAtPrice": 1899,
+        "available": false,
+        "colorCode": "#FFFFFF"
       },
       {
         "sku": "TJS501-7Y8-CWT",
         "size": "7-8 Y",
         "color": "White",
-        "price": 949.0,
-        "compareAtPrice": 1899.0,
-        "available": true
+        "price": 949,
+        "compareAtPrice": 1899,
+        "available": true,
+        "colorCode": "#FFFFFF"
       },
       {
         "sku": "TJS501-910-CWT",
         "size": "9-10 Y",
         "color": "White",
-        "price": 949.0,
-        "compareAtPrice": 1899.0,
-        "available": true
+        "price": 949,
+        "compareAtPrice": 1899,
+        "available": true,
+        "colorCode": "#FFFFFF"
       },
       {
         "sku": "TJS501-12Y-CWT",
         "size": "11-12 Y",
         "color": "White",
-        "price": 949.0,
-        "compareAtPrice": 1899.0,
-        "available": true
+        "price": 949,
+        "compareAtPrice": 1899,
+        "available": true,
+        "colorCode": "#FFFFFF"
       },
       {
         "sku": "TJS501-14Y-CWT",
         "size": "13-14 Y",
         "color": "White",
-        "price": 949.0,
-        "compareAtPrice": 1899.0,
-        "available": true
+        "price": 949,
+        "compareAtPrice": 1899,
+        "available": true,
+        "colorCode": "#FFFFFF"
       }
     ]
   },
@@ -1179,41 +1256,46 @@
         "sku": "GDS506-5Y6-BLK",
         "size": "5-6 Y",
         "color": "Black",
-        "price": 1999.0,
-        "compareAtPrice": 3999.0,
-        "available": true
+        "price": 1999,
+        "compareAtPrice": 3999,
+        "available": true,
+        "colorCode": "#000000"
       },
       {
         "sku": "GDS506-7Y8-BLK",
         "size": "7-8 Y",
         "color": "Black",
-        "price": 1999.0,
-        "compareAtPrice": 3999.0,
-        "available": true
+        "price": 1999,
+        "compareAtPrice": 3999,
+        "available": true,
+        "colorCode": "#000000"
       },
       {
         "sku": "GDS506-10Y-BLK",
         "size": "9-10 Y",
         "color": "Black",
-        "price": 1999.0,
-        "compareAtPrice": 3999.0,
-        "available": true
+        "price": 1999,
+        "compareAtPrice": 3999,
+        "available": true,
+        "colorCode": "#000000"
       },
       {
         "sku": "GDS506-12Y-BLK",
         "size": "11-12 Y",
         "color": "Black",
-        "price": 1999.0,
-        "compareAtPrice": 3999.0,
-        "available": true
+        "price": 1999,
+        "compareAtPrice": 3999,
+        "available": true,
+        "colorCode": "#000000"
       },
       {
         "sku": "GDS506-14Y-BLK",
         "size": "13-14 Y",
         "color": "Black",
-        "price": 1999.0,
-        "compareAtPrice": 3999.0,
-        "available": true
+        "price": 1999,
+        "compareAtPrice": 3999,
+        "available": true,
+        "colorCode": "#000000"
       }
     ]
   },
@@ -1253,41 +1335,46 @@
         "sku": "GFT404-5Y6-TEA",
         "size": "5-6 Y",
         "color": "Teal",
-        "price": 1849.0,
-        "compareAtPrice": 3699.0,
-        "available": true
+        "price": 1849,
+        "compareAtPrice": 3699,
+        "available": true,
+        "colorCode": "#008080"
       },
       {
         "sku": "GFT404-7Y8-TEA",
         "size": "7-8 Y",
         "color": "Teal",
-        "price": 1849.0,
-        "compareAtPrice": 3699.0,
-        "available": true
+        "price": 1849,
+        "compareAtPrice": 3699,
+        "available": true,
+        "colorCode": "#008080"
       },
       {
         "sku": "GFT404-910-TEA",
         "size": "9-10 Y",
         "color": "Teal",
-        "price": 1849.0,
-        "compareAtPrice": 3699.0,
-        "available": true
+        "price": 1849,
+        "compareAtPrice": 3699,
+        "available": true,
+        "colorCode": "#008080"
       },
       {
         "sku": "GFT404-12Y-TEA",
         "size": "11-12 Y",
         "color": "Teal",
-        "price": 1849.0,
-        "compareAtPrice": 3699.0,
-        "available": true
+        "price": 1849,
+        "compareAtPrice": 3699,
+        "available": true,
+        "colorCode": "#008080"
       },
       {
         "sku": "GFT404-14Y-TEA",
         "size": "13-14 Y",
         "color": "Teal",
-        "price": 1849.0,
-        "compareAtPrice": 3699.0,
-        "available": true
+        "price": 1849,
+        "compareAtPrice": 3699,
+        "available": true,
+        "colorCode": "#008080"
       }
     ]
   },
@@ -1326,41 +1413,46 @@
         "sku": "GFT421-5Y6-LPR",
         "size": "5-6 Y",
         "color": "Purple",
-        "price": 1349.0,
-        "compareAtPrice": 2699.0,
-        "available": true
+        "price": 1349,
+        "compareAtPrice": 2699,
+        "available": true,
+        "colorCode": "#8B5CF6"
       },
       {
         "sku": "GFT421-7Y8-LPR",
         "size": "7-8 Y",
         "color": "Purple",
-        "price": 1349.0,
-        "compareAtPrice": 2699.0,
-        "available": true
+        "price": 1349,
+        "compareAtPrice": 2699,
+        "available": true,
+        "colorCode": "#8B5CF6"
       },
       {
         "sku": "GFT421-910-LPR",
         "size": "9-10 Y",
         "color": "Purple",
-        "price": 1349.0,
-        "compareAtPrice": 2699.0,
-        "available": true
+        "price": 1349,
+        "compareAtPrice": 2699,
+        "available": true,
+        "colorCode": "#8B5CF6"
       },
       {
         "sku": "GFT421-12Y-LPR",
         "size": "11-12 Y",
         "color": "Purple",
-        "price": 1349.0,
-        "compareAtPrice": 2699.0,
-        "available": true
+        "price": 1349,
+        "compareAtPrice": 2699,
+        "available": true,
+        "colorCode": "#8B5CF6"
       },
       {
         "sku": "GFT421-14Y-LPR",
         "size": "13-14 Y",
         "color": "Purple",
-        "price": 1349.0,
-        "compareAtPrice": 2699.0,
-        "available": false
+        "price": 1349,
+        "compareAtPrice": 2699,
+        "available": false,
+        "colorCode": "#8B5CF6"
       }
     ]
   },
@@ -1397,41 +1489,46 @@
         "sku": "GFT433-5Y6-BUE",
         "size": "5-6 Y",
         "color": "Blue",
-        "price": 1649.0,
-        "compareAtPrice": 3299.0,
-        "available": true
+        "price": 1649,
+        "compareAtPrice": 3299,
+        "available": true,
+        "colorCode": "#3498DB"
       },
       {
         "sku": "GFT433-7Y8-BUE",
         "size": "7-8 Y",
         "color": "Blue",
-        "price": 1649.0,
-        "compareAtPrice": 3299.0,
-        "available": true
+        "price": 1649,
+        "compareAtPrice": 3299,
+        "available": true,
+        "colorCode": "#3498DB"
       },
       {
         "sku": "GFT433-910-BUE",
         "size": "9-10 Y",
         "color": "Blue",
-        "price": 1649.0,
-        "compareAtPrice": 3299.0,
-        "available": true
+        "price": 1649,
+        "compareAtPrice": 3299,
+        "available": true,
+        "colorCode": "#3498DB"
       },
       {
         "sku": "GFT433-12Y-BUE",
         "size": "11-12 Y",
         "color": "Blue",
-        "price": 1649.0,
-        "compareAtPrice": 3299.0,
-        "available": true
+        "price": 1649,
+        "compareAtPrice": 3299,
+        "available": true,
+        "colorCode": "#3498DB"
       },
       {
         "sku": "GFT433-14Y-BUE",
         "size": "13-14 Y",
         "color": "Blue",
-        "price": 1649.0,
-        "compareAtPrice": 3299.0,
-        "available": false
+        "price": 1649,
+        "compareAtPrice": 3299,
+        "available": false,
+        "colorCode": "#3498DB"
       }
     ]
   },
@@ -1439,7 +1536,7 @@
     "source": "real",
     "title": "Vacay Mood Shirt",
     "handle": "gst523-cwt",
-    "bodyHtml": "<p style=\"margin-bottom: 0in; text-align: justify; line-height: normal; background: white;\" class=\"MsoNormal\"><span style=\"font-family: Montserrat; mso-fareast-font-family: 'Times New Roman'; mso-bidi-font-family: 'Times New Roman'; color: #212529; letter-spacing: .45pt;\">Design Details:\u00a0</span><span style=\"font-family: Montserrat; mso-fareast-font-family: 'Times New Roman'; mso-bidi-font-family: 'Times New Roman'; color: #212529; letter-spacing: .45pt;\">Printed text at front, patch pocket, short sleeves, smiley patch at back</span></p>\n<p style=\"margin-bottom: 0in; text-align: justify; line-height: normal; background: white;\" class=\"MsoNormal\"><span style=\"font-family: Montserrat; mso-fareast-font-family: 'Times New Roman'; mso-bidi-font-family: 'Times New Roman'; color: #212529; letter-spacing: .45pt;\">Style:</span><span style=\"font-family: Montserrat; mso-fareast-font-family: 'Times New Roman'; mso-bidi-font-family: 'Times New Roman'; color: #212529; letter-spacing: .45pt;\"> Shirt</span></p>\n<p style=\"margin-bottom: 0in; text-align: justify; line-height: normal; background: white;\" class=\"MsoNormal\"><span style=\"font-family: Montserrat; mso-fareast-font-family: 'Times New Roman'; mso-bidi-font-family: 'Times New Roman'; color: #212529; letter-spacing: .45pt;\">Color: </span><span style=\"font-family: Montserrat; mso-fareast-font-family: 'Times New Roman'; mso-bidi-font-family: 'Times New Roman'; color: #212529; letter-spacing: .45pt;\">Cream white</span></p>\n<p style=\"margin-bottom: 0in; text-align: justify; line-height: normal; background: white;\" class=\"MsoNormal\"><span style=\"font-family: Montserrat; mso-fareast-font-family: 'Times New Roman'; mso-bidi-font-family: 'Times New Roman'; color: #212529; letter-spacing: .45pt;\">Fabric:</span><span style=\"font-family: Montserrat; mso-fareast-font-family: 'Times New Roman'; mso-bidi-font-family: 'Times New Roman'; color: #212529; letter-spacing: .45pt;\"> Cotton</span></p>",
+    "bodyHtml": "<p style=\"margin-bottom: 0in; text-align: justify; line-height: normal; background: white;\" class=\"MsoNormal\"><span style=\"font-family: Montserrat; mso-fareast-font-family: 'Times New Roman'; mso-bidi-font-family: 'Times New Roman'; color: #212529; letter-spacing: .45pt;\">Design Details: </span><span style=\"font-family: Montserrat; mso-fareast-font-family: 'Times New Roman'; mso-bidi-font-family: 'Times New Roman'; color: #212529; letter-spacing: .45pt;\">Printed text at front, patch pocket, short sleeves, smiley patch at back</span></p>\n<p style=\"margin-bottom: 0in; text-align: justify; line-height: normal; background: white;\" class=\"MsoNormal\"><span style=\"font-family: Montserrat; mso-fareast-font-family: 'Times New Roman'; mso-bidi-font-family: 'Times New Roman'; color: #212529; letter-spacing: .45pt;\">Style:</span><span style=\"font-family: Montserrat; mso-fareast-font-family: 'Times New Roman'; mso-bidi-font-family: 'Times New Roman'; color: #212529; letter-spacing: .45pt;\"> Shirt</span></p>\n<p style=\"margin-bottom: 0in; text-align: justify; line-height: normal; background: white;\" class=\"MsoNormal\"><span style=\"font-family: Montserrat; mso-fareast-font-family: 'Times New Roman'; mso-bidi-font-family: 'Times New Roman'; color: #212529; letter-spacing: .45pt;\">Color: </span><span style=\"font-family: Montserrat; mso-fareast-font-family: 'Times New Roman'; mso-bidi-font-family: 'Times New Roman'; color: #212529; letter-spacing: .45pt;\">Cream white</span></p>\n<p style=\"margin-bottom: 0in; text-align: justify; line-height: normal; background: white;\" class=\"MsoNormal\"><span style=\"font-family: Montserrat; mso-fareast-font-family: 'Times New Roman'; mso-bidi-font-family: 'Times New Roman'; color: #212529; letter-spacing: .45pt;\">Fabric:</span><span style=\"font-family: Montserrat; mso-fareast-font-family: 'Times New Roman'; mso-bidi-font-family: 'Times New Roman'; color: #212529; letter-spacing: .45pt;\"> Cotton</span></p>",
     "productType": "Girl Shirt",
     "tags": [
       "22-02-2025",
@@ -1469,41 +1566,46 @@
         "sku": "GST523-5Y6-CWT",
         "size": "5-6 Y",
         "color": "Off White",
-        "price": 1249.0,
-        "compareAtPrice": 2499.0,
-        "available": false
+        "price": 1249,
+        "compareAtPrice": 2499,
+        "available": false,
+        "colorCode": "#F5F2EA"
       },
       {
         "sku": "GST523-7Y8-CWT",
         "size": "7-8 Y",
         "color": "Off White",
-        "price": 1249.0,
-        "compareAtPrice": 2499.0,
-        "available": false
+        "price": 1249,
+        "compareAtPrice": 2499,
+        "available": false,
+        "colorCode": "#F5F2EA"
       },
       {
         "sku": "GST523-910-CWT",
         "size": "9-10 Y",
         "color": "Off White",
-        "price": 1249.0,
-        "compareAtPrice": 2499.0,
-        "available": false
+        "price": 1249,
+        "compareAtPrice": 2499,
+        "available": false,
+        "colorCode": "#F5F2EA"
       },
       {
         "sku": "GST523-12Y-CWT",
         "size": "11-12 Y",
         "color": "Off White",
-        "price": 1249.0,
-        "compareAtPrice": 2499.0,
-        "available": true
+        "price": 1249,
+        "compareAtPrice": 2499,
+        "available": true,
+        "colorCode": "#F5F2EA"
       },
       {
         "sku": "GST523-14Y-CWT",
         "size": "13-14 Y",
         "color": "Off White",
-        "price": 1249.0,
-        "compareAtPrice": 2499.0,
-        "available": true
+        "price": 1249,
+        "compareAtPrice": 2499,
+        "available": true,
+        "colorCode": "#F5F2EA"
       }
     ]
   },
@@ -1541,33 +1643,37 @@
         "sku": "GST529-5Y6-GRN",
         "size": "5-6 Y",
         "color": "Green",
-        "price": 1499.0,
-        "compareAtPrice": 2999.0,
-        "available": true
+        "price": 1499,
+        "compareAtPrice": 2999,
+        "available": true,
+        "colorCode": "#27AE60"
       },
       {
         "sku": "GST529-7Y8-GRN",
         "size": "7-8 Y",
         "color": "Green",
-        "price": 1499.0,
-        "compareAtPrice": 2999.0,
-        "available": true
+        "price": 1499,
+        "compareAtPrice": 2999,
+        "available": true,
+        "colorCode": "#27AE60"
       },
       {
         "sku": "GST529-910-GRN",
         "size": "9-10 Y",
         "color": "Green",
-        "price": 1499.0,
-        "compareAtPrice": 2999.0,
-        "available": true
+        "price": 1499,
+        "compareAtPrice": 2999,
+        "available": true,
+        "colorCode": "#27AE60"
       },
       {
         "sku": "GST529-12Y-GRN",
         "size": "11-12 Y",
         "color": "Green",
-        "price": 1499.0,
-        "compareAtPrice": 2999.0,
-        "available": true
+        "price": 1499,
+        "compareAtPrice": 2999,
+        "available": true,
+        "colorCode": "#27AE60"
       }
     ]
   },
@@ -1602,33 +1708,37 @@
         "sku": "FT2541-0XS-GRN",
         "size": "XS",
         "color": "Green",
-        "price": 1649.0,
-        "compareAtPrice": 3299.0,
-        "available": true
+        "price": 1649,
+        "compareAtPrice": 3299,
+        "available": true,
+        "colorCode": "#27AE60"
       },
       {
         "sku": "FT2541-00S-GRN",
         "size": "S",
         "color": "Green",
-        "price": 1649.0,
-        "compareAtPrice": 3299.0,
-        "available": true
+        "price": 1649,
+        "compareAtPrice": 3299,
+        "available": true,
+        "colorCode": "#27AE60"
       },
       {
         "sku": "FT2541-00M-GRN",
         "size": "M",
         "color": "Green",
-        "price": 1649.0,
-        "compareAtPrice": 3299.0,
-        "available": true
+        "price": 1649,
+        "compareAtPrice": 3299,
+        "available": true,
+        "colorCode": "#27AE60"
       },
       {
         "sku": "FT2541-00L-GRN",
         "size": "L",
         "color": "Green",
-        "price": 1649.0,
-        "compareAtPrice": 3299.0,
-        "available": true
+        "price": 1649,
+        "compareAtPrice": 3299,
+        "available": true,
+        "colorCode": "#27AE60"
       }
     ]
   },
@@ -1653,11 +1763,12 @@
     "variants": [
       {
         "sku": "SCS501-FSZ-GDN",
-        "size": "Default",
+        "size": "One Size",
         "color": "Pink",
-        "price": 1499.0,
-        "compareAtPrice": 2999.0,
-        "available": true
+        "price": 1499,
+        "compareAtPrice": 2999,
+        "available": true,
+        "colorCode": "#E91E63"
       }
     ]
   },
@@ -1694,41 +1805,46 @@
         "sku": "BSS501-5Y6-GRN",
         "size": "5-6 Y",
         "color": "Teal",
-        "price": 1649.0,
-        "compareAtPrice": 3299.0,
-        "available": false
+        "price": 1649,
+        "compareAtPrice": 3299,
+        "available": false,
+        "colorCode": "#008080"
       },
       {
         "sku": "BSS501-7Y8-GRN",
         "size": "7-8 Y",
         "color": "Teal",
-        "price": 1649.0,
-        "compareAtPrice": 3299.0,
-        "available": false
+        "price": 1649,
+        "compareAtPrice": 3299,
+        "available": false,
+        "colorCode": "#008080"
       },
       {
         "sku": "BSS501-910-GRN",
         "size": "9-10 Y",
         "color": "Teal",
-        "price": 1649.0,
-        "compareAtPrice": 3299.0,
-        "available": false
+        "price": 1649,
+        "compareAtPrice": 3299,
+        "available": false,
+        "colorCode": "#008080"
       },
       {
         "sku": "BSS501-12Y-GRN",
         "size": "11-12 Y",
         "color": "Teal",
-        "price": 1649.0,
-        "compareAtPrice": 3299.0,
-        "available": true
+        "price": 1649,
+        "compareAtPrice": 3299,
+        "available": true,
+        "colorCode": "#008080"
       },
       {
         "sku": "BSS501-14Y-GRN",
         "size": "13-14 Y",
         "color": "Teal",
-        "price": 1649.0,
-        "compareAtPrice": 3299.0,
-        "available": false
+        "price": 1649,
+        "compareAtPrice": 3299,
+        "available": false,
+        "colorCode": "#008080"
       }
     ]
   },
@@ -1765,17 +1881,19 @@
         "sku": "GTS501-12Y-WHT",
         "size": "11-12 Y",
         "color": "Off White",
-        "price": 849.0,
-        "compareAtPrice": 1699.0,
-        "available": true
+        "price": 849,
+        "compareAtPrice": 1699,
+        "available": true,
+        "colorCode": "#F5F2EA"
       },
       {
         "sku": "GTS501-14Y-WHT",
         "size": "13-14 Y",
         "color": "Off White",
-        "price": 849.0,
-        "compareAtPrice": 1699.0,
-        "available": true
+        "price": 849,
+        "compareAtPrice": 1699,
+        "available": true,
+        "colorCode": "#F5F2EA"
       }
     ]
   },
@@ -1812,41 +1930,46 @@
         "sku": "FJS501-5Y6-BLK",
         "size": "5-6 Y",
         "color": "Black",
-        "price": 1999.0,
-        "compareAtPrice": 3999.0,
-        "available": true
+        "price": 1999,
+        "compareAtPrice": 3999,
+        "available": true,
+        "colorCode": "#000000"
       },
       {
         "sku": "FJS501-7Y8-BLK",
         "size": "7-8 Y",
         "color": "Black",
-        "price": 1999.0,
-        "compareAtPrice": 3999.0,
-        "available": true
+        "price": 1999,
+        "compareAtPrice": 3999,
+        "available": true,
+        "colorCode": "#000000"
       },
       {
         "sku": "FJS501-10Y-BLK",
         "size": "9-10 Y",
         "color": "Black",
-        "price": 1999.0,
-        "compareAtPrice": 3999.0,
-        "available": true
+        "price": 1999,
+        "compareAtPrice": 3999,
+        "available": true,
+        "colorCode": "#000000"
       },
       {
         "sku": "FJS501-12Y-BLK",
         "size": "11-12 Y",
         "color": "Black",
-        "price": 1999.0,
-        "compareAtPrice": 3999.0,
-        "available": true
+        "price": 1999,
+        "compareAtPrice": 3999,
+        "available": true,
+        "colorCode": "#000000"
       },
       {
         "sku": "FJS501-14Y-BLK",
         "size": "13-14 Y",
         "color": "Black",
-        "price": 1999.0,
-        "compareAtPrice": 3999.0,
-        "available": false
+        "price": 1999,
+        "compareAtPrice": 3999,
+        "available": false,
+        "colorCode": "#000000"
       }
     ]
   },
@@ -1882,41 +2005,46 @@
         "sku": "BTS501-5Y6-BLK",
         "size": "5-6 Y",
         "color": "Black",
-        "price": 1849.0,
-        "compareAtPrice": 3699.0,
-        "available": false
+        "price": 1849,
+        "compareAtPrice": 3699,
+        "available": false,
+        "colorCode": "#000000"
       },
       {
         "sku": "BTS501-7Y8-BLK",
         "size": "7-8 Y",
         "color": "Black",
-        "price": 1849.0,
-        "compareAtPrice": 3699.0,
-        "available": true
+        "price": 1849,
+        "compareAtPrice": 3699,
+        "available": true,
+        "colorCode": "#000000"
       },
       {
         "sku": "BTS501-10Y-BLK",
         "size": "9-10 Y",
         "color": "Black",
-        "price": 1849.0,
-        "compareAtPrice": 3699.0,
-        "available": true
+        "price": 1849,
+        "compareAtPrice": 3699,
+        "available": true,
+        "colorCode": "#000000"
       },
       {
         "sku": "BTS501-12Y-BLK",
         "size": "11-12 Y",
         "color": "Black",
-        "price": 1849.0,
-        "compareAtPrice": 3699.0,
-        "available": true
+        "price": 1849,
+        "compareAtPrice": 3699,
+        "available": true,
+        "colorCode": "#000000"
       },
       {
         "sku": "BTS501-14Y-BLK",
         "size": "13-14 Y",
         "color": "Black",
-        "price": 1849.0,
-        "compareAtPrice": 3699.0,
-        "available": false
+        "price": 1849,
+        "compareAtPrice": 3699,
+        "available": false,
+        "colorCode": "#000000"
       }
     ]
   },
@@ -1954,32 +2082,32 @@
         "sku": "GST522-5Y6-MLT",
         "size": "5-6 Y",
         "color": "Multi",
-        "price": 999.0,
-        "compareAtPrice": 1999.0,
+        "price": 999,
+        "compareAtPrice": 1999,
         "available": false
       },
       {
         "sku": "GST522-7Y8-MLT",
         "size": "7-8 Y",
         "color": "Multi",
-        "price": 999.0,
-        "compareAtPrice": 1999.0,
+        "price": 999,
+        "compareAtPrice": 1999,
         "available": true
       },
       {
         "sku": "GST522-910-MLT",
         "size": "9-10 Y",
         "color": "Multi",
-        "price": 999.0,
-        "compareAtPrice": 1999.0,
+        "price": 999,
+        "compareAtPrice": 1999,
         "available": true
       },
       {
         "sku": "GST522-12Y-MLT",
         "size": "11-12 Y",
         "color": "Multi",
-        "price": 999.0,
-        "compareAtPrice": 1999.0,
+        "price": 999,
+        "compareAtPrice": 1999,
         "available": true
       }
     ]

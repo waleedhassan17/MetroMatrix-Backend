@@ -1,3 +1,4 @@
+const mongoose = require('mongoose');
 const asyncHandler = require('express-async-handler');
 const Product = require('../models/Product');
 const Category = require('../models/Category');
@@ -59,9 +60,20 @@ const getMyProducts = asyncHandler(async (req, res) => {
 
 /** salePrice must be a genuine discount, and an SKU (if given) must be
  * unique within the brand — Product.sku has no schema-level constraint. */
-const validateProductFields = async (brandId, { basePrice, salePrice, sku }, excludeProductId) => {
+const validateProductFields = async (brandId, { basePrice, salePrice, sku, categoryId }, excludeProductId) => {
   if (salePrice !== undefined && salePrice !== null && salePrice >= basePrice) {
     return `salePrice (${salePrice}) must be lower than basePrice (${basePrice})`;
+  }
+  // categoryId used to be copied into the document unchecked. A non-ObjectId
+  // string produced an opaque Mongoose CastError at save time, and a valid
+  // ObjectId belonging to ANOTHER brand was accepted verbatim — a cross-tenant
+  // write. Validate the shape and the ownership.
+  if (categoryId) {
+    if (!mongoose.isValidObjectId(categoryId)) {
+      return 'categoryId must be a valid category reference';
+    }
+    const owned = await Category.findOne({ _id: categoryId, brandId });
+    if (!owned) return 'Category not found in your brand';
   }
   if (sku) {
     const dupeFilter = { brandId, sku };

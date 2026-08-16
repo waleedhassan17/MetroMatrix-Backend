@@ -3,7 +3,7 @@
     "source": "real",
     "title": "Suede Saddle Bag",
     "handle": "f0219-213",
-    "bodyHtml": "<p><strong>\u00a0Composition &amp; Care </strong></p>\n<ul>\n<li>Do not bleach</li>\n<li>Do not dry clean</li>\n<li>Do not tumble dry</li>\n<li>Do not submerge in water<br>\n</li>\n</ul>",
+    "bodyHtml": "<p><strong> Composition &amp; Care </strong></p>\n<ul>\n<li>Do not bleach</li>\n<li>Do not dry clean</li>\n<li>Do not tumble dry</li>\n<li>Do not submerge in water<br>\n</li>\n</ul>",
     "productType": "BAGS",
     "tags": [
       "2024-2025",
@@ -36,11 +36,12 @@
     "variants": [
       {
         "sku": "F0219/213/801-50629911",
-        "size": "Brown",
-        "color": "FREE",
-        "price": 5590.0,
-        "compareAtPrice": 7990.0,
-        "available": true
+        "size": "One Size",
+        "color": "Brown",
+        "price": 5590,
+        "compareAtPrice": 7990,
+        "available": true,
+        "colorCode": "#8B5E3C"
       }
     ]
   },
@@ -115,99 +116,111 @@
     "variants": [
       {
         "sku": "F1318/206/805-50649385",
-        "size": "Taupe",
-        "color": "S",
-        "price": 1290.0,
-        "compareAtPrice": 1890.0,
-        "available": false
+        "size": "S",
+        "color": "Taupe",
+        "price": 1290,
+        "compareAtPrice": 1890,
+        "available": false,
+        "colorCode": "#B0A08E"
       },
       {
         "sku": "F1318/206/805-50649386",
-        "size": "Taupe",
-        "color": "M",
-        "price": 1290.0,
-        "compareAtPrice": 1890.0,
-        "available": false
+        "size": "M",
+        "color": "Taupe",
+        "price": 1290,
+        "compareAtPrice": 1890,
+        "available": false,
+        "colorCode": "#B0A08E"
       },
       {
         "sku": "F1318/206/805-50649387",
-        "size": "Taupe",
-        "color": "L",
-        "price": 1290.0,
-        "compareAtPrice": 1890.0,
-        "available": false
+        "size": "L",
+        "color": "Taupe",
+        "price": 1290,
+        "compareAtPrice": 1890,
+        "available": false,
+        "colorCode": "#B0A08E"
       },
       {
         "sku": "F1318/206/005-50649379",
-        "size": "Vanilla Ice",
-        "color": "S",
-        "price": 1290.0,
-        "compareAtPrice": 1890.0,
-        "available": false
+        "size": "S",
+        "color": "Vanilla Ice",
+        "price": 1290,
+        "compareAtPrice": 1890,
+        "available": false,
+        "colorCode": "#F3E5D0"
       },
       {
         "sku": "F1318/206/005-50649380",
-        "size": "Vanilla Ice",
-        "color": "M",
-        "price": 1290.0,
-        "compareAtPrice": 1890.0,
-        "available": true
+        "size": "M",
+        "color": "Vanilla Ice",
+        "price": 1290,
+        "compareAtPrice": 1890,
+        "available": true,
+        "colorCode": "#F3E5D0"
       },
       {
         "sku": "F1318/206/005-50649381",
-        "size": "Vanilla Ice",
-        "color": "L",
-        "price": 1290.0,
-        "compareAtPrice": 1890.0,
-        "available": false
+        "size": "L",
+        "color": "Vanilla Ice",
+        "price": 1290,
+        "compareAtPrice": 1890,
+        "available": false,
+        "colorCode": "#F3E5D0"
       },
       {
         "sku": "F1318/206/901-50649388",
-        "size": "Black",
-        "color": "S",
-        "price": 1290.0,
-        "compareAtPrice": 1890.0,
-        "available": false
+        "size": "S",
+        "color": "Black",
+        "price": 1290,
+        "compareAtPrice": 1890,
+        "available": false,
+        "colorCode": "#000000"
       },
       {
         "sku": "F1318/206/901-50649389",
-        "size": "Black",
-        "color": "M",
-        "price": 1290.0,
-        "compareAtPrice": 1890.0,
-        "available": false
+        "size": "M",
+        "color": "Black",
+        "price": 1290,
+        "compareAtPrice": 1890,
+        "available": false,
+        "colorCode": "#000000"
       },
       {
         "sku": "F1318/206/901-50649390",
-        "size": "Black",
-        "color": "L",
-        "price": 1290.0,
-        "compareAtPrice": 1890.0,
-        "available": false
+        "size": "L",
+        "color": "Black",
+        "price": 1290,
+        "compareAtPrice": 1890,
+        "available": false,
+        "colorCode": "#000000"
       },
       {
         "sku": "F1318/206/188-50649382",
-        "size": "Mlik Rose",
-        "color": "S",
-        "price": 1290.0,
-        "compareAtPrice": 1890.0,
-        "available": false
+        "size": "S",
+        "color": "Mlik Rose",
+        "price": 1290,
+        "compareAtPrice": 1890,
+        "available": false,
+        "colorCode": "#E8B4B8"
       },
       {
         "sku": "F1318/206/188-50649383",
-        "size": "Mlik Rose",
-        "color": "M",
-        "price": 1290.0,
-        "compareAtPrice": 1890.0,
-        "available": false
+        "size": "M",
+        "color": "Mlik Rose",
+        "price": 1290,
+        "compareAtPrice": 1890,
+        "available": false,
+        "colorCode": "#E8B4B8"
       },
       {
         "sku": "F1318/206/188-50649384",
-        "size": "Mlik Rose",
-        "color": "L",
-        "price": 1290.0,
-        "compareAtPrice": 1890.0,
-        "available": false
+        "size": "L",
+        "color": "Mlik Rose",
+        "price": 1290,
+        "compareAtPrice": 1890,
+        "available": false,
+        "colorCode": "#E8B4B8"
       }
     ]
   },
@@ -259,43 +272,48 @@
     "variants": [
       {
         "sku": "F0743/109/903-50657686",
-        "size": "Anthracite Grey",
-        "color": "30",
-        "price": 3190.0,
-        "compareAtPrice": 6490.0,
-        "available": false
+        "size": "30",
+        "color": "Anthracite Grey",
+        "price": 3190,
+        "compareAtPrice": 6490,
+        "available": false,
+        "colorCode": "#3A3A3C"
       },
       {
         "sku": "F0743/109/903-50657687",
-        "size": "Anthracite Grey",
-        "color": "32",
-        "price": 3190.0,
-        "compareAtPrice": 6490.0,
-        "available": false
+        "size": "32",
+        "color": "Anthracite Grey",
+        "price": 3190,
+        "compareAtPrice": 6490,
+        "available": false,
+        "colorCode": "#3A3A3C"
       },
       {
         "sku": "F0743/109/903-50657688",
-        "size": "Anthracite Grey",
-        "color": "34",
-        "price": 3190.0,
-        "compareAtPrice": 6490.0,
-        "available": true
+        "size": "34",
+        "color": "Anthracite Grey",
+        "price": 3190,
+        "compareAtPrice": 6490,
+        "available": true,
+        "colorCode": "#3A3A3C"
       },
       {
         "sku": "F0743/109/903-50657689",
-        "size": "Anthracite Grey",
-        "color": "36",
-        "price": 3190.0,
-        "compareAtPrice": 6490.0,
-        "available": false
+        "size": "36",
+        "color": "Anthracite Grey",
+        "price": 3190,
+        "compareAtPrice": 6490,
+        "available": false,
+        "colorCode": "#3A3A3C"
       },
       {
         "sku": "F0743/109/903-50657690",
-        "size": "Anthracite Grey",
-        "color": "38",
-        "price": 3190.0,
-        "compareAtPrice": 6490.0,
-        "available": false
+        "size": "38",
+        "color": "Anthracite Grey",
+        "price": 3190,
+        "compareAtPrice": 6490,
+        "available": false,
+        "colorCode": "#3A3A3C"
       }
     ]
   },
@@ -349,67 +367,71 @@
     "variants": [
       {
         "sku": "F1051/103/999-50672977",
-        "size": "Multi Color",
-        "color": "S",
-        "price": 2190.0,
-        "compareAtPrice": 4490.0,
+        "size": "S",
+        "color": "Multi Color",
+        "price": 2190,
+        "compareAtPrice": 4490,
         "available": false
       },
       {
         "sku": "F1051/103/999-50672978",
-        "size": "Multi Color",
-        "color": "M",
-        "price": 2190.0,
-        "compareAtPrice": 4490.0,
+        "size": "M",
+        "color": "Multi Color",
+        "price": 2190,
+        "compareAtPrice": 4490,
         "available": false
       },
       {
         "sku": "F1051/103/999-50672979",
-        "size": "Multi Color",
-        "color": "L",
-        "price": 2190.0,
-        "compareAtPrice": 4490.0,
+        "size": "L",
+        "color": "Multi Color",
+        "price": 2190,
+        "compareAtPrice": 4490,
         "available": true
       },
       {
         "sku": "F1051/103/999-50672980",
-        "size": "Multi Color",
-        "color": "XL",
-        "price": 2190.0,
-        "compareAtPrice": 4490.0,
+        "size": "XL",
+        "color": "Multi Color",
+        "price": 2190,
+        "compareAtPrice": 4490,
         "available": false
       },
       {
         "sku": "F1051/103/307-50672973",
-        "size": "Crimson Red",
-        "color": "S",
-        "price": 2190.0,
-        "compareAtPrice": 4490.0,
-        "available": false
+        "size": "S",
+        "color": "Crimson Red",
+        "price": 2190,
+        "compareAtPrice": 4490,
+        "available": false,
+        "colorCode": "#B01B2E"
       },
       {
         "sku": "F1051/103/307-50672974",
-        "size": "Crimson Red",
-        "color": "M",
-        "price": 2190.0,
-        "compareAtPrice": 4490.0,
-        "available": true
+        "size": "M",
+        "color": "Crimson Red",
+        "price": 2190,
+        "compareAtPrice": 4490,
+        "available": true,
+        "colorCode": "#B01B2E"
       },
       {
         "sku": "F1051/103/307-50672975",
-        "size": "Crimson Red",
-        "color": "L",
-        "price": 2190.0,
-        "compareAtPrice": 4490.0,
-        "available": true
+        "size": "L",
+        "color": "Crimson Red",
+        "price": 2190,
+        "compareAtPrice": 4490,
+        "available": true,
+        "colorCode": "#B01B2E"
       },
       {
         "sku": "F1051/103/307-50672976",
-        "size": "Crimson Red",
-        "color": "XL",
-        "price": 2190.0,
-        "compareAtPrice": 4490.0,
-        "available": false
+        "size": "XL",
+        "color": "Crimson Red",
+        "price": 2190,
+        "compareAtPrice": 4490,
+        "available": false,
+        "colorCode": "#B01B2E"
       }
     ]
   },
@@ -417,7 +439,7 @@
     "source": "real",
     "title": "Pack Of 3-Ankle Socks",
     "handle": "f0156-219",
-    "bodyHtml": "<p><strong>FIT:\u00a0</strong>Ankle</p>\n<p><strong>\u00a0Composition &amp; Care </strong></p>\n<ul>\n<li>Machine wash up to 30C/86F, gentle cycle</li>\n<li>Do not bleach</li>\n<li>Iron up to 110C/230F</li>\n<li>Do not iron directly on prints/embroidery/embellishments</li>\n<li>Do not dry clean</li>\n<li>Do not tumble dry</li>\n</ul>",
+    "bodyHtml": "<p><strong>FIT: </strong>Ankle</p>\n<p><strong> Composition &amp; Care </strong></p>\n<ul>\n<li>Machine wash up to 30C/86F, gentle cycle</li>\n<li>Do not bleach</li>\n<li>Iron up to 110C/230F</li>\n<li>Do not iron directly on prints/embroidery/embellishments</li>\n<li>Do not dry clean</li>\n<li>Do not tumble dry</li>\n</ul>",
     "productType": "SOCKS",
     "tags": [
       "2025-2026",
@@ -453,18 +475,18 @@
     "variants": [
       {
         "sku": "F0156/219/999-50668348",
-        "size": "Multi Color",
-        "color": "36-38",
-        "price": 590.0,
-        "compareAtPrice": 890.0,
+        "size": "36-38",
+        "color": "Multi Color",
+        "price": 590,
+        "compareAtPrice": 890,
         "available": true
       },
       {
         "sku": "F0156/219/999-50668347",
-        "size": "Multi Color",
-        "color": "39-41",
-        "price": 590.0,
-        "compareAtPrice": 890.0,
+        "size": "39-41",
+        "color": "Multi Color",
+        "price": 590,
+        "compareAtPrice": 890,
         "available": false
       }
     ]
@@ -504,11 +526,12 @@
     "variants": [
       {
         "sku": "F0453/217/131-50649179",
-        "size": "Gold",
-        "color": "FREE",
-        "price": 1990.0,
-        "compareAtPrice": 3990.0,
-        "available": true
+        "size": "One Size",
+        "color": "Gold",
+        "price": 1990,
+        "compareAtPrice": 3990,
+        "available": true,
+        "colorCode": "#C9A227"
       }
     ]
   },
@@ -516,7 +539,7 @@
     "source": "real",
     "title": "Knitted Cardigan",
     "handle": "knitted-cardigan-1",
-    "bodyHtml": "<p><strong><span id=\"fit-var-one\">FIT : </span></strong><span id=\"fit-var-two\">Regular\u00a0</span></p>\n<p>The name says it all the right size slightly snugs the body leaving enough room for comfort in the sleeves and waist. Does not taper down and offers a relaxed silhouette for your everyday looks</p>\n<p><br></p>\n<p><strong>\u00a0Composition &amp; Care </strong></p>\n<ul>\n<li>71% Polyester, 18% Acrylic, 11% Nylon<br>\n</li>\n<li>Machine wash up to 30C/86F, gentle cycle</li>\n<li>Do not bleach</li>\n<li>Iron up to 110C/230F</li>\n<li>Do not iron directly on prints/embroidery/embellishments</li>\n<li>Do not dry clean</li>\n<li>Do not tumble dry</li>\n</ul>",
+    "bodyHtml": "<p><strong><span id=\"fit-var-one\">FIT : </span></strong><span id=\"fit-var-two\">Regular </span></p>\n<p>The name says it all the right size slightly snugs the body leaving enough room for comfort in the sleeves and waist. Does not taper down and offers a relaxed silhouette for your everyday looks</p>\n<p><br></p>\n<p><strong> Composition &amp; Care </strong></p>\n<ul>\n<li>71% Polyester, 18% Acrylic, 11% Nylon<br>\n</li>\n<li>Machine wash up to 30C/86F, gentle cycle</li>\n<li>Do not bleach</li>\n<li>Iron up to 110C/230F</li>\n<li>Do not iron directly on prints/embroidery/embellishments</li>\n<li>Do not dry clean</li>\n<li>Do not tumble dry</li>\n</ul>",
     "productType": "SWEATERS",
     "tags": [
       "2024-2025",
@@ -556,35 +579,39 @@
     "variants": [
       {
         "sku": "F0258/202/007-50630431",
-        "size": "Sand",
-        "color": "XS",
-        "price": 4190.0,
-        "compareAtPrice": 8490.0,
-        "available": true
+        "size": "XS",
+        "color": "Sand",
+        "price": 4190,
+        "compareAtPrice": 8490,
+        "available": true,
+        "colorCode": "#D8C9A3"
       },
       {
         "sku": "F0258/202/007-50630432",
-        "size": "Sand",
-        "color": "S",
-        "price": 4190.0,
-        "compareAtPrice": 8490.0,
-        "available": false
+        "size": "S",
+        "color": "Sand",
+        "price": 4190,
+        "compareAtPrice": 8490,
+        "available": false,
+        "colorCode": "#D8C9A3"
       },
       {
         "sku": "F0258/202/007-50630433",
-        "size": "Sand",
-        "color": "M",
-        "price": 4190.0,
-        "compareAtPrice": 8490.0,
-        "available": false
+        "size": "M",
+        "color": "Sand",
+        "price": 4190,
+        "compareAtPrice": 8490,
+        "available": false,
+        "colorCode": "#D8C9A3"
       },
       {
         "sku": "F0258/202/007-50630434",
-        "size": "Sand",
-        "color": "L",
-        "price": 4190.0,
-        "compareAtPrice": 8490.0,
-        "available": false
+        "size": "L",
+        "color": "Sand",
+        "price": 4190,
+        "compareAtPrice": 8490,
+        "available": false,
+        "colorCode": "#D8C9A3"
       }
     ]
   },
@@ -629,11 +656,12 @@
     "variants": [
       {
         "sku": "F0234/113/901-50629921",
-        "size": "Black",
-        "color": "FREE",
-        "price": 1290.0,
-        "compareAtPrice": 2690.0,
-        "available": true
+        "size": "One Size",
+        "color": "Black",
+        "price": 1290,
+        "compareAtPrice": 2690,
+        "available": true,
+        "colorCode": "#000000"
       }
     ]
   },
@@ -693,35 +721,39 @@
     "variants": [
       {
         "sku": "F0536/108/901-50588874",
-        "size": "Black",
-        "color": "S",
-        "price": 2490.0,
-        "compareAtPrice": 4990.0,
-        "available": false
+        "size": "S",
+        "color": "Black",
+        "price": 2490,
+        "compareAtPrice": 4990,
+        "available": false,
+        "colorCode": "#000000"
       },
       {
         "sku": "F0536/108/901-50588875",
-        "size": "Black",
-        "color": "M",
-        "price": 2490.0,
-        "compareAtPrice": 4990.0,
-        "available": false
+        "size": "M",
+        "color": "Black",
+        "price": 2490,
+        "compareAtPrice": 4990,
+        "available": false,
+        "colorCode": "#000000"
       },
       {
         "sku": "F0536/108/901-50588876",
-        "size": "Black",
-        "color": "L",
-        "price": 2490.0,
-        "compareAtPrice": 4990.0,
-        "available": true
+        "size": "L",
+        "color": "Black",
+        "price": 2490,
+        "compareAtPrice": 4990,
+        "available": true,
+        "colorCode": "#000000"
       },
       {
         "sku": "F0536/108/901-50588877",
-        "size": "Black",
-        "color": "XL",
-        "price": 2490.0,
-        "compareAtPrice": 4990.0,
-        "available": false
+        "size": "XL",
+        "color": "Black",
+        "price": 2490,
+        "compareAtPrice": 4990,
+        "available": false,
+        "colorCode": "#000000"
       }
     ]
   },
@@ -783,66 +815,66 @@
     "variants": [
       {
         "sku": "F0282/204/999-50649547",
-        "size": "Multi Color",
-        "color": "XS",
-        "price": 3090.0,
-        "compareAtPrice": 4490.0,
+        "size": "XS",
+        "color": "Multi Color",
+        "price": 3090,
+        "compareAtPrice": 4490,
         "available": false
       },
       {
         "sku": "F0282/204/999-50649548",
-        "size": "Multi Color",
-        "color": "S",
-        "price": 3090.0,
-        "compareAtPrice": 4490.0,
+        "size": "S",
+        "color": "Multi Color",
+        "price": 3090,
+        "compareAtPrice": 4490,
         "available": false
       },
       {
         "sku": "F0282/204/999-50649549",
-        "size": "Multi Color",
-        "color": "M",
-        "price": 3090.0,
-        "compareAtPrice": 4490.0,
+        "size": "M",
+        "color": "Multi Color",
+        "price": 3090,
+        "compareAtPrice": 4490,
         "available": false
       },
       {
         "sku": "F0282/204/999-50649550",
-        "size": "Multi Color",
-        "color": "L",
-        "price": 3090.0,
-        "compareAtPrice": 4490.0,
+        "size": "L",
+        "color": "Multi Color",
+        "price": 3090,
+        "compareAtPrice": 4490,
         "available": false
       },
       {
         "sku": "F0282/204/998-50649546",
-        "size": "Multi Colour",
-        "color": "XS",
-        "price": 3090.0,
-        "compareAtPrice": 4490.0,
+        "size": "XS",
+        "color": "Multi Colour",
+        "price": 3090,
+        "compareAtPrice": 4490,
         "available": false
       },
       {
         "sku": "F0282/204/998-50649543",
-        "size": "Multi Colour",
-        "color": "S",
-        "price": 3090.0,
-        "compareAtPrice": 4490.0,
+        "size": "S",
+        "color": "Multi Colour",
+        "price": 3090,
+        "compareAtPrice": 4490,
         "available": false
       },
       {
         "sku": "F0282/204/998-50649544",
-        "size": "Multi Colour",
-        "color": "M",
-        "price": 3090.0,
-        "compareAtPrice": 4490.0,
+        "size": "M",
+        "color": "Multi Colour",
+        "price": 3090,
+        "compareAtPrice": 4490,
         "available": true
       },
       {
         "sku": "F0282/204/998-50649545",
-        "size": "Multi Colour",
-        "color": "L",
-        "price": 3090.0,
-        "compareAtPrice": 4490.0,
+        "size": "L",
+        "color": "Multi Colour",
+        "price": 3090,
+        "compareAtPrice": 4490,
         "available": false
       }
     ]
@@ -888,19 +920,21 @@
     "variants": [
       {
         "sku": "F0447/217/919-50649173",
-        "size": "Silver",
-        "color": "FREE",
-        "price": 790.0,
-        "compareAtPrice": 1690.0,
-        "available": false
+        "size": "One Size",
+        "color": "Silver",
+        "price": 790,
+        "compareAtPrice": 1690,
+        "available": false,
+        "colorCode": "#C0C0C0"
       },
       {
         "sku": "F0447/217/131-50649172",
-        "size": "Gold",
-        "color": "FREE",
-        "price": 790.0,
-        "compareAtPrice": 1690.0,
-        "available": true
+        "size": "One Size",
+        "color": "Gold",
+        "price": 790,
+        "compareAtPrice": 1690,
+        "available": true,
+        "colorCode": "#C9A227"
       }
     ]
   },
@@ -957,51 +991,57 @@
     "variants": [
       {
         "sku": "F0226/207/915-50632378",
-        "size": "Light Grey Marl",
-        "color": "S",
-        "price": 1690.0,
-        "compareAtPrice": 3490.0,
-        "available": false
+        "size": "S",
+        "color": "Light Grey Marl",
+        "price": 1690,
+        "compareAtPrice": 3490,
+        "available": false,
+        "colorCode": "#C8CBCC"
       },
       {
         "sku": "F0226/207/915-50632379",
-        "size": "Light Grey Marl",
-        "color": "M",
-        "price": 1690.0,
-        "compareAtPrice": 3490.0,
-        "available": false
+        "size": "M",
+        "color": "Light Grey Marl",
+        "price": 1690,
+        "compareAtPrice": 3490,
+        "available": false,
+        "colorCode": "#C8CBCC"
       },
       {
         "sku": "F0226/207/915-50632380",
-        "size": "Light Grey Marl",
-        "color": "L",
-        "price": 1690.0,
-        "compareAtPrice": 3490.0,
-        "available": true
+        "size": "L",
+        "color": "Light Grey Marl",
+        "price": 1690,
+        "compareAtPrice": 3490,
+        "available": true,
+        "colorCode": "#C8CBCC"
       },
       {
         "sku": "F0226/207/901-50632375",
-        "size": "Black",
-        "color": "S",
-        "price": 1690.0,
-        "compareAtPrice": 3490.0,
-        "available": false
+        "size": "S",
+        "color": "Black",
+        "price": 1690,
+        "compareAtPrice": 3490,
+        "available": false,
+        "colorCode": "#000000"
       },
       {
         "sku": "F0226/207/901-50632376",
-        "size": "Black",
-        "color": "M",
-        "price": 1690.0,
-        "compareAtPrice": 3490.0,
-        "available": false
+        "size": "M",
+        "color": "Black",
+        "price": 1690,
+        "compareAtPrice": 3490,
+        "available": false,
+        "colorCode": "#000000"
       },
       {
         "sku": "F0226/207/901-50632377",
-        "size": "Black",
-        "color": "L",
-        "price": 1690.0,
-        "compareAtPrice": 3490.0,
-        "available": false
+        "size": "L",
+        "color": "Black",
+        "price": 1690,
+        "compareAtPrice": 3490,
+        "available": false,
+        "colorCode": "#000000"
       }
     ]
   },
@@ -1009,7 +1049,7 @@
     "source": "real",
     "title": "Faux Leather Bomber Jacket",
     "handle": "faux-leather-bomber-jacket-5",
-    "bodyHtml": "<p><strong>FIT : </strong>Regular</p>\n<p>The name says it all the right size slightly snugs the body leaving enough room for comfort in the sleeves and waist. Does not taper down and offers a relaxed silhouette for your everyday looks</p>\n<p><br></p>\n<p><strong>\u00a0Composition &amp; Care </strong></p>\n<ul>\n<li>Shell:100%polyester , Lining:100%polyester</li>\n<li>Machine wash up to 30C/86F, gentle cycle</li>\n<li>Do not bleach</li>\n<li>Iron up to 110C/230F</li>\n<li>Do not iron directly on prints/embroidery/embellishments</li>\n<li>Do not dry clean</li>\n<li>Do not tumble dry</li>\n</ul>",
+    "bodyHtml": "<p><strong>FIT : </strong>Regular</p>\n<p>The name says it all the right size slightly snugs the body leaving enough room for comfort in the sleeves and waist. Does not taper down and offers a relaxed silhouette for your everyday looks</p>\n<p><br></p>\n<p><strong> Composition &amp; Care </strong></p>\n<ul>\n<li>Shell:100%polyester , Lining:100%polyester</li>\n<li>Machine wash up to 30C/86F, gentle cycle</li>\n<li>Do not bleach</li>\n<li>Iron up to 110C/230F</li>\n<li>Do not iron directly on prints/embroidery/embellishments</li>\n<li>Do not dry clean</li>\n<li>Do not tumble dry</li>\n</ul>",
     "productType": "OUTERWEAR",
     "tags": [
       "2024-2025",
@@ -1058,67 +1098,75 @@
     "variants": [
       {
         "sku": "F0329/201/803-50624808",
-        "size": "Dark Brown",
-        "color": "XS",
-        "price": 6990.0,
-        "compareAtPrice": 13990.0,
-        "available": false
+        "size": "XS",
+        "color": "Dark Brown",
+        "price": 6990,
+        "compareAtPrice": 13990,
+        "available": false,
+        "colorCode": "#4A322A"
       },
       {
         "sku": "F0329/201/803-50624805",
-        "size": "Dark Brown",
-        "color": "S",
-        "price": 6990.0,
-        "compareAtPrice": 13990.0,
-        "available": true
+        "size": "S",
+        "color": "Dark Brown",
+        "price": 6990,
+        "compareAtPrice": 13990,
+        "available": true,
+        "colorCode": "#4A322A"
       },
       {
         "sku": "F0329/201/803-50624806",
-        "size": "Dark Brown",
-        "color": "M",
-        "price": 6990.0,
-        "compareAtPrice": 13990.0,
-        "available": false
+        "size": "M",
+        "color": "Dark Brown",
+        "price": 6990,
+        "compareAtPrice": 13990,
+        "available": false,
+        "colorCode": "#4A322A"
       },
       {
         "sku": "F0329/201/803-50624807",
-        "size": "Dark Brown",
-        "color": "L",
-        "price": 6990.0,
-        "compareAtPrice": 13990.0,
-        "available": false
+        "size": "L",
+        "color": "Dark Brown",
+        "price": 6990,
+        "compareAtPrice": 13990,
+        "available": false,
+        "colorCode": "#4A322A"
       },
       {
         "sku": "F0329/201/901-50624812",
-        "size": "Black",
-        "color": "XS",
-        "price": 6990.0,
-        "compareAtPrice": 13990.0,
-        "available": false
+        "size": "XS",
+        "color": "Black",
+        "price": 6990,
+        "compareAtPrice": 13990,
+        "available": false,
+        "colorCode": "#000000"
       },
       {
         "sku": "F0329/201/901-50624809",
-        "size": "Black",
-        "color": "S",
-        "price": 6990.0,
-        "compareAtPrice": 13990.0,
-        "available": false
+        "size": "S",
+        "color": "Black",
+        "price": 6990,
+        "compareAtPrice": 13990,
+        "available": false,
+        "colorCode": "#000000"
       },
       {
         "sku": "F0329/201/901-50624810",
-        "size": "Black",
-        "color": "M",
-        "price": 6990.0,
-        "compareAtPrice": 13990.0,
-        "available": false
+        "size": "M",
+        "color": "Black",
+        "price": 6990,
+        "compareAtPrice": 13990,
+        "available": false,
+        "colorCode": "#000000"
       },
       {
         "sku": "F0329/201/901-50624811",
-        "size": "Black",
-        "color": "L",
-        "price": 6990.0,
-        "compareAtPrice": 13990.0,
-        "available": false
+        "size": "L",
+        "color": "Black",
+        "price": 6990,
+        "compareAtPrice": 13990,
+        "available": false,
+        "colorCode": "#000000"
       }
     ]
   },
@@ -1158,10 +1206,10 @@
     "variants": [
       {
         "sku": "F0092/220/998-50622939",
-        "size": "Multi Colour",
-        "color": "FREE",
-        "price": 1590.0,
-        "compareAtPrice": 3290.0,
+        "size": "One Size",
+        "color": "Multi Colour",
+        "price": 1590,
+        "compareAtPrice": 3290,
         "available": true
       }
     ]
@@ -1170,7 +1218,7 @@
     "source": "real",
     "title": "Embroidered Polo Shirt",
     "handle": "f1825-106-a",
-    "bodyHtml": "<p><strong>FIT : </strong>Regular</p>\n<p>The name says it all the right size slightly snugs the body leaving enough room for comfort in the sleeves and waist. Does not taper down and offers a relaxed silhouette for your everyday looks</p>\n<p><br></p>\n<p><strong>\u00a0Composition &amp; Care </strong></p>\n<ul>\n<li>100% Cotton</li>\n<li>Machine wash up to 30C/86F, gentle cycle</li>\n<li>Do not bleach</li>\n<li>Iron up to 110C/230F</li>\n<li>Do not iron directly on prints/embroidery/embellishments</li>\n<li>Do not dry clean</li>\n<li>Do not tumble dry</li>\n</ul>",
+    "bodyHtml": "<p><strong>FIT : </strong>Regular</p>\n<p>The name says it all the right size slightly snugs the body leaving enough room for comfort in the sleeves and waist. Does not taper down and offers a relaxed silhouette for your everyday looks</p>\n<p><br></p>\n<p><strong> Composition &amp; Care </strong></p>\n<ul>\n<li>100% Cotton</li>\n<li>Machine wash up to 30C/86F, gentle cycle</li>\n<li>Do not bleach</li>\n<li>Iron up to 110C/230F</li>\n<li>Do not iron directly on prints/embroidery/embellishments</li>\n<li>Do not dry clean</li>\n<li>Do not tumble dry</li>\n</ul>",
     "productType": "POLOS",
     "tags": [
       "2025-2026",
@@ -1213,35 +1261,39 @@
     "variants": [
       {
         "sku": "F1825/106/814-50661584",
-        "size": "Mushroom",
-        "color": "S",
-        "price": 2190.0,
-        "compareAtPrice": 4490.0,
-        "available": false
+        "size": "S",
+        "color": "Mushroom",
+        "price": 2190,
+        "compareAtPrice": 4490,
+        "available": false,
+        "colorCode": "#BDB0A0"
       },
       {
         "sku": "F1825/106/814-50661585",
-        "size": "Mushroom",
-        "color": "M",
-        "price": 2190.0,
-        "compareAtPrice": 4490.0,
-        "available": true
+        "size": "M",
+        "color": "Mushroom",
+        "price": 2190,
+        "compareAtPrice": 4490,
+        "available": true,
+        "colorCode": "#BDB0A0"
       },
       {
         "sku": "F1825/106/814-50661586",
-        "size": "Mushroom",
-        "color": "L",
-        "price": 2190.0,
-        "compareAtPrice": 4490.0,
-        "available": false
+        "size": "L",
+        "color": "Mushroom",
+        "price": 2190,
+        "compareAtPrice": 4490,
+        "available": false,
+        "colorCode": "#BDB0A0"
       },
       {
         "sku": "F1825/106/814-50661587",
-        "size": "Mushroom",
-        "color": "XL",
-        "price": 2190.0,
-        "compareAtPrice": 4490.0,
-        "available": false
+        "size": "XL",
+        "color": "Mushroom",
+        "price": 2190,
+        "compareAtPrice": 4490,
+        "available": false,
+        "colorCode": "#BDB0A0"
       }
     ]
   },
@@ -1249,7 +1301,7 @@
     "source": "real",
     "title": "Jacquard Shorts",
     "handle": "f0207-110",
-    "bodyHtml": "<p><strong style=\"font-size: 0.875rem;\">FIT:\u00a0</strong>Relaxed</p>\n<p><meta charset=\"utf-8\">A comfortable jean style designed for ease of movement and a casual appearance, offering a laid-back fashion choice prioritizing comfort and versatility</p>\n<p><strong style=\"font-size: 0.875rem;\">Composition &amp; Care</strong></p>\n<ul>\n<li>100% Cotton</li>\n<li>Machine wash up to 30C/86F, gentle cycle</li>\n<li>Do not bleach</li>\n<li>Iron up to 110C/230F</li>\n<li>Do not iron directly on prints/embroidery/embellishments</li>\n<li>Do not dry clean</li>\n<li>Do not tumble dry</li>\n</ul>",
+    "bodyHtml": "<p><strong style=\"font-size: 0.875rem;\">FIT: </strong>Relaxed</p>\n<p><meta charset=\"utf-8\">A comfortable jean style designed for ease of movement and a casual appearance, offering a laid-back fashion choice prioritizing comfort and versatility</p>\n<p><strong style=\"font-size: 0.875rem;\">Composition &amp; Care</strong></p>\n<ul>\n<li>100% Cotton</li>\n<li>Machine wash up to 30C/86F, gentle cycle</li>\n<li>Do not bleach</li>\n<li>Iron up to 110C/230F</li>\n<li>Do not iron directly on prints/embroidery/embellishments</li>\n<li>Do not dry clean</li>\n<li>Do not tumble dry</li>\n</ul>",
     "productType": "SHORTS",
     "tags": [
       "2025-2026",
@@ -1289,83 +1341,93 @@
     "variants": [
       {
         "sku": "F0207/110/117-50707219",
-        "size": "Dark Olive",
-        "color": "30",
-        "price": 4490.0,
-        "compareAtPrice": 4490.0,
-        "available": true
+        "size": "30",
+        "color": "Dark Olive",
+        "price": 4490,
+        "compareAtPrice": 4490,
+        "available": true,
+        "colorCode": "#4F5A31"
       },
       {
         "sku": "F0207/110/117-50707215",
-        "size": "Dark Olive",
-        "color": "32",
-        "price": 4490.0,
-        "compareAtPrice": 4490.0,
-        "available": true
+        "size": "32",
+        "color": "Dark Olive",
+        "price": 4490,
+        "compareAtPrice": 4490,
+        "available": true,
+        "colorCode": "#4F5A31"
       },
       {
         "sku": "F0207/110/117-50707216",
-        "size": "Dark Olive",
-        "color": "34",
-        "price": 4490.0,
-        "compareAtPrice": 4490.0,
-        "available": true
+        "size": "34",
+        "color": "Dark Olive",
+        "price": 4490,
+        "compareAtPrice": 4490,
+        "available": true,
+        "colorCode": "#4F5A31"
       },
       {
         "sku": "F0207/110/117-50707217",
-        "size": "Dark Olive",
-        "color": "36",
-        "price": 4490.0,
-        "compareAtPrice": 4490.0,
-        "available": true
+        "size": "36",
+        "color": "Dark Olive",
+        "price": 4490,
+        "compareAtPrice": 4490,
+        "available": true,
+        "colorCode": "#4F5A31"
       },
       {
         "sku": "F0207/110/117-50707218",
-        "size": "Dark Olive",
-        "color": "38",
-        "price": 4490.0,
-        "compareAtPrice": 4490.0,
-        "available": true
+        "size": "38",
+        "color": "Dark Olive",
+        "price": 4490,
+        "compareAtPrice": 4490,
+        "available": true,
+        "colorCode": "#4F5A31"
       },
       {
         "sku": "F0207/110/901-50707224",
-        "size": "Black",
-        "color": "30",
-        "price": 4490.0,
-        "compareAtPrice": 4490.0,
-        "available": true
+        "size": "30",
+        "color": "Black",
+        "price": 4490,
+        "compareAtPrice": 4490,
+        "available": true,
+        "colorCode": "#000000"
       },
       {
         "sku": "F0207/110/901-50707229",
-        "size": "Black",
-        "color": "32",
-        "price": 4490.0,
-        "compareAtPrice": 4490.0,
-        "available": true
+        "size": "32",
+        "color": "Black",
+        "price": 4490,
+        "compareAtPrice": 4490,
+        "available": true,
+        "colorCode": "#000000"
       },
       {
         "sku": "F0207/110/901-50707230",
-        "size": "Black",
-        "color": "34",
-        "price": 4490.0,
-        "compareAtPrice": 4490.0,
-        "available": true
+        "size": "34",
+        "color": "Black",
+        "price": 4490,
+        "compareAtPrice": 4490,
+        "available": true,
+        "colorCode": "#000000"
       },
       {
         "sku": "F0207/110/901-50707227",
-        "size": "Black",
-        "color": "36",
-        "price": 4490.0,
-        "compareAtPrice": 4490.0,
-        "available": true
+        "size": "36",
+        "color": "Black",
+        "price": 4490,
+        "compareAtPrice": 4490,
+        "available": true,
+        "colorCode": "#000000"
       },
       {
         "sku": "F0207/110/901-50707228",
-        "size": "Black",
-        "color": "38",
-        "price": 4490.0,
-        "compareAtPrice": 4490.0,
-        "available": true
+        "size": "38",
+        "color": "Black",
+        "price": 4490,
+        "compareAtPrice": 4490,
+        "available": true,
+        "colorCode": "#000000"
       }
     ]
   },
@@ -1418,35 +1480,39 @@
     "variants": [
       {
         "sku": "F0087/211/001-50676283",
-        "size": "White",
-        "color": "XS",
-        "price": 3490.0,
-        "compareAtPrice": 4990.0,
-        "available": false
+        "size": "XS",
+        "color": "White",
+        "price": 3490,
+        "compareAtPrice": 4990,
+        "available": false,
+        "colorCode": "#FFFFFF"
       },
       {
         "sku": "F0087/211/001-50676284",
-        "size": "White",
-        "color": "S",
-        "price": 3490.0,
-        "compareAtPrice": 4990.0,
-        "available": true
+        "size": "S",
+        "color": "White",
+        "price": 3490,
+        "compareAtPrice": 4990,
+        "available": true,
+        "colorCode": "#FFFFFF"
       },
       {
         "sku": "F0087/211/001-50676285",
-        "size": "White",
-        "color": "M",
-        "price": 3490.0,
-        "compareAtPrice": 4990.0,
-        "available": true
+        "size": "M",
+        "color": "White",
+        "price": 3490,
+        "compareAtPrice": 4990,
+        "available": true,
+        "colorCode": "#FFFFFF"
       },
       {
         "sku": "F0087/211/001-50676286",
-        "size": "White",
-        "color": "L",
-        "price": 3490.0,
-        "compareAtPrice": 4990.0,
-        "available": false
+        "size": "L",
+        "color": "White",
+        "price": 3490,
+        "compareAtPrice": 4990,
+        "available": false,
+        "colorCode": "#FFFFFF"
       }
     ]
   },
@@ -1496,99 +1562,111 @@
     "variants": [
       {
         "sku": "F0259/212/001-50621366",
-        "size": "White",
-        "color": "36",
-        "price": 2590.0,
-        "compareAtPrice": 5290.0,
-        "available": true
+        "size": "36",
+        "color": "White",
+        "price": 2590,
+        "compareAtPrice": 5290,
+        "available": true,
+        "colorCode": "#FFFFFF"
       },
       {
         "sku": "F0259/212/001-50621368",
-        "size": "White",
-        "color": "37",
-        "price": 2590.0,
-        "compareAtPrice": 5290.0,
-        "available": false
+        "size": "37",
+        "color": "White",
+        "price": 2590,
+        "compareAtPrice": 5290,
+        "available": false,
+        "colorCode": "#FFFFFF"
       },
       {
         "sku": "F0259/212/001-50621367",
-        "size": "White",
-        "color": "38",
-        "price": 2590.0,
-        "compareAtPrice": 5290.0,
-        "available": false
+        "size": "38",
+        "color": "White",
+        "price": 2590,
+        "compareAtPrice": 5290,
+        "available": false,
+        "colorCode": "#FFFFFF"
       },
       {
         "sku": "F0259/212/001-50621371",
-        "size": "White",
-        "color": "39",
-        "price": 2590.0,
-        "compareAtPrice": 5290.0,
-        "available": false
+        "size": "39",
+        "color": "White",
+        "price": 2590,
+        "compareAtPrice": 5290,
+        "available": false,
+        "colorCode": "#FFFFFF"
       },
       {
         "sku": "F0259/212/001-50621369",
-        "size": "White",
-        "color": "40",
-        "price": 2590.0,
-        "compareAtPrice": 5290.0,
-        "available": false
+        "size": "40",
+        "color": "White",
+        "price": 2590,
+        "compareAtPrice": 5290,
+        "available": false,
+        "colorCode": "#FFFFFF"
       },
       {
         "sku": "F0259/212/001-50621370",
-        "size": "White",
-        "color": "41",
-        "price": 2590.0,
-        "compareAtPrice": 5290.0,
-        "available": false
+        "size": "41",
+        "color": "White",
+        "price": 2590,
+        "compareAtPrice": 5290,
+        "available": false,
+        "colorCode": "#FFFFFF"
       },
       {
         "sku": "F0259/212/901-50621374",
-        "size": "Black",
-        "color": "36",
-        "price": 2590.0,
-        "compareAtPrice": 5290.0,
-        "available": false
+        "size": "36",
+        "color": "Black",
+        "price": 2590,
+        "compareAtPrice": 5290,
+        "available": false,
+        "colorCode": "#000000"
       },
       {
         "sku": "F0259/212/901-50621375",
-        "size": "Black",
-        "color": "37",
-        "price": 2590.0,
-        "compareAtPrice": 5290.0,
-        "available": false
+        "size": "37",
+        "color": "Black",
+        "price": 2590,
+        "compareAtPrice": 5290,
+        "available": false,
+        "colorCode": "#000000"
       },
       {
         "sku": "F0259/212/901-50621376",
-        "size": "Black",
-        "color": "38",
-        "price": 2590.0,
-        "compareAtPrice": 5290.0,
-        "available": false
+        "size": "38",
+        "color": "Black",
+        "price": 2590,
+        "compareAtPrice": 5290,
+        "available": false,
+        "colorCode": "#000000"
       },
       {
         "sku": "F0259/212/901-50621377",
-        "size": "Black",
-        "color": "39",
-        "price": 2590.0,
-        "compareAtPrice": 5290.0,
-        "available": false
+        "size": "39",
+        "color": "Black",
+        "price": 2590,
+        "compareAtPrice": 5290,
+        "available": false,
+        "colorCode": "#000000"
       },
       {
         "sku": "F0259/212/901-50621372",
-        "size": "Black",
-        "color": "40",
-        "price": 2590.0,
-        "compareAtPrice": 5290.0,
-        "available": false
+        "size": "40",
+        "color": "Black",
+        "price": 2590,
+        "compareAtPrice": 5290,
+        "available": false,
+        "colorCode": "#000000"
       },
       {
         "sku": "F0259/212/901-50621373",
-        "size": "Black",
-        "color": "41",
-        "price": 2590.0,
-        "compareAtPrice": 5290.0,
-        "available": false
+        "size": "41",
+        "color": "Black",
+        "price": 2590,
+        "compareAtPrice": 5290,
+        "available": false,
+        "colorCode": "#000000"
       }
     ]
   },
@@ -1630,27 +1708,30 @@
     "variants": [
       {
         "sku": "F0183/214/901-50654313",
-        "size": "Black",
-        "color": "S",
-        "price": 2990.0,
-        "compareAtPrice": 2990.0,
-        "available": true
+        "size": "S",
+        "color": "Black",
+        "price": 2990,
+        "compareAtPrice": 2990,
+        "available": true,
+        "colorCode": "#000000"
       },
       {
         "sku": "F0183/214/901-50654314",
-        "size": "Black",
-        "color": "M",
-        "price": 2990.0,
-        "compareAtPrice": 2990.0,
-        "available": true
+        "size": "M",
+        "color": "Black",
+        "price": 2990,
+        "compareAtPrice": 2990,
+        "available": true,
+        "colorCode": "#000000"
       },
       {
         "sku": "F0183/214/901-50654315",
-        "size": "Black",
-        "color": "L",
-        "price": 2990.0,
-        "compareAtPrice": 2990.0,
-        "available": true
+        "size": "L",
+        "color": "Black",
+        "price": 2990,
+        "compareAtPrice": 2990,
+        "available": true,
+        "colorCode": "#000000"
       }
     ]
   },
@@ -1688,11 +1769,12 @@
     "variants": [
       {
         "sku": "F0269/113/801-50699388",
-        "size": "Brown",
-        "color": "FREE",
-        "price": 1990.0,
-        "compareAtPrice": 1990.0,
-        "available": true
+        "size": "One Size",
+        "color": "Brown",
+        "price": 1990,
+        "compareAtPrice": 1990,
+        "available": true,
+        "colorCode": "#8B5E3C"
       }
     ]
   },
@@ -1739,35 +1821,39 @@
     "variants": [
       {
         "sku": "F0703/203/621-50634042",
-        "size": "Twilight",
-        "color": "XS",
-        "price": 2490.0,
-        "compareAtPrice": 4990.0,
-        "available": false
+        "size": "XS",
+        "color": "Twilight",
+        "price": 2490,
+        "compareAtPrice": 4990,
+        "available": false,
+        "colorCode": "#4A5A75"
       },
       {
         "sku": "F0703/203/621-50634043",
-        "size": "Twilight",
-        "color": "S",
-        "price": 2490.0,
-        "compareAtPrice": 4990.0,
-        "available": false
+        "size": "S",
+        "color": "Twilight",
+        "price": 2490,
+        "compareAtPrice": 4990,
+        "available": false,
+        "colorCode": "#4A5A75"
       },
       {
         "sku": "F0703/203/621-50634044",
-        "size": "Twilight",
-        "color": "M",
-        "price": 2490.0,
-        "compareAtPrice": 4990.0,
-        "available": false
+        "size": "M",
+        "color": "Twilight",
+        "price": 2490,
+        "compareAtPrice": 4990,
+        "available": false,
+        "colorCode": "#4A5A75"
       },
       {
         "sku": "F0703/203/621-50634045",
-        "size": "Twilight",
-        "color": "L",
-        "price": 2490.0,
-        "compareAtPrice": 4990.0,
-        "available": true
+        "size": "L",
+        "color": "Twilight",
+        "price": 2490,
+        "compareAtPrice": 4990,
+        "available": true,
+        "colorCode": "#4A5A75"
       }
     ]
   },
@@ -1775,7 +1861,7 @@
     "source": "real",
     "title": "Garden Noir",
     "handle": "f0092-124",
-    "bodyHtml": "<p class=\"MsoNormal\"><b>Top Notes:</b> <span style=\"font-size: 10.0pt; line-height: 107%; mso-ascii-font-family: Calibri; mso-fareast-font-family: 'Times New Roman'; mso-hansi-font-family: Calibri; mso-bidi-font-family: Calibri; color: black; mso-font-kerning: 0pt; mso-ligatures: none; mso-bidi-language: AR-SA;\"><span style=\"mso-spacerun: yes;\">\u00a0</span>Aqueous, Bergamot, Cardamom</span></p>\n<p class=\"MsoNormal\"><b>Middle Notes:</b> <span style=\"font-size: 10.0pt; line-height: 107%; mso-ascii-font-family: Calibri; mso-fareast-font-family: 'Times New Roman'; mso-hansi-font-family: Calibri; mso-bidi-font-family: Calibri; color: black; mso-font-kerning: 0pt; mso-ligatures: none; mso-bidi-language: AR-SA;\">Lavender, Orris, White Flower</span></p>\n<p class=\"MsoNormal\"><b>Base Notes:</b> <span style=\"mso-spacerun: yes;\">\u00a0</span><span style=\"font-size: 10.0pt; line-height: 107%; mso-ascii-font-family: Calibri; mso-fareast-font-family: 'Times New Roman'; mso-hansi-font-family: Calibri; mso-bidi-font-family: Calibri; color: black; mso-font-kerning: 0pt; mso-ligatures: none; mso-bidi-language: AR-SA;\">Cashmere, Cedarwood, Musk</span></p>\n<p class=\"MsoNormal\">\u00a0</p>\n<p class=\"MsoNormal\"><b>Ingredients:</b></p>\n<p class=\"MsoNormal\"><span style=\"font-size: 9.0pt; line-height: 107%; mso-ascii-font-family: Calibri; mso-hansi-font-family: Calibri; mso-bidi-font-family: Calibri; color: black;\">Alcohol Denat, Fragrance (Parfum), Water (Aqua), Camphor, Citral, Citronellol, Citrus Aurantium Peel Oil, Coumarin, Geraniol, Lavandula Oil, Limonene, Linalool, Pelargonium Graveolens Flower Oil, Pinene, Rose Ketones, Vanillin</span><span style=\"font-size: 9.0pt; line-height: 107%; mso-ascii-font-family: Calibri; mso-fareast-font-family: 'Times New Roman'; mso-hansi-font-family: Calibri; mso-bidi-font-family: Calibri; color: black; mso-font-kerning: 0pt; mso-ligatures: none; mso-bidi-language: AR-SA;\"></span></p>\n<p class=\"MsoNormal\">\u00a0</p>\n<p class=\"MsoNormal\"><b>Usage: </b>Apply perfume to the pulse points of the wrists and neck.</p>\n<p class=\"MsoNormal\">\u00a0</p>\n<p class=\"MsoNormal\"><b>Quantity:</b></p>\n<p class=\"MsoNormal\">100ml\u00a03.4fl.Oz.</p>\n<p class=\"MsoNormal\">\u00a0</p>",
+    "bodyHtml": "<p class=\"MsoNormal\"><b>Top Notes:</b> <span style=\"font-size: 10.0pt; line-height: 107%; mso-ascii-font-family: Calibri; mso-fareast-font-family: 'Times New Roman'; mso-hansi-font-family: Calibri; mso-bidi-font-family: Calibri; color: black; mso-font-kerning: 0pt; mso-ligatures: none; mso-bidi-language: AR-SA;\"><span style=\"mso-spacerun: yes;\"> </span>Aqueous, Bergamot, Cardamom</span></p>\n<p class=\"MsoNormal\"><b>Middle Notes:</b> <span style=\"font-size: 10.0pt; line-height: 107%; mso-ascii-font-family: Calibri; mso-fareast-font-family: 'Times New Roman'; mso-hansi-font-family: Calibri; mso-bidi-font-family: Calibri; color: black; mso-font-kerning: 0pt; mso-ligatures: none; mso-bidi-language: AR-SA;\">Lavender, Orris, White Flower</span></p>\n<p class=\"MsoNormal\"><b>Base Notes:</b> <span style=\"mso-spacerun: yes;\"> </span><span style=\"font-size: 10.0pt; line-height: 107%; mso-ascii-font-family: Calibri; mso-fareast-font-family: 'Times New Roman'; mso-hansi-font-family: Calibri; mso-bidi-font-family: Calibri; color: black; mso-font-kerning: 0pt; mso-ligatures: none; mso-bidi-language: AR-SA;\">Cashmere, Cedarwood, Musk</span></p>\n<p class=\"MsoNormal\"> </p>\n<p class=\"MsoNormal\"><b>Ingredients:</b></p>\n<p class=\"MsoNormal\"><span style=\"font-size: 9.0pt; line-height: 107%; mso-ascii-font-family: Calibri; mso-hansi-font-family: Calibri; mso-bidi-font-family: Calibri; color: black;\">Alcohol Denat, Fragrance (Parfum), Water (Aqua), Camphor, Citral, Citronellol, Citrus Aurantium Peel Oil, Coumarin, Geraniol, Lavandula Oil, Limonene, Linalool, Pelargonium Graveolens Flower Oil, Pinene, Rose Ketones, Vanillin</span><span style=\"font-size: 9.0pt; line-height: 107%; mso-ascii-font-family: Calibri; mso-fareast-font-family: 'Times New Roman'; mso-hansi-font-family: Calibri; mso-bidi-font-family: Calibri; color: black; mso-font-kerning: 0pt; mso-ligatures: none; mso-bidi-language: AR-SA;\"></span></p>\n<p class=\"MsoNormal\"> </p>\n<p class=\"MsoNormal\"><b>Usage: </b>Apply perfume to the pulse points of the wrists and neck.</p>\n<p class=\"MsoNormal\"> </p>\n<p class=\"MsoNormal\"><b>Quantity:</b></p>\n<p class=\"MsoNormal\">100ml 3.4fl.Oz.</p>\n<p class=\"MsoNormal\"> </p>",
     "productType": "FRAGRANCES",
     "tags": [
       "2024-2025",
@@ -1811,10 +1897,10 @@
     "variants": [
       {
         "sku": "F0092/124/998-50634738",
-        "size": "Multi Colour",
-        "color": "FREE",
-        "price": 3090.0,
-        "compareAtPrice": 4490.0,
+        "size": "One Size",
+        "color": "Multi Colour",
+        "price": 3090,
+        "compareAtPrice": 4490,
         "available": true
       }
     ]
@@ -1857,35 +1943,39 @@
     "variants": [
       {
         "sku": "F0246/125/909-50710114",
-        "size": "Grey",
-        "color": "S",
-        "price": 3290.0,
-        "compareAtPrice": 3290.0,
-        "available": true
+        "size": "S",
+        "color": "Grey",
+        "price": 3290,
+        "compareAtPrice": 3290,
+        "available": true,
+        "colorCode": "#95A5A6"
       },
       {
         "sku": "F0246/125/909-50710115",
-        "size": "Grey",
-        "color": "M",
-        "price": 3290.0,
-        "compareAtPrice": 3290.0,
-        "available": true
+        "size": "M",
+        "color": "Grey",
+        "price": 3290,
+        "compareAtPrice": 3290,
+        "available": true,
+        "colorCode": "#95A5A6"
       },
       {
         "sku": "F0246/125/909-50710116",
-        "size": "Grey",
-        "color": "L",
-        "price": 3290.0,
-        "compareAtPrice": 3290.0,
-        "available": true
+        "size": "L",
+        "color": "Grey",
+        "price": 3290,
+        "compareAtPrice": 3290,
+        "available": true,
+        "colorCode": "#95A5A6"
       },
       {
         "sku": "F0246/125/909-50710117",
-        "size": "Grey",
-        "color": "XL",
-        "price": 3290.0,
-        "compareAtPrice": 3290.0,
-        "available": true
+        "size": "XL",
+        "color": "Grey",
+        "price": 3290,
+        "compareAtPrice": 3290,
+        "available": true,
+        "colorCode": "#95A5A6"
       }
     ]
   },
@@ -1893,7 +1983,7 @@
     "source": "real",
     "title": "Activewear Shorts With Piping Detail",
     "handle": "f0264-125",
-    "bodyHtml": "<p><strong>FIT :\u00a0</strong>Relaxed</p>\n<p><meta charset=\"utf-8\">A comfortable jean style designed for ease of movement and a casual appearance, offering a laid-back fashion choice prioritizing comfort and versatility</p>\n<p><strong> Composition &amp; Care </strong></p>\n<ul>\n<li>100% Polyester</li>\n<li>Machine wash up to 30C/86F, gentle cycle</li>\n<li>Do not bleach</li>\n<li>Iron up to 110C/230F</li>\n<li>Do not iron directly on prints/embroidery/embellishments</li>\n<li>Do not dry clean</li>\n<li>Do not tumble dry</li>\n</ul>",
+    "bodyHtml": "<p><strong>FIT : </strong>Relaxed</p>\n<p><meta charset=\"utf-8\">A comfortable jean style designed for ease of movement and a casual appearance, offering a laid-back fashion choice prioritizing comfort and versatility</p>\n<p><strong> Composition &amp; Care </strong></p>\n<ul>\n<li>100% Polyester</li>\n<li>Machine wash up to 30C/86F, gentle cycle</li>\n<li>Do not bleach</li>\n<li>Iron up to 110C/230F</li>\n<li>Do not iron directly on prints/embroidery/embellishments</li>\n<li>Do not dry clean</li>\n<li>Do not tumble dry</li>\n</ul>",
     "productType": "ACTIVEWEAR (BOTTOM)",
     "tags": [
       "2025-2026",
@@ -1931,35 +2021,39 @@
     "variants": [
       {
         "sku": "F0264/125/901-50714471",
-        "size": "Black",
-        "color": "S",
-        "price": 4490.0,
-        "compareAtPrice": 4490.0,
-        "available": true
+        "size": "S",
+        "color": "Black",
+        "price": 4490,
+        "compareAtPrice": 4490,
+        "available": true,
+        "colorCode": "#000000"
       },
       {
         "sku": "F0264/125/901-50714472",
-        "size": "Black",
-        "color": "M",
-        "price": 4490.0,
-        "compareAtPrice": 4490.0,
-        "available": true
+        "size": "M",
+        "color": "Black",
+        "price": 4490,
+        "compareAtPrice": 4490,
+        "available": true,
+        "colorCode": "#000000"
       },
       {
         "sku": "F0264/125/901-50714473",
-        "size": "Black",
-        "color": "L",
-        "price": 4490.0,
-        "compareAtPrice": 4490.0,
-        "available": true
+        "size": "L",
+        "color": "Black",
+        "price": 4490,
+        "compareAtPrice": 4490,
+        "available": true,
+        "colorCode": "#000000"
       },
       {
         "sku": "F0264/125/901-50714474",
-        "size": "Black",
-        "color": "XL",
-        "price": 4490.0,
-        "compareAtPrice": 4490.0,
-        "available": true
+        "size": "XL",
+        "color": "Black",
+        "price": 4490,
+        "compareAtPrice": 4490,
+        "available": true,
+        "colorCode": "#000000"
       }
     ]
   },
@@ -2003,34 +2097,34 @@
     "variants": [
       {
         "sku": "F0188/122/998-50694587",
-        "size": "Multi Colour",
-        "color": "S",
-        "price": 2490.0,
-        "compareAtPrice": 2490.0,
+        "size": "S",
+        "color": "Multi Colour",
+        "price": 2490,
+        "compareAtPrice": 2490,
         "available": true
       },
       {
         "sku": "F0188/122/998-50694588",
-        "size": "Multi Colour",
-        "color": "M",
-        "price": 2490.0,
-        "compareAtPrice": 2490.0,
+        "size": "M",
+        "color": "Multi Colour",
+        "price": 2490,
+        "compareAtPrice": 2490,
         "available": true
       },
       {
         "sku": "F0188/122/998-50694589",
-        "size": "Multi Colour",
-        "color": "L",
-        "price": 2490.0,
-        "compareAtPrice": 2490.0,
+        "size": "L",
+        "color": "Multi Colour",
+        "price": 2490,
+        "compareAtPrice": 2490,
         "available": true
       },
       {
         "sku": "F0188/122/998-50694590",
-        "size": "Multi Colour",
-        "color": "XL",
-        "price": 2490.0,
-        "compareAtPrice": 2490.0,
+        "size": "XL",
+        "color": "Multi Colour",
+        "price": 2490,
+        "compareAtPrice": 2490,
         "available": true
       }
     ]
@@ -2078,67 +2172,75 @@
     "variants": [
       {
         "sku": "F0260/125/901-50702532",
-        "size": "Black",
-        "color": "S",
-        "price": 3690.0,
-        "compareAtPrice": 3690.0,
-        "available": true
+        "size": "S",
+        "color": "Black",
+        "price": 3690,
+        "compareAtPrice": 3690,
+        "available": true,
+        "colorCode": "#000000"
       },
       {
         "sku": "F0260/125/901-50702533",
-        "size": "Black",
-        "color": "M",
-        "price": 3690.0,
-        "compareAtPrice": 3690.0,
-        "available": true
+        "size": "M",
+        "color": "Black",
+        "price": 3690,
+        "compareAtPrice": 3690,
+        "available": true,
+        "colorCode": "#000000"
       },
       {
         "sku": "F0260/125/901-50702534",
-        "size": "Black",
-        "color": "L",
-        "price": 3690.0,
-        "compareAtPrice": 3690.0,
-        "available": true
+        "size": "L",
+        "color": "Black",
+        "price": 3690,
+        "compareAtPrice": 3690,
+        "available": true,
+        "colorCode": "#000000"
       },
       {
         "sku": "F0260/125/901-50702535",
-        "size": "Black",
-        "color": "XL",
-        "price": 3690.0,
-        "compareAtPrice": 3690.0,
-        "available": true
+        "size": "XL",
+        "color": "Black",
+        "price": 3690,
+        "compareAtPrice": 3690,
+        "available": true,
+        "colorCode": "#000000"
       },
       {
         "sku": "F0260/125/002-50702528",
-        "size": "Off White",
-        "color": "S",
-        "price": 3690.0,
-        "compareAtPrice": 3690.0,
-        "available": true
+        "size": "S",
+        "color": "Off White",
+        "price": 3690,
+        "compareAtPrice": 3690,
+        "available": true,
+        "colorCode": "#F5F2EA"
       },
       {
         "sku": "F0260/125/002-50702529",
-        "size": "Off White",
-        "color": "M",
-        "price": 3690.0,
-        "compareAtPrice": 3690.0,
-        "available": true
+        "size": "M",
+        "color": "Off White",
+        "price": 3690,
+        "compareAtPrice": 3690,
+        "available": true,
+        "colorCode": "#F5F2EA"
       },
       {
         "sku": "F0260/125/002-50702530",
-        "size": "Off White",
-        "color": "L",
-        "price": 3690.0,
-        "compareAtPrice": 3690.0,
-        "available": true
+        "size": "L",
+        "color": "Off White",
+        "price": 3690,
+        "compareAtPrice": 3690,
+        "available": true,
+        "colorCode": "#F5F2EA"
       },
       {
         "sku": "F0260/125/002-50702531",
-        "size": "Off White",
-        "color": "XL",
-        "price": 3690.0,
-        "compareAtPrice": 3690.0,
-        "available": true
+        "size": "XL",
+        "color": "Off White",
+        "price": 3690,
+        "compareAtPrice": 3690,
+        "available": true,
+        "colorCode": "#F5F2EA"
       }
     ]
   },
@@ -2189,99 +2291,111 @@
     "variants": [
       {
         "sku": "F0218/212/804-50590055",
-        "size": "Chocolate Brown",
-        "color": "36",
-        "price": 3190.0,
-        "compareAtPrice": 6390.0,
-        "available": false
+        "size": "36",
+        "color": "Chocolate Brown",
+        "price": 3190,
+        "compareAtPrice": 6390,
+        "available": false,
+        "colorCode": "#5C4033"
       },
       {
         "sku": "F0218/212/804-50590056",
-        "size": "Chocolate Brown",
-        "color": "37",
-        "price": 3190.0,
-        "compareAtPrice": 6390.0,
-        "available": false
+        "size": "37",
+        "color": "Chocolate Brown",
+        "price": 3190,
+        "compareAtPrice": 6390,
+        "available": false,
+        "colorCode": "#5C4033"
       },
       {
         "sku": "F0218/212/804-50590057",
-        "size": "Chocolate Brown",
-        "color": "38",
-        "price": 3190.0,
-        "compareAtPrice": 6390.0,
-        "available": true
+        "size": "38",
+        "color": "Chocolate Brown",
+        "price": 3190,
+        "compareAtPrice": 6390,
+        "available": true,
+        "colorCode": "#5C4033"
       },
       {
         "sku": "F0218/212/804-50590058",
-        "size": "Chocolate Brown",
-        "color": "39",
-        "price": 3190.0,
-        "compareAtPrice": 6390.0,
-        "available": false
+        "size": "39",
+        "color": "Chocolate Brown",
+        "price": 3190,
+        "compareAtPrice": 6390,
+        "available": false,
+        "colorCode": "#5C4033"
       },
       {
         "sku": "F0218/212/804-50590059",
-        "size": "Chocolate Brown",
-        "color": "40",
-        "price": 3190.0,
-        "compareAtPrice": 6390.0,
-        "available": false
+        "size": "40",
+        "color": "Chocolate Brown",
+        "price": 3190,
+        "compareAtPrice": 6390,
+        "available": false,
+        "colorCode": "#5C4033"
       },
       {
         "sku": "F0218/212/804-50590060",
-        "size": "Chocolate Brown",
-        "color": "41",
-        "price": 3190.0,
-        "compareAtPrice": 6390.0,
-        "available": false
+        "size": "41",
+        "color": "Chocolate Brown",
+        "price": 3190,
+        "compareAtPrice": 6390,
+        "available": false,
+        "colorCode": "#5C4033"
       },
       {
         "sku": "F0218/212/901-50590063",
-        "size": "Black",
-        "color": "36",
-        "price": 3190.0,
-        "compareAtPrice": 6390.0,
-        "available": false
+        "size": "36",
+        "color": "Black",
+        "price": 3190,
+        "compareAtPrice": 6390,
+        "available": false,
+        "colorCode": "#000000"
       },
       {
         "sku": "F0218/212/901-50590064",
-        "size": "Black",
-        "color": "37",
-        "price": 3190.0,
-        "compareAtPrice": 6390.0,
-        "available": false
+        "size": "37",
+        "color": "Black",
+        "price": 3190,
+        "compareAtPrice": 6390,
+        "available": false,
+        "colorCode": "#000000"
       },
       {
         "sku": "F0218/212/901-50590065",
-        "size": "Black",
-        "color": "38",
-        "price": 3190.0,
-        "compareAtPrice": 6390.0,
-        "available": false
+        "size": "38",
+        "color": "Black",
+        "price": 3190,
+        "compareAtPrice": 6390,
+        "available": false,
+        "colorCode": "#000000"
       },
       {
         "sku": "F0218/212/901-50590066",
-        "size": "Black",
-        "color": "39",
-        "price": 3190.0,
-        "compareAtPrice": 6390.0,
-        "available": false
+        "size": "39",
+        "color": "Black",
+        "price": 3190,
+        "compareAtPrice": 6390,
+        "available": false,
+        "colorCode": "#000000"
       },
       {
         "sku": "F0218/212/901-50590061",
-        "size": "Black",
-        "color": "40",
-        "price": 3190.0,
-        "compareAtPrice": 6390.0,
-        "available": false
+        "size": "40",
+        "color": "Black",
+        "price": 3190,
+        "compareAtPrice": 6390,
+        "available": false,
+        "colorCode": "#000000"
       },
       {
         "sku": "F0218/212/901-50590062",
-        "size": "Black",
-        "color": "41",
-        "price": 3190.0,
-        "compareAtPrice": 6390.0,
-        "available": false
+        "size": "41",
+        "color": "Black",
+        "price": 3190,
+        "compareAtPrice": 6390,
+        "available": false,
+        "colorCode": "#000000"
       }
     ]
   },
@@ -2323,11 +2437,12 @@
     "variants": [
       {
         "sku": "F0235/115/801-50652595",
-        "size": "Brown",
-        "color": "FREE",
-        "price": 2690.0,
-        "compareAtPrice": 2690.0,
-        "available": true
+        "size": "One Size",
+        "color": "Brown",
+        "price": 2690,
+        "compareAtPrice": 2690,
+        "available": true,
+        "colorCode": "#8B5E3C"
       }
     ]
   },
@@ -2335,7 +2450,7 @@
     "source": "real",
     "title": "Printed Silk Foulard",
     "handle": "f0206-218",
-    "bodyHtml": "<p><strong>\u00a0Composition &amp; Care </strong></p>\n<ul>\n<li>100% Polyester</li>\n<li>Machine wash up to 30C/86F, gentle cycle</li>\n<li>Do not bleach</li>\n<li>Iron up to 110C/230F</li>\n<li>Do not iron directly on prints/embroidery/embellishments</li>\n<li>Do not dry clean</li>\n<li>Do not tumble dry</li>\n</ul>",
+    "bodyHtml": "<p><strong> Composition &amp; Care </strong></p>\n<ul>\n<li>100% Polyester</li>\n<li>Machine wash up to 30C/86F, gentle cycle</li>\n<li>Do not bleach</li>\n<li>Iron up to 110C/230F</li>\n<li>Do not iron directly on prints/embroidery/embellishments</li>\n<li>Do not dry clean</li>\n<li>Do not tumble dry</li>\n</ul>",
     "productType": "SCARVES & FOULARDS",
     "tags": [
       "2025-2026",
@@ -2366,10 +2481,10 @@
     "variants": [
       {
         "sku": "F0206/218/998-50652518",
-        "size": "Multi Colour",
-        "color": "FREE",
-        "price": 1890.0,
-        "compareAtPrice": 1890.0,
+        "size": "One Size",
+        "color": "Multi Colour",
+        "price": 1890,
+        "compareAtPrice": 1890,
         "available": true
       }
     ]
@@ -2408,11 +2523,12 @@
     "variants": [
       {
         "sku": "F0251/213/901-50677774",
-        "size": "Black",
-        "color": "FREE",
-        "price": 8990.0,
-        "compareAtPrice": 8990.0,
-        "available": true
+        "size": "One Size",
+        "color": "Black",
+        "price": 8990,
+        "compareAtPrice": 8990,
+        "available": true,
+        "colorCode": "#000000"
       }
     ]
   }

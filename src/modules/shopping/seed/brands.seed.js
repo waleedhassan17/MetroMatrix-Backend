@@ -27,6 +27,7 @@
  * caller owns connect/disconnect). Order payments and payouts go through
  * the real checkoutService/orderService/WalletService code paths.
  */
+const { normaliseVariant, colorHexFor } = require('../utils/variants');
 const fs = require('fs');
 const path = require('path');
 const mongoose = require('mongoose');
@@ -338,13 +339,20 @@ async function upsertOutfittersCatalogue(brand, scraped) {
         images: p.images.length ? p.images.slice(0, 3) : [IMG_FALLBACK(`${sku}-1`)],
         basePrice: Math.round(basePrice),
         salePrice: salePrice ? Math.round(salePrice) : null,
-        variants: p.variants.map((v, vi) => ({
-          size: v.size || 'One Size',
-          color: v.color && v.color !== 'FREE' ? v.color : undefined,
-          additionalPrice: 0,
-          stockQuantity: stockFor(i, vi, v.available),
-          sku: v.sku,
-        })),
+        variants: p.variants.map((v, vi) => {
+          // Defensive: a scraped catalog once stored the colour in `size`
+          // (Shopify options read positionally). normaliseVariant guarantees a
+          // colour can never land in `size` regardless of the source JSON.
+          const { size, color } = normaliseVariant(v);
+          return {
+            size,
+            color,
+            colorCode: colorHexFor(color),
+            additionalPrice: 0,
+            stockQuantity: stockFor(i, vi, v.available),
+            sku: v.sku,
+          };
+        }),
         isFeatured: i < 4,
         isNewArrival: i >= 4 && i < 8,
         tags: [brand.slug, p.gender.toLowerCase(), p.category.toLowerCase()],
@@ -386,13 +394,20 @@ async function upsertCougarCatalogue(brand, scraped) {
         images: p.images.length ? p.images.slice(0, 3) : [IMG_FALLBACK(`${sku}-1`)],
         basePrice: Math.round(basePrice),
         salePrice: salePrice ? Math.round(salePrice) : null,
-        variants: p.variants.map((v, vi) => ({
-          size: v.size || 'One Size',
-          color: v.color && v.color !== 'FREE' ? v.color : undefined,
-          additionalPrice: 0,
-          stockQuantity: stockFor(i, vi, v.available),
-          sku: v.sku,
-        })),
+        variants: p.variants.map((v, vi) => {
+          // Defensive: a scraped catalog once stored the colour in `size`
+          // (Shopify options read positionally). normaliseVariant guarantees a
+          // colour can never land in `size` regardless of the source JSON.
+          const { size, color } = normaliseVariant(v);
+          return {
+            size,
+            color,
+            colorCode: colorHexFor(color),
+            additionalPrice: 0,
+            stockQuantity: stockFor(i, vi, v.available),
+            sku: v.sku,
+          };
+        }),
         isFeatured: i < 4,
         isNewArrival: i >= 4 && i < 8,
         tags: [brand.slug, p.gender.toLowerCase(), p.category.toLowerCase()],
