@@ -498,6 +498,34 @@ async function main() {
   console.log('Logins:');
   console.log('  providers: provider1..15.hs@metromatrix.pk / Provider@123');
   console.log('  customers: customer1..8.hs@metromatrix.pk / 123456');
+
+  // QA could not map a name shown in the app ("Usman Tariq") back to a login
+  // ("provider3.hs@...") or to a document, because the only thing printed was
+  // the email pattern. Print the whole mapping, including _id so a row can be
+  // opened directly in Compass.
+  //
+  // NOTE FOR COMPASS: Mongoose pluralises and lowercases the model name, so
+  // these documents live in `providers` / `users` — NOT `Providers`. Looking
+  // for a capitalised collection is why they appeared to be missing.
+  console.log('\nProvider directory — db.providers:');
+  console.log(`  ${'EMAIL'.padEnd(32)}${'NAME'.padEnd(18)}${'SUB-TYPE'.padEnd(14)}_id`);
+  providers.forEach((p, i) => {
+    console.log(
+      `  ${`provider${i + 1}.hs@metromatrix.pk`.padEnd(32)}` +
+        `${String(p.fullName).padEnd(18)}` +
+        `${String(p.providerSubType).padEnd(14)}` +
+        `${p._id}`
+    );
+  });
+
+  console.log('\nCustomer directory — db.users:');
+  console.log(`  ${'EMAIL'.padEnd(32)}${'NAME'.padEnd(18)}_id`);
+  customers.forEach((c, i) => {
+    console.log(
+      `  ${String(CUSTOMERS[i][0]).padEnd(32)}${String(c.fullName).padEnd(18)}${c._id}`
+    );
+  });
+
   await mongoose.disconnect();
 }
 
