@@ -92,9 +92,31 @@ router.post('/provider/earnings/payout', protect, providerOnly, earningsC.reques
 router.post('/provider/payout-request', protect, providerOnly, earningsC.requestPayout);
 router.post('/provider/location', protect, providerOnly, trackingC.updateProviderLocation);
 
-// ---------- Chat (REST fallback for FR-10) ----------
-router.get('/chat/:bookingId', protect, loadBookingWithAccess, chatC.getChatData);
-router.post('/chat/:bookingId/messages', protect, loadBookingWithAccess, chatC.sendMessage);
+// ---------- Chat — RETIRED, OWNED BY THE REALTIME SERVICE ----------
+//
+// Chat and calling live in the `metromatrix-realtime` service, not here. It
+// owns the socket layer (live delivery, typing, read receipts, call
+// signalling) plus the REST history/send endpoints the app actually calls:
+//
+//   GET  {REALTIME_URL}/api/chat/:roomId?roomType=homeservice|healthcare
+//   POST {REALTIME_URL}/api/chat/:roomId/messages
+//
+// Both services write the SAME collection (`hschatmessages`) with identical
+// field names, so history is shared — see the contract note in
+// metromatrix-realtime/src/models/ChatMessage.js. That is precisely why these
+// routes are unsafe to leave mounted: they are a second, socket-less write
+// path into that collection. A message accepted here is persisted but never
+// broadcast and never pushed, so the other party sees nothing until they cold-
+// load history.
+//
+// The app stopped calling these when chat moved to the realtime service
+// (networks/serviceProviders/chatNetwork.ts routes every chat call through
+// realtimeClient). Commented out rather than deleted so the controller remains
+// for reference and for scripts/seed-homeservice.js, which writes chat threads
+// through the ChatMessage model directly rather than over HTTP.
+//
+// router.get('/chat/:bookingId', protect, loadBookingWithAccess, chatC.getChatData);
+// router.post('/chat/:bookingId/messages', protect, loadBookingWithAccess, chatC.sendMessage);
 
 // ---------- Payments (customer) ----------
 router.get('/payments/:bookingId/init', protect, userOnly, loadBookingWithAccess, paymentC.initCustomerPayment);
