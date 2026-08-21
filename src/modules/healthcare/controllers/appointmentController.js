@@ -8,6 +8,7 @@ const appointmentService = require('../services/appointmentService');
 const slotService = require('../services/slotService');
 const couponService = require('../services/couponService');
 const notificationService = require('../services/notificationService');
+const { emitAppointmentStatus } = require('../services/roomEvents');
 
 // ═══════════════════════════════════════════════════════
 //  VALIDATION RULES
@@ -171,6 +172,15 @@ const cancelAppointment = async (req, res, next) => {
 
     await session.commitTransaction();
 
+    // Tell both parties live. Published AFTER the commit on purpose — inside
+    // the transaction a rollback would leave clients showing a cancellation
+    // that never happened. The room is the appointment, which the patient and
+    // the doctor have both already joined for chat/calling.
+    await emitAppointmentStatus(result.appointment._id, 'cancelled', {
+      cancelledBy: 'patient',
+      reason: reason || '',
+    });
+
     // H2: refund per policy (full ≥ window, partial inside; outside txn, best effort).
     let refunded = 0;
     try {
@@ -250,6 +260,11 @@ const rescheduleAppointment = async (req, res, next) => {
     }
 
     await session.commitTransaction();
+
+    // Live update for both parties, after commit (see services/roomEvents.js).
+    await emitAppointmentStatus(result.appointment._id, result.appointment.status, {
+      rescheduled: true,
+    });
 
     // Send notification to doctor (outside transaction — best effort)
     try {

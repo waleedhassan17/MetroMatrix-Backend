@@ -2,6 +2,7 @@ const Appointment = require('../models/Appointment');
 const Doctor = require('../models/Doctor');
 const WalletService = require('../../../services/walletService');
 const { getHealthcareSettings } = require('./settingsService');
+const { emitPaymentStatus } = require('./roomEvents');
 
 /**
  * ── Pure logic (unit-tested without a DB) ──────────────────────────
@@ -108,6 +109,11 @@ const payAppointment = async (appointment, user, method) => {
   appointment.payment.walletTransactionId = txn._id;
   appointment.payment.paidAt = new Date();
   await appointment.save();
+
+  // Live update for both parties — the doctor's queue no longer has to poll to
+  // notice a payment. Published after save; best-effort, never fails the call.
+  await emitPaymentStatus(appointment._id, 'paid', { method: 'wallet' });
+
   return appointment;
 };
 
@@ -154,6 +160,9 @@ const refundAppointment = async (appointment, { cancelledBy, reason, ratioOverri
   appointment.payment.refundedAt = new Date();
   appointment.payment.refundAmount = refund;
   await appointment.save();
+
+  await emitPaymentStatus(appointment._id, 'refunded', { refundAmount: refund });
+
   return refund;
 };
 

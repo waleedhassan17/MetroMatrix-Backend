@@ -2,6 +2,7 @@ const VideoCall = require('../models/VideoCall');
 const Appointment = require('../models/Appointment');
 const Slot = require('../models/Slot');
 const { createNotification } = require('../services/notificationService');
+const { emitVideoCallStarted, emitVideoCallEnded } = require('../services/roomEvents');
 
 // Agora token generation
 const generateAgoraToken = (channelName, uid) => {
@@ -78,6 +79,14 @@ const joinVideoCall = async (req, res, next) => {
     const roomName = `MetroMatrix-${appointment._id}`;
     const roomUrl = `https://meet.jit.si/${roomName}#config.prejoinConfig.enabled=false&config.disableDeepLinking=true`;
 
+    // Tell the other party the call is live, so their screen can offer to join
+    // instead of waiting on a poll. Best-effort; never blocks the response.
+    await emitVideoCallStarted(appointment._id, {
+      callId: videoCall._id,
+      roomUrl,
+      provider: 'jitsi',
+    });
+
     res.status(200).json({
       success: true,
       data: {
@@ -146,6 +155,13 @@ const endVideoCall = async (req, res, next) => {
     // Notify doctor
     const appointment = await Appointment.findById(videoCall.appointmentId);
     if (appointment) {
+      // Live: closes the other side's call screen immediately rather than
+      // leaving it in a Jitsi room the counterpart has already left.
+      await emitVideoCallEnded(appointment._id, {
+        callId: videoCall._id,
+        duration: videoCall.duration,
+      });
+
       await createNotification({
         userId: appointment.doctorId,
         title: 'Video Call Ended',
