@@ -102,17 +102,27 @@ const updateProviderLocation = asyncHandler(async (req, res) => {
     const b = await Booking.findById(jobId);
     if (b && String(b.provider) === String(req.user._id)) {
       if (['EN_ROUTE', 'ARRIVED'].includes(b.status)) {
+        // REST fallback path: the app prefers the `provider_location` socket
+        // event and only lands here when the socket is down. emitToBooking now
+        // publishes to the realtime service rather than a no-op local io.
+        //
+        // The empty catch this replaces is why the whole feature stayed broken
+        // silently — never swallow a publish failure again.
         try {
           const { setLastLocation } = require('../../../sockets/lastLocationStore');
           const { emitToBooking } = require('../../../sockets');
           setLastLocation(String(b._id), { lat: latitude, lng: longitude });
-          emitToBooking(b._id, 'provider_location_update', {
+          await emitToBooking(b._id, 'provider_location_update', {
             bookingId: String(b._id),
+            roomId: String(b._id),
             latitude,
             longitude,
+            heading: null,
             timestamp: new Date().toISOString(),
           });
-        } catch (e) { /* socket layer unavailable */ }
+        } catch (e) {
+          console.error(`[tracking] location publish failed booking=${b._id}: ${e.message}`);
+        }
       }
       const dest = coords(b.address && b.address.coordinates);
       const meters = haversineMeters({ latitude, longitude }, dest);

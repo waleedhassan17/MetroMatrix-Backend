@@ -109,17 +109,22 @@ async function transition(booking, nextStatus, actor, opts = {}) {
     await booking.save();
   }
 
-  // Real-time fan-out (HS3). Lazy require avoids a cycle and no-ops when the
-  // socket layer is not attached (tests, serverless).
+  // Real-time fan-out. Published to the realtime service, which owns the only
+  // socket; this process holds none. Capped at 2s inside the publisher, so a
+  // slow or sleeping realtime dyno can never stall or fail a transition — the
+  // booking is already saved above.
+  //
+  // The empty catch this replaces is why the customer's screen never advanced.
   try {
     const { emitToBooking } = require('../../../sockets');
-    emitToBooking(booking._id, 'booking_status_changed', {
+    await emitToBooking(booking._id, 'booking_status_changed', {
       bookingId: String(booking._id),
+      roomId: String(booking._id),
       status: nextStatus,
       changedAt: new Date().toISOString(),
     });
   } catch (e) {
-    /* socket layer unavailable — REST polling still works */
+    console.error(`[booking] status publish failed booking=${booking._id}: ${e.message}`);
   }
 
   return booking;

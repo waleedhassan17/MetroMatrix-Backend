@@ -162,11 +162,14 @@ const requestPayment = asyncHandler(async (req, res) => {
 
   try {
     const { emitToBooking } = require('../../../sockets');
-    emitToBooking(b._id, 'payment_requested', {
+    await emitToBooking(b._id, 'payment_requested', {
       bookingId: String(b._id),
+      roomId: String(b._id),
       amount: Number(amount),
     });
-  } catch (e) { /* socket layer unavailable */ }
+  } catch (e) {
+    console.error(`[payment] request publish failed booking=${b._id}: ${e.message}`);
+  }
 
   ok(res, { requestId: `REQ-${b._id}` }, 'Payment requested');
 });

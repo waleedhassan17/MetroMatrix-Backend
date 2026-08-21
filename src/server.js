@@ -35,15 +35,13 @@ const server = app.listen(PORT, () => {
   // Register healthcare scheduled jobs (after server + DB are ready)
   require('./modules/healthcare/jobs/appointmentReminders');
 
-  // Home-services real-time layer (HS3): socket.io on the HTTP server, NOT
-  // the Express app. Unavailable on serverless (Vercel) — REST fallbacks
-  // cover every event there; see SOCKET_API.md.
-  try {
-    require('./sockets').initSockets(server);
-    console.log('✅ Socket.io attached (home-services chat + tracking)'.green);
-  } catch (e) {
-    console.log(`Socket.io not started: ${e.message}`.yellow);
-  }
+  // NOTE: this service no longer runs a socket server. It used to attach one
+  // here, but vercel.json rewrites every production request to api/index.js,
+  // which never reached this file — so the socket layer existed only when
+  // someone ran `npm start` locally, and every emit was a no-op in production.
+  //
+  // The live socket now lives in the separate `metromatrix-realtime` service.
+  // This service publishes room events to it over HTTP; see src/sockets/index.js.
 });
 
 // Handle unhandled promise rejections
