@@ -21,6 +21,7 @@ const earningsC = require('../controllers/earningsController');
 const chatC = require('../controllers/chatController');
 const trackingC = require('../controllers/trackingController');
 const adminC = require('../controllers/adminController');
+const favoritesC = require('../controllers/favoritesController');
 
 // ---------- Provider discovery (public) ----------
 router.get('/providers', searchC.searchProviders); // falls through if not HS
@@ -59,6 +60,11 @@ router.get('/user/addresses', protect, userOnly, userC.getAddresses);
 router.post('/user/addresses', protect, userOnly, userC.addAddress);
 router.patch('/user/addresses/:addressId', protect, userOnly, userC.updateAddress);
 router.delete('/user/addresses/:addressId', protect, userOnly, userC.deleteAddress);
+
+// ---------- Customer: favourite providers (the wishlist heart) ----------
+router.get('/user/favorites', protect, userOnly, favoritesC.getFavorites);
+router.post('/user/favorites/:providerId', protect, userOnly, favoritesC.addFavorite);
+router.delete('/user/favorites/:providerId', protect, userOnly, favoritesC.removeFavorite);
 
 // ---------- Provider: jobs ----------
 router.get('/provider/jobs', protect, providerOnly, jobC.listJobs);

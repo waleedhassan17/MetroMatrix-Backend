@@ -72,19 +72,21 @@ const joinVideoCall = async (req, res, next) => {
       await videoCall.save();
     }
 
-    // Transport: Jitsi Meet room rendered in a WebView on both sides.
-    // Free, no API key, works in the Expo managed workflow
-    // (see TELEMEDICINE_DECISION.md). Room name derives from the
-    // appointment id and is only disclosed to participants by this API.
-    const roomName = `MetroMatrix-${appointment._id}`;
-    const roomUrl = `https://meet.jit.si/${roomName}#config.prejoinConfig.enabled=false&config.disableDeepLinking=true`;
-
-    // Tell the other party the call is live, so their screen can offer to join
-    // instead of waiting on a poll. Best-effort; never blocks the response.
+    // Transport: peer-to-peer WebRTC, signalled by the realtime service, with
+    // the APPOINTMENT as the room — the same stack home-service audio calls
+    // use. There is no room URL to mint any more.
+    //
+    // This used to hand back a public `https://meet.jit.si/<room>` link that
+    // both sides opened in a WebView. That worked, but it meant two media
+    // stacks to maintain, a dependency on a rate-limited public instance, and
+    // a consultation whose privacy rested on the room name being unguessable.
+    // Media now flows directly between the two devices.
+    //
+    // This endpoint still owns the VideoCall LIFECYCLE (created / active /
+    // ended) and the notify below — only the transport changed.
     await emitVideoCallStarted(appointment._id, {
       callId: videoCall._id,
-      roomUrl,
-      provider: 'jitsi',
+      provider: 'webrtc',
     });
 
     res.status(200).json({
@@ -92,9 +94,10 @@ const joinVideoCall = async (req, res, next) => {
       data: {
         callId: videoCall._id,
         roomId: videoCall.roomId,
-        provider: 'jitsi',
-        roomName,
-        roomUrl,
+        // The room the app connects to is the appointment; the realtime
+        // service authorizes both parties against it.
+        appointmentId: String(appointment._id),
+        provider: 'webrtc',
         status: videoCall.status
       }
     });
