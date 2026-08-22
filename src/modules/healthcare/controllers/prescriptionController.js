@@ -63,6 +63,92 @@ const getAppointmentPrescription = async (req, res, next) => {
 };
 
 // ═══════════════════════════════════════════════════════
+//  Shared: load one prescription + authorize the caller
+// ═══════════════════════════════════════════════════════
+
+/** The populate tree both the detail endpoint and the PDF need. */
+const withPrescriptionRelations = (query) =>
+  query
+    .populate({
+      path: 'doctorId',
+      select: 'qualifications experience specialtyId consultationFee',
+      populate: [
+        { path: 'providerId', select: 'fullName profilePhoto' },
+        { path: 'specialtyId', select: 'name' },
+      ],
+    })
+    .populate('patientId', 'fullName email phoneNumber')
+    .populate({
+      path: 'appointmentId',
+      select: 'patientInfo type clinicId createdAt',
+      populate: { path: 'clinicId', select: 'name address city phone' },
+    })
+    .lean();
+
+/**
+ * PHI gate: only the patient the prescription belongs to, or the doctor who
+ * wrote it, may read it.
+ *
+ * The doctor branch needs the Provider→Doctor hop: a doctor signs in as a
+ * Provider, so req.user._id is a Provider._id, while Prescription.doctorId
+ * points at a Doctor._id linked back by Doctor.providerId. Comparing the two
+ * directly never matches.
+ */
+async function canReadPrescription(prescription, userId) {
+  const patientId = prescription.patientId?._id || prescription.patientId;
+  if (patientId && patientId.toString() === userId.toString()) return true;
+
+  const Doctor = require('../models/Doctor');
+  const doctor = await Doctor.findOne({ providerId: userId }).select('_id');
+  if (!doctor || !prescription.doctorId) return false;
+  return (
+    (prescription.doctorId._id || prescription.doctorId).toString() ===
+    doctor._id.toString()
+  );
+}
+
+// ═══════════════════════════════════════════════════════
+//  GET /prescriptions/:prescriptionId
+// ═══════════════════════════════════════════════════════
+
+// @desc    Fetch a single prescription (patient or prescribing doctor)
+// @route   GET /api/v1/healthcare/prescriptions/:prescriptionId
+// @access  Private
+//
+// There was no way to fetch a single prescription, so the patient-side
+// prescription view reached for GET /doctors/me/prescriptions?limit=200 and
+// scanned it. That route is real but doctor-only (src/routes/
+// healthcareDoctorRoutes.js, behind `protect, providerOnly`), so every patient
+// opening a prescription got 403 "This route is for providers only". Scanning
+// also meant fetching up to 200 records to render one, and silently failing
+// past the 200th.
+//
+// Serving both roles here keeps the patient off the doctor's route without
+// duplicating an endpoint per audience.
+const getPrescriptionById = async (req, res, next) => {
+  try {
+    const prescription = await withPrescriptionRelations(
+      Prescription.findById(req.params.prescriptionId)
+    );
+
+    if (!prescription) {
+      return res.status(404).json({ success: false, error: 'Prescription not found' });
+    }
+
+    if (!(await canReadPrescription(prescription, req.user._id))) {
+      return res.status(403).json({ success: false, error: 'Access denied' });
+    }
+
+    res.json({
+      success: true,
+      data: { ...prescription, id: prescription._id },
+    });
+  } catch (error) {
+    next(error);
+  }
+};
+
+// ═══════════════════════════════════════════════════════
 //  API 4: GET /prescriptions/:prescriptionId/pdf
 // ═══════════════════════════════════════════════════════
 
@@ -71,39 +157,16 @@ const getAppointmentPrescription = async (req, res, next) => {
 // @access  Private
 const downloadPrescriptionPDF = async (req, res, next) => {
   try {
-    const prescription = await Prescription.findById(req.params.prescriptionId)
-      .populate({
-        path: 'doctorId',
-        select: 'qualifications experience specialtyId consultationFee',
-        populate: [
-          { path: 'providerId', select: 'fullName profilePhoto' },
-          { path: 'specialtyId', select: 'name' },
-        ],
-      })
-      .populate('patientId', 'fullName email phoneNumber')
-      .populate({
-        path: 'appointmentId',
-        select: 'patientInfo type clinicId createdAt',
-        populate: { path: 'clinicId', select: 'name address city phone' },
-      })
-      .lean();
+    const prescription = await withPrescriptionRelations(
+      Prescription.findById(req.params.prescriptionId)
+    );
 
     if (!prescription) {
       return res.status(404).json({ success: false, error: 'Prescription not found' });
     }
 
-    // PHI: only the patient or the prescribing doctor may download this PDF
-    const isPatient = prescription.patientId._id.toString() === req.user._id.toString();
-    let isPrescriber = false;
-    if (!isPatient) {
-      const Doctor = require('../models/Doctor');
-      const doctor = await Doctor.findOne({ providerId: req.user._id }).select('_id');
-      isPrescriber =
-        !!doctor &&
-        prescription.doctorId &&
-        (prescription.doctorId._id || prescription.doctorId).toString() === doctor._id.toString();
-    }
-    if (!isPatient && !isPrescriber) {
+    // PHI: only the patient or the prescribing doctor may download this PDF.
+    if (!(await canReadPrescription(prescription, req.user._id))) {
       return res.status(403).json({ success: false, error: 'Access denied' });
     }
 
@@ -401,6 +464,7 @@ const createPrescription = async (req, res, next) => {
 
 module.exports = {
   getAppointmentPrescription,
+  getPrescriptionById,
   downloadPrescriptionPDF,
   getMyPrescriptions,
   createPrescription,
