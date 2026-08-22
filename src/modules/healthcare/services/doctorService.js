@@ -169,16 +169,63 @@ const getDoctors = async (filters = {}, options = {}) => {
   };
 };
 
+/** Escape user input before it becomes a RegExp. */
+const escapeRegex = (s) => String(s).replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+
+/**
+ * Reduce a query to the stem it shares with a specialty name.
+ *
+ * Patients type the PRACTITIONER ("Neurologist"); specialties are stored as the
+ * FIELD ("Neurology"). A plain substring match therefore fails in the direction
+ * users actually search: "Neurology" does not contain "Neurologist". Every
+ * specialty chip in the app searched this way, and five of six returned nothing
+ * — only "Orthopedic" worked, coincidentally, because it IS a substring of
+ * "Orthopedics".
+ *
+ * Trimming the practitioner/plural suffix leaves a root both spellings share:
+ *   Neurologist  -> neurolog   (matches Neurology)
+ *   Cardiologist -> cardiolog  (matches Cardiology)
+ *   Pediatrician -> pediatric  (matches Pediatrics)
+ *   Dermatology  -> dermatolog (matches Dermatology)
+ *   Orthopedics  -> orthoped   (matches Orthopedics)
+ *
+ * Order matters: longer suffixes are tested first, so "Neurologist" loses
+ * "ologist" rather than just the trailing "ist". Deliberately not a stemming
+ * library or fuzzy score — this is a bounded, predictable transform, and a
+ * loose matcher on a doctor search returns confidently wrong specialists.
+ */
+const SPECIALTY_SUFFIXES = ['ologists', 'ologist', 'ology', 'icians', 'ician', 'ists', 'ist', 'ics', 'ic', 's'];
+
+const specialtyStem = (q) => {
+  const cleaned = String(q).trim().toLowerCase();
+  for (const suffix of SPECIALTY_SUFFIXES) {
+    // Keep a meaningful root; "ENT" or "eye" must not be stemmed to nothing.
+    if (cleaned.endsWith(suffix) && cleaned.length - suffix.length >= 4) {
+      return cleaned.slice(0, cleaned.length - suffix.length);
+    }
+  }
+  return cleaned;
+};
+
 /**
  * Search doctors by name or specialty name.
  */
 const searchDoctors = async (q, limit = 10) => {
-  const regex = new RegExp(q, 'i');
+  // `q` was interpolated into a RegExp unescaped: a query of '[' threw a
+  // SyntaxError and returned a 500, and '(a+)+$' could pin the event loop.
+  const regex = new RegExp(escapeRegex(q), 'i');
+
+  // Matched against the stem so a practitioner noun finds its field. Anchored
+  // at the start: "cardiolog" should reach Cardiology, but a stray short stem
+  // must not match every specialty containing those letters mid-word.
+  const specialtyRegex = new RegExp('^' + escapeRegex(specialtyStem(q)), 'i');
 
   // Find specialties matching the query
   const Specialty = require('../models/Specialty');
   const matchingSpecialtyIds = await Specialty.distinct('_id', {
-    name: regex,
+    // Either spelling wins: the raw query still matches a specialty typed in
+    // full, and the stem catches the practitioner form.
+    $or: [{ name: regex }, { name: specialtyRegex }],
     isActive: true,
   });
 
