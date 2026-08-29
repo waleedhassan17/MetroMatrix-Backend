@@ -172,9 +172,14 @@ const getProviderProfile = asyncHandler(async (req, res) => {
     throw new Error('Provider not found');
   }
 
+  // `id` alongside `_id`. This document's toJSON is toObject() with no virtuals,
+  // so it serializes `_id` only — while getUserProfile hands back an explicit
+  // `{ id: user._id, ... }`. Clients written against the user shape read `.id`
+  // and silently got undefined for providers, which is how a provider could
+  // place calls but never receive them. Additive: `_id` is still there.
   res.json({
     success: true,
-    provider,
+    provider: { ...provider.toJSON(), id: String(provider._id) },
   });
 });
 
