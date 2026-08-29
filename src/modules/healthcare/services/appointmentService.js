@@ -2,6 +2,7 @@ const mongoose = require('mongoose');
 const Appointment = require('../models/Appointment');
 const Slot = require('../models/Slot');
 const Prescription = require('../models/Prescription');
+const slotService = require('./slotService');
 
 // ─── Population configs ─────────────────────────────
 const PATIENT_POPULATE = [
@@ -199,15 +200,15 @@ const cancelAppointment = async (appointmentId, patientId, reason, session) => {
   appointment.cancellationReason = reason;
   await appointment.save({ session });
 
-  // Release the slot
-  const slot = await Slot.findById(appointment.slotId._id || appointment.slotId).session(session);
-  if (slot) {
-    slot.bookedCount = Math.max(0, slot.bookedCount - 1);
-    if (slot.bookedCount < slot.maxPatients) {
-      slot.status = 'available';
-    }
-    await slot.save({ session });
-  }
+  // Release the slot through the shared, block-aware primitive.
+  //
+  // This was a local read-modify-write that set `status = 'available'`
+  // UNCONDITIONALLY — so a patient cancelling on a day the doctor had
+  // deliberately blocked (holiday, absence) silently re-opened that slot for
+  // booking. The doctor's own cancel path guarded against exactly that, and
+  // the two disagreed. releaseSlot is the single implementation, and it leaves
+  // a blocked slot blocked.
+  await slotService.releaseSlot(appointment.slotId._id || appointment.slotId, session);
 
   return { appointment };
 };

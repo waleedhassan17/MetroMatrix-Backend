@@ -338,14 +338,28 @@ const bookAppointment = async (req, res, next) => {
       return res.status(404).json({ success: false, error: 'Doctor not found or not verified' });
     }
 
-    // 2. Validate slot
-    const slot = await slotService.validateSlotForBooking(slotId, doctorId, session);
+    // 2. CLAIM the slot — atomically, before anything else is written.
+    //
+    // This used to be a read (validateSlotForBooking), with a separate
+    // read-modify-write increment further down. Two patients booking at the
+    // same moment both passed the read, and the only thing preventing a real
+    // double-booking was a WiredTiger write conflict — which surfaced as an
+    // unhandled 500 for the loser, with no retry. Now the database decides:
+    // one $inc succeeds against the capacity invariant, the other gets null.
+    //
+    // Claiming FIRST also means the slot is never held by a booking that later
+    // fails validation; the transaction rolls the claim back.
+    const slot = await slotService.claimSlot(slotId, doctorId, session);
     if (!slot) {
       await session.abortTransaction();
       session.endSession();
-      return res.status(400).json({
+      // 409, not 400. The request was well-formed; the resource is gone. The
+      // app treats SLOT_TAKEN as "refresh and pick another", where a 400 reads
+      // as the patient having done something wrong.
+      return res.status(409).json({
         success: false,
-        error: 'Slot is not available or does not belong to this doctor',
+        error: 'SLOT_TAKEN',
+        message: 'That slot was just booked. Please choose another time.',
       });
     }
 
@@ -374,7 +388,12 @@ const bookAppointment = async (req, res, next) => {
           patientId: req.user._id,
           doctorId: doctor._id,
           slotId: slot._id,
-          clinicId: clinicId || null,
+          // THE SLOT is the authority on where it happens. This was written
+          // straight from the request body, so a patient could book an
+          // in-clinic slot at Clinic A and have the appointment record Clinic
+          // B, or attach a physical clinic to a video consultation. The body
+          // value is now only a fallback for slots that carry no clinic.
+          clinicId: slot.clinicId || clinicId || null,
           type,
           status: 'pending',
           patientInfo: {
@@ -398,8 +417,8 @@ const bookAppointment = async (req, res, next) => {
       { session }
     );
 
-    // 6. Increment slot
-    await slotService.incrementBookedCount(slot._id, session);
+    // 6. (The slot was already claimed atomically in step 2 — incrementing
+    //     again here would double-count it.)
 
     // 7. Increment coupon usage
     if (couponId) {
