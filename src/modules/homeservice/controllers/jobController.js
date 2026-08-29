@@ -1,5 +1,6 @@
 const asyncHandler = require('express-async-handler');
 const Booking = require('../models/Booking');
+const HSNotification = require('../models/HSNotification');
 const Provider = require('../../../models/Provider');
 const { transition } = require('../services/bookingService');
 const { STATUS, toJobBucket } = require('../services/statusMap');
@@ -263,6 +264,15 @@ const getDashboard = asyncHandler(async (req, res) => {
       time: b.updatedAt.toISOString(),
     }));
 
+  // A REAL unread count. This was `pending.length` — the number of pending
+  // booking requests, reported under a notifications label and rendered on a
+  // bell icon. Nothing it counted was a notification, so reading them could
+  // never clear it.
+  const unreadNotifications = await HSNotification.countDocuments({
+    recipient: provider._id,
+    isRead: false,
+  }).catch(() => 0);
+
   ok(res, {
     profile: {
       id: String(provider._id),
@@ -271,7 +281,7 @@ const getDashboard = asyncHandler(async (req, res) => {
       rating: provider.ratings ? provider.ratings.average || 0 : 0,
       isOnline: !!provider.isOnline,
       isPro: (provider.completedBookings || 0) >= 50,
-      unreadNotifications: pending.length,
+      unreadNotifications,
     },
     stats: {
       todayJobs: today.length,

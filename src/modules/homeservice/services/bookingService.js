@@ -127,6 +127,31 @@ async function transition(booking, nextStatus, actor, opts = {}) {
     console.error(`[booking] status publish failed booking=${booking._id}: ${e.message}`);
   }
 
+  // Durable notification, alongside the live socket event above. That frame
+  // only reaches whoever is connected at that instant; this is what the other
+  // party finds later in their notifications list, and what backs the unread
+  // badge. Hooked HERE because this function is the single choke point every
+  // status change passes through — one place to be right, rather than a dozen
+  // call sites to keep in sync.
+  //
+  // notifyBookingStatus swallows its own errors; the booking is already saved
+  // either way, so a notification can never undo completed work.
+  try {
+    const notify = require('./notificationService');
+    const ctx = {
+      customerName: booking.customer?.fullName,
+      providerName: booking.provider?.fullName,
+      service: booking.serviceSubCategory || booking.serviceCategory,
+    };
+    if (nextStatus === STATUS.CANCELLED) {
+      await notify.notifyBookingCancelled(booking, actor.id, ctx);
+    } else {
+      await notify.notifyBookingStatus(booking, nextStatus, ctx);
+    }
+  } catch (e) {
+    console.error(`[booking] notify failed booking=${booking._id}: ${e.message}`);
+  }
+
   return booking;
 }
 

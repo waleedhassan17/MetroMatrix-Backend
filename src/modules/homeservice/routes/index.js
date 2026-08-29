@@ -19,6 +19,7 @@ const paymentC = require('../controllers/paymentController');
 const reviewC = require('../controllers/reviewController');
 const earningsC = require('../controllers/earningsController');
 const chatC = require('../controllers/chatController');
+const hsNotifC = require('../controllers/hsNotificationController');
 const trackingC = require('../controllers/trackingController');
 const adminC = require('../controllers/adminController');
 const favoritesC = require('../controllers/favoritesController');
@@ -53,6 +54,29 @@ router.post('/user/bookings/:bookingId/rate', protect, loadBookingWithAccess, (r
   require('../controllers/reviewController').submitReview(req, res, next);
 });
 router.get('/user/notifications', protect, userOnly, userC.getNotifications);
+
+// ---------------------------------------------------------------------------
+// Persisted notifications — BOTH roles, one set of endpoints.
+//
+// `protect` alone, deliberately: it resolves a token against User then Provider
+// and sets req.user either way, and every query below is scoped by
+// req.user._id. So a customer and a provider each see exactly their own rows
+// with no role gate to get wrong. Adding userOnly/providerOnly would mean two
+// parallel route sets for one behaviour.
+//
+// Distinct from /user/notifications above, which synthesizes a read-only list
+// from booking statusHistory on every request and is customer-only. That stays
+// for the existing customer screen; this is the durable store, and the provider
+// side had no notifications of any kind before it.
+//
+// `/read-all` MUST precede `/:notificationId/read`, or Express matches
+// "read-all" as a notificationId.
+// ---------------------------------------------------------------------------
+router.get('/notifications', protect, hsNotifC.listNotifications);
+router.get('/notifications/unread-count', protect, hsNotifC.unreadCount);
+router.patch('/notifications/read-all', protect, hsNotifC.markAllRead);
+router.patch('/notifications/:notificationId/read', protect, hsNotifC.markRead);
+
 router.get('/user/profile', protect, userOnly, userC.getUserProfile);
 router.patch('/user/profile', protect, userOnly, userC.updateUserProfile);
 router.post('/user/profile/avatar', protect, userOnly, userC.updateUserAvatar);
