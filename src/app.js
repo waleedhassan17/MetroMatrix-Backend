@@ -1579,6 +1579,24 @@ app.use('/api/auth', authRoutes);
 // /doctors/register, /doctors/signin), then the shared healthcare module router.
 app.use('/api/v1/healthcare', healthcareDoctorRoutes);
 app.use('/api/v1/healthcare', require('./modules/healthcare/routes/index'));
+
+// ---------------------------------------------------------------------------
+// The production trigger for the rolling slot horizon.
+//
+// Vercel is serverless — there is no long-lived process, so the node-cron job
+// in modules/healthcare/jobs/slotHorizon.js only ever fires under `npm start`
+// locally. (This repo has already been bitten by that: the Socket.IO layer was
+// registered in server.js and was silently a no-op in production for months,
+// because vercel.json rewrites everything to api/index.js.) So the schedule
+// lives in vercel.json's `crons` and calls this endpoint instead.
+//
+// GET as well as POST: Vercel Cron issues a GET.
+// ---------------------------------------------------------------------------
+{
+  const { refreshHorizon } = require('./modules/healthcare/controllers/slotHorizonController');
+  app.get('/api/internal/slots/refresh-horizon', refreshHorizon);
+  app.post('/api/internal/slots/refresh-horizon', refreshHorizon);
+}
 // Shopping module (multi-vendor storefront) — peer module of healthcare.
 app.use('/api/shopping', require('./modules/shopping/routes/index'));
 // Healthcare admin routes (doctor approval, specialty CRUD, analytics).

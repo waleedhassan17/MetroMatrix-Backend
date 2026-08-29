@@ -11,7 +11,11 @@ const {
   setClinicTimings,
   getDoctorClinics,
 } = require('../controllers/doctorController');
-const { getDoctorSlots } = require('../controllers/slotController');
+const {
+  getDoctorSlots,
+  getAvailabilitySummary,
+  getNextAvailable,
+} = require('../controllers/slotController');
 const { getDoctorReviews } = require('../controllers/reviewController');
 const { requireUser, requireDoctor } = require('../middleware/healthcareAuth');
 
@@ -23,6 +27,11 @@ router.get('/', getDoctors);
 
 // Nested public routes under :doctorId
 router.get('/:doctorId/slots', getDoctorSlots);
+// Which upcoming DATES have availability, so the patient's date strip can grey
+// out empty days instead of making them tap through blindly, and the earliest
+// bookable moment for the "Available from ..." label on a doctor card.
+router.get('/:doctorId/availability-summary', getAvailabilitySummary);
+router.get('/:doctorId/next-available', getNextAvailable);
 router.get('/:doctorId/clinics', getDoctorClinics);
 router.get('/:doctorId/reviews', getDoctorReviews);
 router.get('/:doctorId', getDoctor);

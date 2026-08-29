@@ -7,6 +7,15 @@
     }
   },
   "rewrites": [
-    { "source": "/(.*)", "destination": "/api/index.js" }
+    {
+      "source": "/(.*)",
+      "destination": "/api/index.js"
+    }
+  ],
+  "crons": [
+    {
+      "path": "/api/internal/slots/refresh-horizon",
+      "schedule": "20 3 * * *"
+    }
   ]
 }

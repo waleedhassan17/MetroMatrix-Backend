@@ -32,8 +32,14 @@ const server = app.listen(PORT, () => {
   );
   console.log('✅ Server is listening!'.green);
 
-  // Register healthcare scheduled jobs (after server + DB are ready)
+  // Register healthcare scheduled jobs (after server + DB are ready).
+  //
+  // LOCAL ONLY, and deliberately so. vercel.json rewrites every production
+  // request to api/index.js, which never reaches this file — the same trap the
+  // socket layer fell into (see the note below). In production the slot horizon
+  // is driven by Vercel Cron calling /api/internal/slots/refresh-horizon.
   require('./modules/healthcare/jobs/appointmentReminders');
+  require('./modules/healthcare/jobs/slotHorizon');
 
   // NOTE: this service no longer runs a socket server. It used to attach one
   // here, but vercel.json rewrites every production request to api/index.js,

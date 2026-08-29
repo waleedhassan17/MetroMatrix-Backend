@@ -38,6 +38,7 @@ const {
 } = require('../controllers/healthcareDoctorController');
 const { protect, providerOnly } = require('../middleware/authMiddleware');
 const { requireTreatingDoctor } = require('../modules/healthcare/middleware/healthcareAuth');
+const slotHorizonC = require('../modules/healthcare/controllers/slotHorizonController');
 const { uploadMultipleDocuments, uploadProfilePhoto } = require('../middleware/uploadMiddleware');
 
 // Public
@@ -65,9 +66,22 @@ router.post('/doctors/me/slots/generate', protect, providerOnly, generateSlotsFr
 router.post('/doctors/me/slots/block', protect, providerOnly, blockSlots);
 router.delete('/doctors/me/slots/block/:slotId', protect, providerOnly, unblockSlot);
 
+// Top the rolling horizon back up on demand. Idempotent — safe to press twice.
+router.post('/doctors/me/slots/refresh', protect, providerOnly, slotHorizonC.refreshMyHorizon);
+
 // Availability
 router.patch('/doctors/me/availability', protect, providerOnly, setAvailability);
 router.get('/doctors/me/availability', protect, providerOnly, getAvailability);
+
+// How much bookable runway is left — what the doctor's warning banner reads.
+// A first-class endpoint rather than something inferred client-side, because
+// silence here is exactly what let production reach zero bookable slots.
+router.get(
+  '/doctors/me/availability/status',
+  protect,
+  providerOnly,
+  slotHorizonC.getAvailabilityStatus
+);
 
 router.get('/doctors/me/appointments', protect, providerOnly, getMyAppointments);
 router.get('/doctors/me/appointments/:appointmentId', protect, providerOnly, getAppointmentDetail);

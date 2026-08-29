@@ -11,6 +11,12 @@ const Slot = require('../modules/healthcare/models/Slot');
 const Review = require('../modules/healthcare/models/Review');
 const Prescription = require('../modules/healthcare/models/Prescription');
 const MedicalNote = require('../modules/healthcare/models/MedicalNote');
+const { generateForDoctor, HORIZON_DAYS } = require('../modules/healthcare/services/slotGenerationService');
+const {
+  validateWeeklyAvailability,
+  ownedClinicIds,
+} = require('../modules/healthcare/services/availabilityService');
+const { todayKey, addDays, DEFAULT_TIMEZONE } = require('../utils/time');
 const Notification = require('../models/Notification');
 const hcNotificationService = require('../modules/healthcare/services/notificationService');
 const { generateTokens } = require('../utils/generateToken');
@@ -704,7 +710,22 @@ const setAvailability = asyncHandler(async (req, res) => {
   }
   if (unavailableFrom) doctor.unavailableFrom = new Date(unavailableFrom);
   if (unavailableTo) doctor.unavailableTo = new Date(unavailableTo);
-  if (Array.isArray(weeklyAvailability)) doctor.weeklyAvailability = weeklyAvailability;
+  if (Array.isArray(weeklyAvailability)) {
+    // VALIDATE BEFORE ASSIGNING. This was `doctor.weeklyAvailability =
+    // weeklyAvailability` with nothing in between: no time-format check, no
+    // start<end check, no overlap check, and — a genuine authorization hole —
+    // no check that the clinic belonged to this doctor, so a doctor could point
+    // their slots at any clinic id in the database including someone else's.
+    // Malformed times only surfaced later as NaN inside generation, which
+    // silently produced zero slots and read as "the feature does nothing".
+    const owned = await ownedClinicIds(doctor._id);
+    const { ok, errors } = validateWeeklyAvailability(weeklyAvailability, owned);
+    if (!ok) {
+      res.status(400);
+      throw new Error(errors.join('; '));
+    }
+    doctor.weeklyAvailability = weeklyAvailability;
+  }
 
   // Detect newly-added absent dates so we can free up / block their slots.
   let newlyAbsent = [];
@@ -1580,73 +1601,35 @@ const generateSlotsFromAvailability = asyncHandler(async (req, res) => {
   if (!doctor) { res.status(404); throw new Error('Doctor profile not found'); }
 
   const { startDate, endDate, slotDuration = 30 } = req.body;
-  if (!startDate || !endDate) { res.status(400); throw new Error('startDate and endDate are required'); }
 
-  const start = new Date(startDate); start.setHours(0, 0, 0, 0);
-  const end = new Date(endDate); end.setHours(0, 0, 0, 0);
-  if ((end - start) / (1000 * 60 * 60 * 24) > 60) { res.status(400); throw new Error('Date range cannot exceed 60 days'); }
+  // Delegates to slotGenerationService — the SAME code the rolling-horizon job
+  // runs. This used to be ~70 lines of inline expansion that duplicated the
+  // logic and drifted from it in three ways: it stamped every slot with the
+  // day-level clinicId (so per-range clinics were lost), it built date keys in
+  // the SERVER's timezone while slots are stored at UTC midnight, and it wrote
+  // no startUtc at all, so nothing downstream could compare a slot to "now".
+  //
+  // Defaulting the range matters: the app calls this with a fixed window, and
+  // when it ran out nothing extended it — which is how production ended up with
+  // zero bookable slots across every doctor.
+  const tz = (await Clinic.findOne({ doctorId: doctor._id }).select('timezone').lean())?.timezone
+    || DEFAULT_TIMEZONE;
+  const fromKey = /^\d{4}-\d{2}-\d{2}$/.test(startDate || '') ? startDate : todayKey(tz);
+  const toKey = /^\d{4}-\d{2}-\d{2}$/.test(endDate || '')
+    ? endDate
+    : addDays(fromKey, HORIZON_DAYS, tz);
 
-  // Local (server-timezone) date key to avoid UTC off-by-one when matching dates.
-  const localKey = (d) => new Date(d).toLocaleDateString('en-CA');
-
-  const byDay = {};
-  (doctor.weeklyAvailability || []).forEach((w) => { byDay[w.day] = w; });
-  const absent = new Set((doctor.absentDates || []).map(localKey));
-
-  const toMinutes = (t) => { const [h, m] = t.split(':').map(Number); return h * 60 + m; };
-  const toTimeStr = (min) => `${String(Math.floor(min / 60)).padStart(2, '0')}:${String(min % 60).padStart(2, '0')}`;
-
-  const candidates = [];
-  for (let d = new Date(start); d <= end; d.setDate(d.getDate() + 1)) {
-    const dateKey = new Date(d); dateKey.setHours(0, 0, 0, 0);
-    if (absent.has(localKey(dateKey))) continue;
-    const dayName = dateKey.toLocaleDateString('en-US', { weekday: 'long' });
-    const w = byDay[dayName];
-    if (!w || !w.isWorking) continue;
-
-    const build = (cfg, type, clinicId) => {
-      if (!cfg || !cfg.enabled) return;
-      (cfg.ranges || []).forEach((range) => {
-        if (!range.startTime || !range.endTime) return;
-        let cur = toMinutes(range.startTime);
-        const stop = toMinutes(range.endTime);
-        while (cur + slotDuration <= stop) {
-          candidates.push({
-            doctorId: doctor._id,
-            clinicId: clinicId || null,
-            date: new Date(dateKey),
-            startTime: toTimeStr(cur),
-            endTime: toTimeStr(cur + slotDuration),
-            type,
-            status: 'available',
-            maxPatients: 1,
-          });
-          cur += slotDuration;
-        }
-      });
-    };
-    build(w.online, 'video', null);
-    build(w.onsite, 'in-clinic', w.onsite && w.onsite.clinicId);
-  }
-
-  // De-duplicate against existing slots (same date + startTime + type).
-  const existing = await Slot.find({
-    doctorId: doctor._id,
-    date: { $gte: start, $lte: new Date(end.getTime() + 86400000) },
-  }).select('date startTime type');
-  const seen = new Set(existing.map((s) => `${localKey(s.date)}_${s.startTime}_${s.type}`));
-
-  const docs = [];
-  for (const c of candidates) {
-    const key = `${localKey(c.date)}_${c.startTime}_${c.type}`;
-    if (!seen.has(key)) { seen.add(key); docs.push(c); }
-  }
-  if (docs.length) await Slot.insertMany(docs);
+  const result = await generateForDoctor({ doctor, fromKey, toKey, slotDuration });
 
   res.status(201).json({
     success: true,
-    message: `${docs.length} slots generated`,
-    data: { created: docs.length, candidates: candidates.length },
+    message: `${result.created} slots generated`,
+    data: {
+      created: result.created,
+      candidates: result.candidates,
+      skipped: result.skipped,
+      publishedThrough: result.through,
+    },
   });
 });
 
