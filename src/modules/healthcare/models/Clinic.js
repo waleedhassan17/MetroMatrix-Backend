@@ -43,6 +43,27 @@ const clinicSchema = new mongoose.Schema(
       type: Boolean,
       default: true,
     },
+
+    // The IANA zone this clinic's wall-clock hours are expressed in.
+    //
+    // Slots are authored as "18:30" — a time on a door, not an instant. Without
+    // knowing WHERE that 18:30 is you cannot turn it into a UTC instant, so
+    // every comparison silently fell back to the server's zone, which nothing
+    // in this project sets. This is the missing half of every slot time.
+    timezone: {
+      type: String,
+      default: 'Asia/Karachi',
+      trim: true,
+    },
+
+    // A telemedicine "clinic" has no address. Modelling that explicitly lets
+    // the patient UI group and label video availability instead of inferring it
+    // from a null address or from Slot.type.
+    type: {
+      type: String,
+      enum: ['physical', 'online'],
+      default: 'physical',
+    },
   },
   {
     timestamps: true,

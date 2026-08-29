@@ -85,6 +85,21 @@ const doctorSchema = new mongoose.Schema(
     },
     // Weekly recurring availability. Per day, the doctor can be available online
     // (video) and/or onsite (in-clinic), each with its own time ranges.
+    //
+    // CLINIC LIVES ON THE RANGE, NOT THE DAY.
+    //
+    // `onsite.clinicId` below is the ORIGINAL day-level field, and it made the
+    // product requirement unrepresentable: a doctor who works Clinic A in the
+    // morning and Clinic B in the evening had nowhere to say so, because one
+    // day carried exactly one clinic. Every generated slot for that day was
+    // stamped with the same clinic, or — since the editor never wired its own
+    // clinic picker — with null.
+    //
+    // `ranges[].clinicId` is the real binding. The day-level value is retained
+    // and read as a FALLBACK so the twelve doctors whose documents predate this
+    // keep working untouched; new writes populate the range. Resolution order
+    // is always range first, then day (see resolveRangeClinic in
+    // services/availabilityService.js).
     weeklyAvailability: {
       type: [
         {
@@ -97,15 +112,33 @@ const doctorSchema = new mongoose.Schema(
           online: {
             enabled: { type: Boolean, default: false },
             ranges: {
-              type: [{ _id: false, startTime: String, endTime: String }],
+              // Online ranges may carry a clinicId too: a doctor can run
+              // telemedicine "from" a particular practice, and it decides which
+              // fee and which timezone the slot inherits.
+              type: [
+                {
+                  _id: false,
+                  startTime: String,
+                  endTime: String,
+                  clinicId: { type: mongoose.Schema.Types.ObjectId, ref: 'Clinic', default: null },
+                },
+              ],
               default: [],
             },
           },
           onsite: {
             enabled: { type: Boolean, default: false },
+            /** @deprecated day-level fallback — prefer ranges[].clinicId */
             clinicId: { type: mongoose.Schema.Types.ObjectId, ref: 'Clinic', default: null },
             ranges: {
-              type: [{ _id: false, startTime: String, endTime: String }],
+              type: [
+                {
+                  _id: false,
+                  startTime: String,
+                  endTime: String,
+                  clinicId: { type: mongoose.Schema.Types.ObjectId, ref: 'Clinic', default: null },
+                },
+              ],
               default: [],
             },
           },
