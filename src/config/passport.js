@@ -1,3 +1,4 @@
+const crypto = require('crypto');
 const passport = require('passport');
 const GoogleStrategy = require('passport-google-oauth20').Strategy;
 const FacebookStrategy = require('passport-facebook').Strategy;
@@ -9,11 +10,26 @@ const googleAuthStatus = require('./googleAuthStatus');
 const facebookAuthStatus = require('./facebookAuthStatus');
 
 // JWT Strategy
-// Fallback keeps require() from crashing when JWT_SECRET is absent at build
-// time (serverless cold start); real deployments must still set JWT_SECRET.
+//
+// The fallback exists so require() cannot crash when JWT_SECRET is absent at
+// build time (serverless cold start) — throwing here would fail the build, not
+// just the request. But it used to be the literal string 'missing-jwt-secret',
+// which is committed in a public repo: with JWT_SECRET unset, this strategy
+// would happily VERIFY tokens anyone could forge against a key they can read.
+//
+// A random per-process key keeps require() safe while making that impossible.
+// No real token validates against it, so every request 401s — the same outcome
+// as a misconfigured server should have, and the opposite of trusting forgeries.
+const JWT_SECRET = process.env.JWT_SECRET;
+if (!JWT_SECRET) {
+  console.error(
+    '[auth] JWT_SECRET is not set — the JWT strategy will reject every token. ' +
+      'Set it in the environment; this is a misconfiguration, not a mode.'
+  );
+}
 const jwtOptions = {
   jwtFromRequest: ExtractJwt.fromAuthHeaderAsBearerToken(),
-  secretOrKey: process.env.JWT_SECRET || 'missing-jwt-secret',
+  secretOrKey: JWT_SECRET || crypto.randomBytes(32).toString('hex'),
 };
 
 passport.use(
