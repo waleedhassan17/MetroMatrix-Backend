@@ -35,11 +35,13 @@ const joinVideoCall = async (req, res, next) => {
     }
 
     // Participants only: the patient OR the owning doctor may join
+    let isDoctor = false;
     let isParticipant = appointment.patientId.toString() === req.user._id.toString();
     if (!isParticipant) {
       const Doctor = require('../models/Doctor');
       const doctor = await Doctor.findOne({ providerId: req.user._id }).select('_id');
-      isParticipant = !!doctor && appointment.doctorId.toString() === doctor._id.toString();
+      isDoctor = !!doctor && appointment.doctorId.toString() === doctor._id.toString();
+      isParticipant = isDoctor;
     }
     if (!isParticipant) {
       return res.status(403).json({ success: false, error: 'Access denied' });
@@ -49,8 +51,38 @@ const joinVideoCall = async (req, res, next) => {
       return res.status(400).json({ success: false, error: 'This is not a video appointment' });
     }
 
-    if (appointment.status !== 'confirmed') {
-      return res.status(400).json({ success: false, error: 'Appointment must be confirmed' });
+    // ------------------------------------------------------------------
+    // A DOCTOR ANSWERING THE CALL *IS* THE CONFIRMATION.
+    //
+    // This required status === 'confirmed', but bookAppointment creates
+    // appointments as 'pending' and only an explicit doctor action confirmed
+    // them. So a consultation on a freshly booked appointment always failed
+    // here — in production 4 of 6 video appointments were pending, so this
+    // fired on essentially every call, for both parties.
+    //
+    // The media is peer-to-peer and connected anyway, which made it look
+    // cosmetic. It was not: without this record there is no call history and no
+    // billing row, `video_call_started` never publishes (so a patient sitting
+    // in the waiting room is never pulled in), and the call is never closed out.
+    //
+    // The patient may join a pending appointment without confirming it — only
+    // the doctor's participation carries that meaning. Terminal states still
+    // refuse, with distinct messages so the client can tell "already over"
+    // from "not allowed".
+    // ------------------------------------------------------------------
+    if (appointment.status === 'cancelled') {
+      return res.status(400).json({ success: false, error: 'This appointment was cancelled' });
+    }
+    if (appointment.status === 'completed') {
+      return res
+        .status(400)
+        .json({ success: false, error: 'This appointment is already complete' });
+    }
+
+    if (appointment.status === 'pending' && isDoctor) {
+      appointment.status = 'confirmed';
+      await appointment.save();
+      console.log(`[video] appointment ${appointment._id} confirmed by the doctor joining`);
     }
 
     // Check existing call
