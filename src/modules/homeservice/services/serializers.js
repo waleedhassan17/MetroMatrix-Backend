@@ -52,7 +52,16 @@ function toProviderCard(p, extras = {}) {
     bio: p.briefDescription || '',
     address: (p.serviceAreas && p.serviceAreas[0]) || p.city || '',
     city: p.city || '',
-    category: SUBTYPE_TO_CATEGORY[p.providerSubType] || 'electricians',
+    // `null`, not a guess. This used to fall back to 'electricians', so any
+    // provider whose subtype the mapping could not resolve was SERIALISED as an
+    // electrician — the report that "everything shows electricians" was partly
+    // this: the label was manufactured here, upstream of every screen, and no
+    // amount of client-side care could have detected it.
+    //
+    // The client's categoryAccent() already degrades an unknown category to a
+    // neutral accent, so null renders honestly instead of wrongly. Run
+    // `npm run validate:homeservice` to find the providers that produce it.
+    category: SUBTYPE_TO_CATEGORY[p.providerSubType] || null,
     skills: p.skills || [],
     certifications: p.certifications || [],
     languages: p.languages || ['Urdu', 'English'],
@@ -75,7 +84,7 @@ function toBookingProvider(p) {
     id: card.id,
     name: card.name,
     image: card.image,
-    service: card.specialty || card.category,
+    service: card.specialty || card.category || 'Home service',
     specialty: card.specialty,
     rating: card.rating,
     reviews: card.reviews,
