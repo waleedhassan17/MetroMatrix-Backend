@@ -20,6 +20,7 @@
     "smoke:healthcare": "node scripts/smoke-healthcare.js",
     "seed:homeservice": "node scripts/seed-homeservice.js",
     "smoke:homeservice": "node scripts/smoke-homeservice.js",
+    "validate:homeservice": "node scripts/validate-homeservice.js",
     "smoke:wallet-stripe": "node scripts/wallet-smoke.js",
     "integrity:wallet-shop": "node scripts/wallet-shop-integrity.js",
     "fix:variants": "node scripts/fix-variant-size-color.js",

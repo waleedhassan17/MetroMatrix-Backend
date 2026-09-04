@@ -13,8 +13,21 @@ const HS_CATEGORIES = Object.keys(CATEGORY_TO_SUBTYPE); // electricians | plumbe
 
 /**
  * GET /api/providers — home-service discovery with $geoNear + weighted score.
- * Falls through (next()) to the legacy provider listing when the request is
- * not a home-service search (no recognised category param).
+ *
+ * Falls through (next()) to the legacy provider listing when the request names
+ * NO category at all — that is a different endpoint's job.
+ *
+ * A request that DOES name a category but names one we cannot map is a
+ * different situation entirely, and must not fall through. It used to: an
+ * unrecognised slug reached the legacy listing, which applies no subtype
+ * filter, so the caller got every provider in the system back and the screen
+ * rendered them under whatever category had been tapped. That is what made
+ * every category look like it was full of electricians — a seeded
+ * 'appliance-technicians' category was missing from CATEGORY_TO_SUBTYPE.
+ *
+ * An unknown category now returns an empty page. Silence is the correct answer
+ * to "show me providers of a trade that does not exist"; showing everyone is
+ * not.
  */
 const searchProviders = asyncHandler(async (req, res, next) => {
   const {
@@ -36,8 +49,28 @@ const searchProviders = asyncHandler(async (req, res, next) => {
   } = req.query;
 
   const cat = category || serviceCategory;
-  if (!cat || !HS_CATEGORIES.includes(cat)) {
+  if (!cat) {
     return next(); // not a home-service search — legacy /api/providers handles it
+  }
+  if (!HS_CATEGORIES.includes(cat)) {
+    // Same envelope as the success path below, so the client's list, pagination
+    // and empty state all behave normally rather than meeting a shape they do
+    // not parse.
+    return ok(
+      res,
+      {
+        providers: [],
+        pagination: {
+          currentPage: 1,
+          totalPages: 1,
+          totalItems: 0,
+          itemsPerPage: parseInt(limit, 10) || 15,
+          hasNext: false,
+          hasPrevious: false,
+        },
+      },
+      `Unknown service category "${cat}"`
+    );
   }
 
   // fetchProviders() JSON-stringifies its filters object

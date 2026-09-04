@@ -7,6 +7,7 @@ const Outlet = require('../models/Outlet');
 const { audit } = require('../middleware/adminAuth');
 const { slugify } = require('../utils/ids');
 const { escapeRegex } = require('../services/catalogService');
+const { validateThemeColors } = require('../utils/colors');
 const { ok, paginated, fail, parsePagination } = require('../utils/respond');
 
 const BRAND_FIELDS = [
@@ -84,6 +85,9 @@ const createBrand = asyncHandler(async (req, res) => {
   const slug = slugify(req.body.slug || req.body.name);
   if (await Brand.findOne({ slug })) return fail(res, 400, 'A brand with this slug already exists');
 
+  const colorError = validateThemeColors(req.body);
+  if (colorError) return fail(res, 400, colorError);
+
   const payload = { slug, status: 'active', approvedBy: req.user._id, approvedAt: new Date() };
   BRAND_FIELDS.forEach((f) => {
     if (req.body[f] !== undefined) payload[f] = req.body[f];
@@ -98,6 +102,10 @@ const createBrand = asyncHandler(async (req, res) => {
 const updateBrand = asyncHandler(async (req, res) => {
   const brand = await Brand.findOne({ _id: req.params.brandId, isDeleted: false });
   if (!brand) return fail(res, 404, 'Brand not found');
+
+  const colorError = validateThemeColors(req.body);
+  if (colorError) return fail(res, 400, colorError);
+
   const before = brand.toJSON();
   BRAND_FIELDS.forEach((f) => {
     if (req.body[f] !== undefined) {

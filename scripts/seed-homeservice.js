@@ -4,8 +4,9 @@
  * booking marker), so running twice never duplicates.
  *
  * Creates:
- *   - 4 service categories (electricians, plumbers, ac-repairers + one extra
- *     to prove the catalogue is genuinely data, not the old hardcoded enum)
+ *   - the 3 service categories (electricians, plumbers, ac-repairers), each
+ *     with a real photo, and deactivates any category the category->subtype
+ *     mapping does not recognise
  *   - 15 approved home-service providers across them at real Lahore
  *     coordinates, varied ratings and online states
  *   - 8 customers with saved addresses and wallet balances
@@ -35,13 +36,31 @@ const { STATUS } = require('../src/modules/homeservice/services/statusMap');
 const log = (m) => console.log(`  ${m}`);
 const DAY = 86400000;
 
+// The catalogue is exactly the three trades the app ships, and every slug here
+// MUST be a key of CATEGORY_TO_SUBTYPE (services/serializers.js). A category
+// the mapping does not know cannot be filtered.
+//
+// There used to be a fourth row, 'appliance-technicians', added to demonstrate
+// that the catalogue was data-driven. It pointed at the SAME 'electrician'
+// provider pool and was absent from CATEGORY_TO_SUBTYPE, so provider search
+// met an unrecognised slug and fell through to the unfiltered legacy listing —
+// which is precisely why QA saw electricians under every category. Adding a
+// category in future means adding it to the mapping in the same commit.
+//
+// [name, slug, providerSubType, icon, badge, badgeColor, basePrice, image]
 const CATEGORIES = [
-  ['Electricians', 'electricians', 'electrician', 'flash-outline', 'ELECTRICAL', '#F59E0B', 500],
-  ['Plumbers', 'plumbers', 'plumber', 'water-outline', 'PLUMBING', '#3B82F6', 450],
-  ['AC Repairers', 'ac-repairers', 'ac_repairer', 'snow-outline', 'AC REPAIR', '#06B6D4', 600],
-  // Extra category on the SAME 'electrician' provider pool — proves the
-  // catalogue is data-driven (HS5), not the old hardcoded 3-value enum.
-  ['Appliance Technicians', 'appliance-technicians', 'electrician', 'construct-outline', 'APPLIANCE', '#8B5CF6', 550],
+  [
+    'Electricians', 'electricians', 'electrician', 'flash-outline', 'ELECTRICAL', '#F59E0B', 500,
+    'https://images.unsplash.com/photo-1621905251189-08b45d6a269e?auto=format&fit=crop&w=800&q=70',
+  ],
+  [
+    'Plumbers', 'plumbers', 'plumber', 'water-outline', 'PLUMBING', '#3B82F6', 450,
+    'https://images.unsplash.com/photo-1607472586893-edb57bdc0e39?auto=format&fit=crop&w=800&q=70',
+  ],
+  [
+    'AC Repairers', 'ac-repairers', 'ac_repairer', 'snow-outline', 'AC REPAIR', '#06B6D4', 600,
+    'https://images.unsplash.com/photo-1585771724684-38269d6639fd?auto=format&fit=crop&w=800&q=70',
+  ],
 ];
 
 const LAHORE = [
@@ -122,26 +141,45 @@ async function main() {
   console.log('✓ MongoDB connected\n=== Home Services seed ===');
 
   // 1. Service categories
+  //
+  // Upsert, not create-if-missing. The previous `if (!cat) create(...)` meant a
+  // database seeded before a field existed never received it — which is why
+  // every deployed category still had `image: ''` and the home screen fell back
+  // to the tinted-glyph placeholder on all three cards.
   const catBySlug = {};
   for (let i = 0; i < CATEGORIES.length; i += 1) {
-    const [name, slug, providerSubType, icon, badge, badgeColor, basePrice] = CATEGORIES[i];
-    let cat = await ServiceCategory.findOne({ slug });
-    if (!cat) {
-      cat = await ServiceCategory.create({
-        name,
-        slug,
-        providerSubType,
-        icon,
-        badge,
-        badgeColor,
-        description: `Professional ${name.toLowerCase()} services`,
-        basePrice,
-        isActive: true,
-        sortOrder: i,
-      });
-    }
+    const [name, slug, providerSubType, icon, badge, badgeColor, basePrice, image] = CATEGORIES[i];
+    const cat = await ServiceCategory.findOneAndUpdate(
+      { slug },
+      {
+        $set: {
+          name,
+          providerSubType,
+          icon,
+          badge,
+          badgeColor,
+          image,
+          description: `Professional ${name.toLowerCase()} services`,
+          isActive: true,
+          sortOrder: i,
+        },
+        // Price is operational data an admin may have tuned; seed it once and
+        // then leave it alone.
+        $setOnInsert: { slug, basePrice },
+      },
+      { new: true, upsert: true, setDefaultsOnInsert: true }
+    );
     catBySlug[slug] = cat;
   }
+
+  // Any category outside the catalogue cannot be filtered by provider search,
+  // so it must not be offered. Deactivated rather than deleted: an old booking
+  // may still reference it, and deleting would orphan that history.
+  const stale = await ServiceCategory.updateMany(
+    { slug: { $nin: Object.keys(catBySlug) }, isActive: true },
+    { $set: { isActive: false } }
+  );
+  if (stale.modifiedCount) log(`deactivated ${stale.modifiedCount} unmapped categor(ies)`);
   log(`service categories ready: ${CATEGORIES.length}`);
 
   // 2. Providers

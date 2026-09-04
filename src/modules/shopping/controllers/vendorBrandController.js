@@ -5,6 +5,7 @@ const ProductReview = require('../models/ProductReview');
 const { uploadBase64Image } = require('../../../config/cloudinary');
 const { getShoppingSettings } = require('../services/settingsService');
 const { slugify } = require('../utils/ids');
+const { validateThemeColors } = require('../utils/colors');
 const { ok, paginated, fail, parsePagination } = require('../utils/respond');
 
 const BRAND_EDITABLE = [
@@ -28,6 +29,9 @@ const createMyBrand = asyncHandler(async (req, res) => {
   if (existing) return fail(res, 400, 'You already have a brand profile');
   if (!req.body.name) return fail(res, 400, 'Brand name is required');
 
+  const colorError = validateThemeColors(req.body);
+  if (colorError) return fail(res, 400, colorError);
+
   const slug = slugify(req.body.slug || req.body.name);
   if (await Brand.findOne({ slug })) {
     return fail(res, 400, 'A brand with this name/slug already exists');
@@ -48,6 +52,13 @@ const getMyBrand = asyncHandler(async (req, res) => ok(res, req.brand));
 // @desc  PATCH /api/shopping/vendor/brand
 const updateMyBrand = asyncHandler(async (req, res) => {
   const brand = req.brand;
+
+  // primaryColor drives the brand's tab bar, their store header, and the ink
+  // colour the client computes against it. An unparseable value there is not a
+  // cosmetic problem — it is an unreadable storefront.
+  const colorError = validateThemeColors(req.body);
+  if (colorError) return fail(res, 400, colorError);
+
   BRAND_EDITABLE.forEach((f) => {
     if (req.body[f] !== undefined) {
       if ((f === 'policies' || f === 'socialLinks') && typeof req.body[f] === 'object') {

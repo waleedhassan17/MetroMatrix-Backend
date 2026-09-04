@@ -37,7 +37,15 @@ const PROMOTIONS = [
 
 // GET /api/user/home — home screen aggregate (categories from the catalogue + live provider counts)
 const getHome = asyncHandler(async (req, res) => {
-  const cats = await ServiceCategory.find({ isActive: true }).sort({ sortOrder: 1 });
+  // Only categories the search endpoint can actually filter by. A category
+  // outside CATEGORY_TO_SUBTYPE has no subtype to match on, so tapping it
+  // could only ever return the wrong providers — better never to offer it than
+  // to show a card that lies. This is a guard, not the source of truth: the
+  // seed keeps the collection itself to these three.
+  const cats = await ServiceCategory.find({
+    isActive: true,
+    slug: { $in: Object.keys(CATEGORY_TO_SUBTYPE) },
+  }).sort({ sortOrder: 1 });
   const categories = await Promise.all(
     cats.map(async (c) => {
       const providers = await Provider.find({
