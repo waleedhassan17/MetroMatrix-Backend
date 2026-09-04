@@ -102,13 +102,55 @@ const processPayment = asyncHandler(async (req, res) => {
     // 'jazzcash' / 'easypaisa' both ride the in-app wallet (FYP scope: the
     // wallet IS the mobile-money stand-in; a real gateway is FYP-II work).
     const { transaction } = await payWithWallet(b, req.user, total);
+
+    // The provider must be TOLD. Until now a successful payment moved money and
+    // stamped the booking but announced nothing, so the provider's payment
+    // screen had no way to know and faked the arrival on a random timer.
+    //
+    // Two separate try/catch blocks on purpose, mirroring createBooking: the
+    // durable notification is what the bell shows on the next fetch, the emit
+    // is what updates an open app without one, and one failing must not skip
+    // the other. Both are best-effort — the money has already moved, so
+    // nothing here may turn a successful payment into an error.
+    //
+    // `b.payment.method` rather than the request's `method`: payWithWallet
+    // overwrites it with the literal 'wallet', so this is the value actually
+    // stored on the booking. Reporting the raw request string would put the UI
+    // and the database out of step.
+    const paidAtIso = b.payment.paidAt.toISOString();
+
+    try {
+      const notify = require('../services/notificationService');
+      await notify.notifyPaymentReceived(b, {
+        amount: total,
+        method: b.payment.method,
+        customerName: req.user.fullName,
+      });
+    } catch (e) {
+      console.error(`[payment] paid notify failed booking=${b._id}: ${e.message}`);
+    }
+
+    try {
+      const { emitToBooking } = require('../../../sockets');
+      await emitToBooking(b._id, 'payment_received', {
+        bookingId: String(b._id),
+        roomId: String(b._id),
+        amount: total,
+        method: b.payment.method,
+        transactionId: String(transaction._id),
+        paidAt: paidAtIso,
+      });
+    } catch (e) {
+      console.error(`[payment] paid publish failed booking=${b._id}: ${e.message}`);
+    }
+
     return ok(res, {
       transactionId: String(transaction._id),
       status: 'completed',
       method,
       amount: total,
       currency: 'PKR',
-      paidAt: b.payment.paidAt.toISOString(),
+      paidAt: paidAtIso,
     }, 'Payment successful');
   } catch (e) {
     if (e instanceof PaymentError) {

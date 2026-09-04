@@ -119,4 +119,41 @@ async function notifyBookingCancelled(booking, cancelledBy, ctx = {}) {
   });
 }
 
-module.exports = { create, notifyBookingStatus, notifyBookingCancelled, BOOKING_EVENTS };
+/**
+ * The customer paid — tell the provider.
+ *
+ * Deliberately NOT in BOOKING_EVENTS: that map is keyed by booking STATUS, and
+ * payment is a parallel axis (a booking is COMPLETED whether or not it is
+ * paid), so there is no status to key this on. Same shape as
+ * notifyBookingCancelled — straight to create(), which never throws.
+ *
+ * The `payment_received` type is already in the HSNotification enum; until now
+ * nothing wrote it, which is why a provider was never told about a payment and
+ * the provider app faked it on a timer instead.
+ */
+async function notifyPaymentReceived(booking, ctx = {}) {
+  const providerId = booking.provider?._id || booking.provider;
+  const amount = ctx.amount != null ? `PKR ${Number(ctx.amount).toLocaleString()}` : 'Payment';
+
+  return create({
+    recipient: providerId,
+    recipientRole: 'provider',
+    type: 'payment_received',
+    title: 'Payment received',
+    message: `${amount} received from ${ctx.customerName || 'the customer'}.`,
+    data: {
+      bookingId: String(booking._id),
+      roomType: 'homeservice',
+      amount: ctx.amount,
+      method: ctx.method,
+    },
+  });
+}
+
+module.exports = {
+  create,
+  notifyBookingStatus,
+  notifyBookingCancelled,
+  notifyPaymentReceived,
+  BOOKING_EVENTS,
+};

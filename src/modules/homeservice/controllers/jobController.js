@@ -137,12 +137,37 @@ const getAwaitingApproval = asyncHandler(async (req, res) => {
   }, 'Awaiting approval data fetched');
 });
 
-// GET /approval-status — customer "approval" = payment made
+// GET /approval-status — has the customer signed off on this job?
+//
+// The provider screen this feeds says "Awaiting Customer Approval / The
+// customer has approved your work", so it means approval of the WORK. This
+// used to answer `payment.status === 'paid'`, which is a different question and
+// a later one — the provider was told to wait for approval before requesting
+// payment, while the endpoint only said yes once payment had already happened.
+//
+// There are exactly two things a customer can do that constitute signing off,
+// and either is a real, deliberate action:
+//   1. Confirm completion themselves. `transition()` stamps changedBy.role on
+//      every status-history entry, so a customer-performed IN_PROGRESS →
+//      COMPLETED is distinguishable from the provider completing their own job.
+//   2. Pay. Paying is the strongest possible sign-off.
+// The provider never advances on anything but one of these.
 const getApprovalStatus = asyncHandler(async (req, res) => {
   const b = req.booking;
+
+  const customerConfirmed = (b.statusHistory || []).find(
+    (h) => h.status === STATUS.COMPLETED && h.changedBy && h.changedBy.role === 'customer'
+  );
+  const paid = b.payment.status === 'paid';
+
   ok(res, {
-    isApproved: b.payment.status === 'paid',
-    approvalTime: b.payment.paidAt ? b.payment.paidAt.toISOString() : undefined,
+    isApproved: !!customerConfirmed || paid,
+    approvalTime:
+      (customerConfirmed && customerConfirmed.changedAt
+        ? customerConfirmed.changedAt.toISOString()
+        : undefined) || (b.payment.paidAt ? b.payment.paidAt.toISOString() : undefined),
+    // Which of the two it was, so the screen can word itself honestly.
+    paid,
   }, 'Approval status fetched');
 });
 
