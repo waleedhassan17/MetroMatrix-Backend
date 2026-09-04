@@ -112,6 +112,60 @@ const createBooking = asyncHandler(async (req, res) => {
 
   await Provider.updateOne({ _id: provider._id }, { $inc: { totalBookings: 1 } });
 
+  // Tell the provider a job is waiting.
+  //
+  // Creation is the one lifecycle event that does NOT go through transition()
+  // — there is no previous status to move from — so it missed the notification
+  // hook every other status change gets for free. BOOKING_EVENTS[PENDING] has
+  // been sitting there addressed `to: 'provider'` with nothing calling it,
+  // which is why cancellations notified and new bookings did not.
+  //
+  // Both are best-effort by contract, and wrapped anyway: a provider not
+  // hearing about a job must never mean the customer failed to book one.
+  try {
+    const notify = require('../services/notificationService');
+    await notify.notifyBookingStatus(booking, STATUS.PENDING, {
+      customerName: req.user.fullName,
+      providerName: provider.fullName,
+      service: booking.serviceSubCategory || booking.serviceCategory,
+    });
+  } catch (e) {
+    console.error(`[booking] create notify failed booking=${booking._id}: ${e.message}`);
+  }
+
+  // The durable notification above is what the bell shows on next fetch; this
+  // is what updates it without one. Addressed to the provider directly, since
+  // they are not in the booking's room yet.
+  try {
+    const { emitToUser } = require('../../../sockets');
+    await emitToUser(provider._id, 'booking_created', {
+      bookingId: String(booking._id),
+      status: booking.status,
+      service: booking.serviceSubCategory || booking.serviceCategory,
+      customerName: req.user.fullName,
+      scheduledFor: booking.scheduledFor,
+      createdAt: new Date().toISOString(),
+    });
+  } catch (e) {
+    console.error(`[booking] create publish failed booking=${booking._id}: ${e.message}`);
+  }
+
+  // And a push, for the case the emit above cannot cover: a provider whose app
+  // is closed, which is most of them most of the time. A job request that waits
+  // for the provider to next open the app is a job request they lose.
+  try {
+    const { pushToUser } = require('../../../sockets');
+    const service = booking.serviceSubCategory || booking.serviceCategory;
+    await pushToUser(provider._id, 'provider', {
+      type: 'booking_created',
+      title: 'New booking request',
+      body: `${req.user.fullName || 'A customer'} requested ${service || 'a service'}`,
+      data: { bookingId: String(booking._id), roomType: 'homeservice' },
+    });
+  } catch (e) {
+    console.error(`[booking] create push failed booking=${booking._id}: ${e.message}`);
+  }
+
   ok(res, {
     bookingId: String(booking._id),
     status: toConfirmationStatus(booking.status),
@@ -204,6 +258,16 @@ const getServiceStatus = asyncHandler(async (req, res) => {
       name: b.provider.fullName,
       phone: b.provider.phoneNumber,
       image: avatar(b.provider.fullName, b.provider.profilePhoto),
+      // Credentials for the Service Status provider card. Sent unpadded — an
+      // unrated provider gets rating 0 and an empty specialty/experience, and
+      // the client hides those badges rather than printing "★ 0". Every field
+      // read here is already populated by `bookingAccess`.
+      rating: b.provider.ratings ? Math.round((b.provider.ratings.average || 0) * 10) / 10 : 0,
+      reviews: b.provider.ratings ? b.provider.ratings.count || 0 : 0,
+      experience: b.provider.experience || '',
+      specialty: b.provider.profession || b.provider.specialty || '',
+      verified:
+        b.provider.adminVerified === 'active' || b.provider.verificationStatus === 'approved',
     },
     serviceDetails: {
       type: b.serviceSubCategory || b.serviceCategory,
@@ -217,6 +281,9 @@ const getServiceStatus = asyncHandler(async (req, res) => {
       id: i + 1,
       label: s.label,
       completed: !!reached[s.key],
+      // `time` is pre-formatted in Asia/Karachi and stays for compatibility:
+      // the app and this service deploy separately, so a client that has not
+      // been updated yet must keep rendering something sensible.
       time: reached[s.key]
         ? new Date(reached[s.key]).toLocaleTimeString('en-PK', {
             hour: '2-digit',
@@ -224,7 +291,25 @@ const getServiceStatus = asyncHandler(async (req, res) => {
             timeZone: 'Asia/Karachi',
           })
         : undefined,
+      // `timeAt` is the actual instant, which is what a client should format.
+      // Pinning presentation to one timezone server-side put this timeline in
+      // Karachi time while everything the app formats itself was in device
+      // time — the same screen disagreeing with itself for anyone abroad.
+      // Formatting is the client's job; the server's job is the instant.
+      timeAt: reached[s.key] ? new Date(reached[s.key]).toISOString() : undefined,
     })),
+    // Payment state belongs in this payload because the customer's service
+    // screen decides whether to show the payment card, and it must decide from
+    // server truth. Without it the screen could only track payment in local
+    // component state, which reset on focus and stranded completed-unpaid
+    // bookings. Field names are exactly getBooking's, so both endpoints
+    // deserialize the same way on the client.
+    payment: {
+      status: b.payment.status,
+      method: b.payment.method,
+      amount: b.pricing.finalPrice || b.pricing.estimatedPrice,
+      paidAt: b.payment.paidAt,
+    },
   }, 'Service status fetched');
 });
 
@@ -236,6 +321,42 @@ const patchBookingStatus = asyncHandler(async (req, res) => {
     role: req.bookingRole,
   }, { reason: req.body.reason });
   ok(res, { bookingId: String(req.booking._id), status: req.booking.status }, 'Status updated');
+});
+
+// POST /api/bookings/:id/complete — the CUSTOMER confirms the job is done.
+//
+// Kept separate from PATCH /status rather than folded into it, because this one
+// has to be idempotent and transition() cannot be: ALLOWED_TRANSITIONS[COMPLETED]
+// is empty, so a second call throws 'Illegal transition COMPLETED → COMPLETED'.
+// The customer's phone retries — a flaky network on the tap that ends the job
+// must not surface as an error on a booking that is already done.
+const completeBookingByCustomer = asyncHandler(async (req, res) => {
+  if (req.bookingRole !== 'customer') {
+    res.status(403);
+    throw new Error('Only the booking customer may confirm completion');
+  }
+
+  // Idempotent short-circuit, ahead of the state machine.
+  if (req.booking.status === STATUS.COMPLETED) {
+    return ok(
+      res,
+      { bookingId: String(req.booking._id), status: req.booking.status },
+      'Booking already completed'
+    );
+  }
+
+  // Everything else — the legal-move check, work.endedAt, actualDurationMinutes,
+  // the booking_completed notification and the room emit — is transition()'s job.
+  await transition(req.booking, STATUS.COMPLETED, {
+    id: req.user._id,
+    role: 'customer',
+  }, { note: 'Completion confirmed by customer' });
+
+  ok(
+    res,
+    { bookingId: String(req.booking._id), status: req.booking.status },
+    'Service marked as completed'
+  );
 });
 
 // POST /api/bookings/:id/cancel
@@ -253,6 +374,7 @@ module.exports = {
   getBooking,
   getServiceStatus,
   patchBookingStatus,
+  completeBookingByCustomer,
   cancelBooking,
   buildTimeSlots,
 };

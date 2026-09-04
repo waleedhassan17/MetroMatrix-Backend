@@ -89,6 +89,56 @@ async function emitToRoom(roomId, event, payload = {}) {
 }
 
 /**
+ * Publish an event to ONE PERSON, wherever they are in the app.
+ *
+ * Room events only reach whoever has opened that booking. A provider who has
+ * just been sent a new job is by definition not in its room yet — they are on
+ * a dashboard, or a job list — so a room emit could never reach them. Every
+ * socket joins a personal `user:<id>` room on connect in the realtime service
+ * precisely for this.
+ *
+ * Same best-effort contract as emitToRoom: always resolves, logs on failure,
+ * hard 2s cap. A booking must never fail because a notification could not be
+ * delivered.
+ *
+ * @param {string} userId  User or Provider _id
+ * @param {string} event   must be in the realtime service's EMITTABLE_EVENTS
+ * @param {object} payload
+ */
+async function emitToUser(userId, event, payload = {}) {
+  if (!userId || !event || !configured()) return false;
+
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), PUBLISH_TIMEOUT_MS);
+
+  try {
+    const response = await fetch(`${REALTIME_URL.replace(/\/$/, '')}/api/internal/emit`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'x-internal-key': INTERNAL_API_KEY,
+      },
+      body: JSON.stringify({ userId: String(userId), event, payload }),
+      signal: controller.signal,
+    });
+
+    if (!response.ok) {
+      console.error(
+        `[realtime] emit ${event} user=${userId} failed: HTTP ${response.status}`
+      );
+      return false;
+    }
+    return true;
+  } catch (error) {
+    const reason = error?.name === 'AbortError' ? `timeout after ${PUBLISH_TIMEOUT_MS}ms` : error?.message;
+    console.error(`[realtime] emit ${event} user=${userId} failed: ${reason}`);
+    return false;
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
+/**
  * Home-service alias kept so the existing call sites in bookingService,
  * trackingController and paymentController read naturally and did not all have
  * to change. A booking id IS a room id.
@@ -97,4 +147,55 @@ function emitToBooking(bookingId, event, payload) {
   return emitToRoom(bookingId, event, payload);
 }
 
-module.exports = { emitToRoom, emitToBooking };
+/**
+ * Push to one person's devices via the realtime service.
+ *
+ * `emitToUser` only reaches a socket that is currently connected. A provider
+ * whose app is closed — the normal state when a job request arrives — is
+ * reachable only by push, and the Expo client and the token lookup both live in
+ * the realtime service.
+ *
+ * `role` picks the collection: push tokens are stored on Provider for providers
+ * and User for customers.
+ *
+ * Same best-effort contract as the emit functions: always resolves, logs on
+ * failure, hard 2s cap.
+ *
+ * @param {string} userId  User or Provider _id
+ * @param {'provider'|'user'} role
+ * @param {{type:string, title:string, body?:string, data?:object}} notification
+ *        `type` must be in the realtime service's PUSHABLE_TYPES
+ */
+async function pushToUser(userId, role, { type, title, body, data } = {}) {
+  if (!userId || !type || !title || !configured()) return false;
+
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), PUBLISH_TIMEOUT_MS);
+
+  try {
+    const response = await fetch(`${REALTIME_URL.replace(/\/$/, '')}/api/internal/push`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'x-internal-key': INTERNAL_API_KEY,
+      },
+      body: JSON.stringify({ userId: String(userId), role, type, title, body, data }),
+      signal: controller.signal,
+    });
+
+    if (!response.ok) {
+      console.error(`[realtime] push ${type} user=${userId} failed: HTTP ${response.status}`);
+      return false;
+    }
+    return true;
+  } catch (error) {
+    const reason =
+      error?.name === 'AbortError' ? `timeout after ${PUBLISH_TIMEOUT_MS}ms` : error?.message;
+    console.error(`[realtime] push ${type} user=${userId} failed: ${reason}`);
+    return false;
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
+module.exports = { emitToRoom, emitToBooking, emitToUser, pushToUser };

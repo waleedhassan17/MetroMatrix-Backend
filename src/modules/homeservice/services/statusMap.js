@@ -45,6 +45,23 @@ const PROVIDER_TRANSITIONS = [
   STATUS.COMPLETED,
 ];
 
+/**
+ * Transitions the CUSTOMER may perform, keyed by the status being moved FROM.
+ *
+ * COMPLETED is in PROVIDER_TRANSITIONS above and stays there — the provider
+ * still completes their own jobs. This map is a narrow, additional grant: the
+ * customer confirming from IN_PROGRESS that the work is actually done. Keyed by
+ * source status rather than a flat list precisely so it cannot widen anything
+ * else; adding COMPLETED to a flat customer list would also let a customer
+ * complete from any other state the graph happens to allow later.
+ *
+ * Cancellation is NOT here — it has its own branch in bookingService with its
+ * own CUSTOMER_CANCELLABLE_FROM window.
+ */
+const CUSTOMER_TRANSITIONS = {
+  [STATUS.IN_PROGRESS]: [STATUS.COMPLETED],
+};
+
 // → booking.ts / UserBooking ('pending'|'confirmed'|'in_progress'|'completed'|'cancelled')
 function toBookingStatus(status) {
   switch (status) {
@@ -155,6 +172,7 @@ module.exports = {
   TERMINAL_STATUSES,
   ALLOWED_TRANSITIONS,
   PROVIDER_TRANSITIONS,
+  CUSTOMER_TRANSITIONS,
   toBookingStatus,
   toConfirmationStatus,
   toServiceStatus,

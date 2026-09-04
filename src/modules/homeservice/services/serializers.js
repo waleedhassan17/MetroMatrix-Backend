@@ -113,6 +113,11 @@ function toUserBooking(b) {
       .filter(Boolean)
       .join(', '),
     price: (b.pricing && (b.pricing.finalPrice || b.pricing.estimatedPrice)) || 0,
+    // The list needs to know a completed booking is still unpaid, so the
+    // bookings tab can offer "Pay now" — otherwise a customer who left the
+    // service screen before paying has no route back to payment. Only the
+    // status is exposed; the amount is already in `price` above.
+    payment: { status: (b.payment && b.payment.status) || 'unpaid' },
     rating: b.reviewRating,
     review: b.reviewComment,
     createdAt: b.createdAt ? b.createdAt.toISOString() : '',

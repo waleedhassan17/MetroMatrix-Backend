@@ -38,6 +38,7 @@ router.post('/bookings', protect, userOnly, bookingC.createBooking);
 router.get('/bookings/:id/service-status', protect, loadBookingWithAccess, bookingC.getServiceStatus);
 router.get('/bookings/:bookingId/tracking', protect, loadBookingWithAccess, trackingC.getTrackingData);
 router.patch('/bookings/:id/status', protect, loadBookingWithAccess, bookingC.patchBookingStatus);
+router.post('/bookings/:id/complete', protect, loadBookingWithAccess, bookingC.completeBookingByCustomer);
 router.post('/bookings/:id/cancel', protect, loadBookingWithAccess, bookingC.cancelBooking);
 router.post('/bookings/:id/dispute', protect, loadBookingWithAccess, adminC.raiseDispute);
 router.get('/bookings/:id', protect, loadBookingWithAccess, bookingC.getBooking);

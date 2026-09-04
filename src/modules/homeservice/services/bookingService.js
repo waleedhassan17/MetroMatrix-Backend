@@ -10,6 +10,7 @@ const {
   STATUS,
   ALLOWED_TRANSITIONS,
   PROVIDER_TRANSITIONS,
+  CUSTOMER_TRANSITIONS,
 } = require('./statusMap');
 
 class StatusError extends Error {
@@ -63,18 +64,32 @@ async function transition(booking, nextStatus, actor, opts = {}) {
       );
     }
   } else if (PROVIDER_TRANSITIONS.includes(nextStatus)) {
-    if (actor.role !== 'provider') {
-      throw new StatusError(
-        `Only the assigned provider may move a booking to ${nextStatus}`,
-        403
-      );
-    }
-    // booking.provider may be a raw ObjectId or a populated Provider doc
-    // (loadBookingWithAccess populates it) — String(populatedDoc) is NOT its
-    // id string, so unwrap ._id first.
-    const providerId = booking.provider && booking.provider._id ? booking.provider._id : booking.provider;
-    if (String(providerId) !== String(actor.id)) {
-      throw new StatusError('You are not the assigned provider for this booking', 403);
+    // A few of these the customer may also perform — today only the
+    // IN_PROGRESS → COMPLETED confirmation. Checked against the source status,
+    // so this grant cannot leak to any other provider-only move.
+    const customerMayDoThis = (CUSTOMER_TRANSITIONS[current] || []).includes(nextStatus);
+
+    if (actor.role === 'customer' && customerMayDoThis) {
+      // Same populated-vs-raw unwrap as the provider check below —
+      // loadBookingWithAccess populates customer too.
+      const customerId = booking.customer && booking.customer._id ? booking.customer._id : booking.customer;
+      if (String(customerId) !== String(actor.id)) {
+        throw new StatusError('You are not the customer for this booking', 403);
+      }
+    } else {
+      if (actor.role !== 'provider') {
+        throw new StatusError(
+          `Only the assigned provider may move a booking to ${nextStatus}`,
+          403
+        );
+      }
+      // booking.provider may be a raw ObjectId or a populated Provider doc
+      // (loadBookingWithAccess populates it) — String(populatedDoc) is NOT its
+      // id string, so unwrap ._id first.
+      const providerId = booking.provider && booking.provider._id ? booking.provider._id : booking.provider;
+      if (String(providerId) !== String(actor.id)) {
+        throw new StatusError('You are not the assigned provider for this booking', 403);
+      }
     }
   }
 
