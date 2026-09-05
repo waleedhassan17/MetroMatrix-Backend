@@ -6,7 +6,7 @@ const Address = require('../models/Address');
 const WalletService = require('../../../services/walletService');
 const cartService = require('./cartService');
 const { splitByBrand, allocateProportional } = require('./orderService');
-const { getShoppingSettings } = require('./settingsService');
+const { getShoppingSettings, resolveDeliveryTier } = require('./settingsService');
 
 class CheckoutError extends Error {
   constructor(message, statusCode = 400, lines) {
@@ -24,7 +24,7 @@ class CheckoutError extends Error {
  * flow uses per-variant atomic $inc stock guards plus explicit compensating
  * rollback (restore stock, delete created docs) if a later step fails.
  */
-const checkout = async (user, { addressId, shippingAddress, paymentMethod }) => {
+const checkout = async (user, { addressId, shippingAddress, paymentMethod, deliveryOptionId }) => {
   if (!['wallet', 'cod'].includes(paymentMethod)) {
     throw new CheckoutError("paymentMethod must be 'wallet' or 'cod'");
   }
@@ -77,6 +77,20 @@ const checkout = async (user, { addressId, shippingAddress, paymentMethod }) => 
 
   // (b) Recompute all totals server-side — client totals are never trusted
   const settings = await getShoppingSettings();
+
+  // Delivery speed. An unknown or disabled tier is rejected rather than
+  // silently downgraded to standard: the shopper was shown a price for the
+  // tier they picked, and charging a different one is the exact defect this
+  // parameter exists to fix.
+  let deliveryTier = null;
+  if (deliveryOptionId) {
+    deliveryTier = resolveDeliveryTier(settings, deliveryOptionId);
+    if (!deliveryTier) {
+      throw new CheckoutError('That delivery option is not available');
+    }
+  }
+  const deliverySurcharge = deliveryTier ? deliveryTier.surcharge : 0;
+
   let discount = 0;
   let coupon = null;
   if (cart.appliedCoupon) {
@@ -85,7 +99,7 @@ const checkout = async (user, { addressId, shippingAddress, paymentMethod }) => 
     if (!result.ok) throw new CheckoutError(`Coupon problem: ${result.reason}`);
     discount = result.discount;
   }
-  const totals = cartService.computeTotals(lines, discount, settings);
+  const totals = cartService.computeTotals(lines, discount, settings, deliverySurcharge);
 
   // (c) Wallet balance pre-check (fail before touching stock)
   let customerWallet = null;
@@ -133,6 +147,10 @@ const checkout = async (user, { addressId, shippingAddress, paymentMethod }) => 
     const shippingPerBrand = brandKeys.map((k, i) =>
       brandSubtotals[i] >= settings.freeShippingThreshold ? 0 : settings.shippingFeePerBrand
     );
+    // The speed surcharge is one charge for the whole group. Spread it over the
+    // children with the same largest-remainder helper the discount uses, so the
+    // children still sum to the group to the exact rupee.
+    const surchargeSplit = allocateProportional(deliverySurcharge, brandSubtotals);
 
     const group = await OrderGroup.create({
       userId: user._id,
@@ -145,6 +163,9 @@ const checkout = async (user, { addressId, shippingAddress, paymentMethod }) => 
       shippingFee: totals.shippingFee,
       total: totals.total,
       appliedCoupon: cart.appliedCoupon || null,
+      deliveryOption: deliveryTier
+        ? { id: deliveryTier.id, name: deliveryTier.name, surcharge: deliveryTier.surcharge }
+        : null,
     });
 
     const orders = [];
@@ -162,8 +183,8 @@ const checkout = async (user, { addressId, shippingAddress, paymentMethod }) => 
           orderStatus: 'pending',
           subtotal: brandSubtotals[i],
           discount: discountSplit[i],
-          shippingFee: shippingPerBrand[i],
-          total: brandSubtotals[i] - discountSplit[i] + shippingPerBrand[i],
+          shippingFee: shippingPerBrand[i] + surchargeSplit[i],
+          total: brandSubtotals[i] - discountSplit[i] + shippingPerBrand[i] + surchargeSplit[i],
           statusHistory: [
             { status: 'pending', changedBy: { id: user._id, role: 'customer' }, changedAt: new Date() },
           ],

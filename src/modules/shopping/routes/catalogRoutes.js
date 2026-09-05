@@ -10,9 +10,11 @@ const {
   getProductById,
   getOutlets,
   getOutletById,
+  getBanners,
 } = require('../controllers/catalogController');
 
 // Public browsing — no auth required
+router.get('/banners', getBanners);
 router.get('/brands', getBrands);
 router.get('/brands/slug/:slug', getBrandBySlug);
 router.get('/brands/:brandId/categories', getBrandCategories);

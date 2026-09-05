@@ -73,15 +73,40 @@ const evaluateCoupon = (coupon, items, now = new Date()) => {
   return { ok: true, discount: Math.round(discount) };
 };
 
-const computeTotals = (items, discount, settings) => {
+/**
+ * `extraShipping` is the delivery-speed surcharge — one charge for the whole
+ * checkout, on top of the per-brand fee. It defaults to 0 so cart reads (which
+ * have no speed chosen yet) are unaffected.
+ */
+const computeTotals = (items, discount, settings, extraShipping = 0) => {
   const subtotal = items.reduce((s, it) => s + it.unitPrice * it.quantity, 0);
-  const shippingFee = computeShippingFee(items, settings);
+  const shippingFee = computeShippingFee(items, settings) + extraShipping;
   return {
     subtotal,
     discount,
     shippingFee,
     total: subtotal - discount + shippingFee,
   };
+};
+
+/**
+ * Per-brand money breakdown for the cart screen. The client used to compute
+ * this with its own hardcoded fee and threshold, which could disagree with the
+ * order total shown right below it once an admin changed either setting.
+ */
+const computeBrandBreakdown = (items, { shippingFeePerBrand, freeShippingThreshold }) => {
+  const byBrand = new Map();
+  items.forEach((it) => {
+    const key = String(it.brandId);
+    const row = byBrand.get(key) || { brandId: key, brandName: it.brandName || '', subtotal: 0 };
+    row.subtotal += it.unitPrice * it.quantity;
+    if (!row.brandName && it.brandName) row.brandName = it.brandName;
+    byBrand.set(key, row);
+  });
+  return [...byBrand.values()].map((row) => ({
+    ...row,
+    shippingFee: row.subtotal >= freeShippingThreshold ? 0 : shippingFeePerBrand,
+  }));
 };
 
 /** Unit price pinned at time-of-add: (salePrice ?? basePrice) + variant.additionalPrice */
@@ -156,6 +181,7 @@ const serializeCart = async (cart) => {
     userId: String(cart.userId),
     items,
     ...totals,
+    brandBreakdown: computeBrandBreakdown(items, settings),
     appliedCoupon,
   };
 };
@@ -192,6 +218,7 @@ const validateLine = async (productId, variantId, quantity) => {
 
 module.exports = {
   computeShippingFee,
+  computeBrandBreakdown,
   evaluateCoupon,
   computeTotals,
   unitPriceFor,

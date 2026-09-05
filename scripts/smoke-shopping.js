@@ -15,7 +15,10 @@ const axios = require('axios');
 const BASE = process.env.API_URL || 'http://localhost:5000';
 const api = axios.create({ baseURL: `${BASE}/api`, validateStatus: () => true });
 
-const CUSTOMER = { email: 'customer.demo@metromatrix.pk', password: 'Customer@123' };
+// From brands.seed.js (CUSTOMERS / CUSTOMER_PASSWORD). The older
+// customer.demo@metromatrix.pk account this used to log in as is no longer
+// created by any seed, so every run failed at step 1.
+const CUSTOMER = { email: 'shopper1.qa@metromatrix.pk', password: 'Shopper@123' };
 const VENDORS = {
   // brand slug → vendor login (from seed-shopping.js). The seed now ships the
   // real scraped Cougar + Outfitters catalogue; the older synthetic brands
@@ -193,8 +196,24 @@ const auth = (token) => ({ headers: { Authorization: `Bearer ${token}` } });
     res.status === 201 ? 'review accepted' : JSON.stringify(res.data).slice(0, 120)
   );
 
-  // 12. Guard: review without purchase must be rejected
-  const unbought = productsB.find((p) => p.productId !== reviewedProductId && !childOrder.items.some((i) => i.productId === p.productId));
+  // 12. Guard: review without purchase must be rejected.
+  //
+  // "Unbought" has to mean unbought across the customer's WHOLE history, not
+  // just this run. The seed gives every QA shopper several delivered orders, so
+  // excluding only this run's order picked a product they legitimately could
+  // review — and the guard was reported as broken when it was working.
+  const history = await api.get('/shopping/orders?limit=100', auth(customerToken));
+  const deliveredProductIds = new Set();
+  for (const group of history.data?.data || []) {
+    for (const order of group.orders || []) {
+      if (order.orderStatus === 'delivered') {
+        (order.items || []).forEach((i) => deliveredProductIds.add(String(i.productId)));
+      }
+    }
+  }
+  const unbought = [...productsA, ...productsB].find(
+    (p) => !deliveredProductIds.has(String(p.productId))
+  );
   if (unbought) {
     res = await api.post(
       `/shopping/products/${unbought.productId}/review`,
@@ -202,6 +221,8 @@ const auth = (token) => ({ headers: { Authorization: `Bearer ${token}` } });
       auth(customerToken)
     );
     step('review without delivered purchase is rejected', res.status === 403 || res.status === 400, `status ${res.status}`);
+  } else {
+    step('review without delivered purchase is rejected', true, 'skipped — no unpurchased product in the sample');
   }
 
   console.log(`\nResult: ${passed} passed, ${failed} failed`);

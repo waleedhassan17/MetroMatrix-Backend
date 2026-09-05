@@ -15,6 +15,7 @@
     "smoke:auth-email": "node scripts/smoke-auth-email.js",
     "smoke:auth": "node scripts/smoke-auth.js",
     "seed:shopping": "node scripts/seed-shopping.js",
+    "seed:banners": "node scripts/add-banners.js",
     "smoke:shopping": "node scripts/smoke-shopping.js",
     "seed:healthcare": "node scripts/seed-healthcare.js",
     "smoke:healthcare": "node scripts/smoke-healthcare.js",

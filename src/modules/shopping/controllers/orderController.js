@@ -19,6 +19,7 @@ const postCheckout = asyncHandler(async (req, res) => {
       addressId: req.body.addressId,
       shippingAddress: req.body.shippingAddress,
       paymentMethod: req.body.paymentMethod,
+      deliveryOptionId: req.body.deliveryOptionId,
     });
     return ok(res, view, 201);
   } catch (e) {

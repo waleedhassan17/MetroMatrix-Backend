@@ -1,6 +1,7 @@
 const asyncHandler = require('express-async-handler');
 const Coupon = require('../models/Coupon');
 const cartService = require('../services/cartService');
+const { getShoppingSettings } = require('../services/settingsService');
 const { ok, fail } = require('../utils/respond');
 
 // @desc  GET /api/shopping/cart
@@ -126,6 +127,23 @@ const listCoupons = asyncHandler(async (req, res) => {
   return ok(res, usable);
 });
 
+// @desc  GET /api/shopping/delivery-options — speed tiers offered at checkout
+const listDeliveryOptions = asyncHandler(async (req, res) => {
+  const settings = await getShoppingSettings();
+  const tiers = (settings.deliveryTiers || [])
+    .filter((t) => t.isActive !== false)
+    .map(({ id, name, eta, description, surcharge }) => ({
+      id,
+      name,
+      eta,
+      description,
+      // `cost` is what the checkout screen renders; the name matches the
+      // client's DeliveryOption contract.
+      cost: surcharge,
+    }));
+  return ok(res, tiers);
+});
+
 module.exports = {
   getCart,
   addItem,
@@ -135,4 +153,5 @@ module.exports = {
   applyCoupon,
   removeCoupon,
   listCoupons,
+  listDeliveryOptions,
 };

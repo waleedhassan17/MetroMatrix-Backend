@@ -32,6 +32,19 @@ const orderGroupSchema = new mongoose.Schema(
     shippingFee: { type: Number, default: 0 },
     total: { type: Number, required: true },
     appliedCoupon: { type: String, default: null },
+    // The delivery speed the shopper paid for, snapshotted at checkout so a
+    // later repricing in admin settings cannot rewrite what this order cost.
+    deliveryOption: {
+      type: new mongoose.Schema(
+        {
+          id: { type: String, required: true },
+          name: { type: String, required: true },
+          surcharge: { type: Number, default: 0 },
+        },
+        { _id: false }
+      ),
+      default: null,
+    },
     walletTransactionId: {
       type: mongoose.Schema.Types.ObjectId,
       ref: 'WalletTransaction',

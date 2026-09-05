@@ -10,6 +10,7 @@ const {
   applyCoupon,
   removeCoupon,
   listCoupons,
+  listDeliveryOptions,
 } = require('../controllers/cartController');
 const {
   getWishlist,
@@ -32,6 +33,7 @@ router.post('/cart/coupon', customer, applyCoupon);
 router.delete('/cart/coupon', customer, removeCoupon);
 
 router.get('/coupons', customer, listCoupons);
+router.get('/delivery-options', customer, listDeliveryOptions);
 
 router.get('/wishlist', customer, getWishlist);
 router.post('/wishlist/:productId', customer, addToWishlist);

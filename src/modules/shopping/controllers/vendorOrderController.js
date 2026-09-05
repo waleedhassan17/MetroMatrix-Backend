@@ -249,7 +249,8 @@ const getBrandAnalytics = asyncHandler(async (req, res) => {
     netProfit: totalRevenue - commission - refundsAmount,
     totalOrders: orders.length,
     avgOrderValue: orders.length ? Math.round(orders.reduce((s, o) => s + o.total, 0) / orders.length) : 0,
-    conversionRate: 0, // needs traffic data — not tracked at FYP scope
+    // conversionRate is deliberately absent: it needs traffic data nothing in
+    // this system collects, and a permanent hardcoded 0 read as a real metric.
     returnsCount: returns.length,
     refundsAmount,
   };
@@ -281,7 +282,10 @@ const getBrandDashboard = asyncHandler(async (req, res) => {
   const lowStockAlerts = [];
   products.forEach((p) => {
     p.variants.forEach((v) => {
-      if (v.stockQuantity <= settings.lowStockThreshold) {
+      // "Low stock" means running out, not already out — matching getInventory,
+      // which classifies 0 as `out`. Counting zeros here made this tile
+      // disagree with the inventory list it links to.
+      if (v.stockQuantity > 0 && v.stockQuantity <= settings.lowStockThreshold) {
         lowStockAlerts.push({ productId: String(p._id), name: p.name, stock: v.stockQuantity });
       }
     });

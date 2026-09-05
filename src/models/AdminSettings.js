@@ -144,6 +144,28 @@ const adminSettingsSchema = new mongoose.Schema(
         type: Boolean,
         default: false,
       },
+      // Delivery speed tiers offered at checkout. `surcharge` is charged on
+      // top of the per-brand shipping fee above. These used to be a hardcoded
+      // array in the app, so the price shown was never the price charged.
+      // `default: undefined` keeps the field absent on documents that predate
+      // it, so shopping's settingsService supplies the defaults rather than an
+      // empty array shadowing them.
+      deliveryTiers: {
+        type: [
+          new mongoose.Schema(
+            {
+              id: { type: String, required: true },
+              name: { type: String, required: true },
+              eta: { type: String, default: '' },
+              description: { type: String, default: '' },
+              surcharge: { type: Number, default: 0, min: 0 },
+              isActive: { type: Boolean, default: true },
+            },
+            { _id: false }
+          ),
+        ],
+        default: undefined,
+      },
     },
 
     // Healthcare Settings — the SAME values the appointment payment/refund

@@ -4,6 +4,7 @@ const { protect } = require('../../../middleware/authMiddleware');
 const { requireShoppingAdmin } = require('../middleware/adminAuth');
 const brandCtrl = require('../controllers/adminBrandController');
 const orderCtrl = require('../controllers/adminOrderController');
+const bannerCtrl = require('../controllers/adminBannerController');
 
 router.use(protect, requireShoppingAdmin);
 
@@ -24,6 +25,13 @@ router.delete('/outlets/:outletId', brandCtrl.deleteOutlet);
 router.patch('/outlets/:outletId/assign-brand', brandCtrl.assignBrand);
 router.patch('/outlets/:outletId/color-scheme', brandCtrl.updateColorScheme);
 router.patch('/outlets/:outletId/toggle-status', brandCtrl.toggleOutletStatus);
+
+// Storefront promo banners
+router.get('/banners', bannerCtrl.listBanners);
+router.post('/banners', bannerCtrl.createBanner);
+router.patch('/banners/:bannerId', bannerCtrl.updateBanner);
+router.delete('/banners/:bannerId', bannerCtrl.deleteBanner);
+router.post('/banners/:bannerId/image', bannerCtrl.uploadBannerImage);
 
 // Order oversight
 router.get('/orders', orderCtrl.listAllOrders);

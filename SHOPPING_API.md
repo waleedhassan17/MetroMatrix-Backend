@@ -30,12 +30,13 @@ Error:  { "success": false, "error": "message", "errors?": [...] }   (4xx / 5xx)
 | GET | `/brands/:brandId` | — | `BrandConfig` | 400 bad id, 404 |
 | GET | `/brands/slug/:slug` | — | `BrandConfig` | 404 |
 | GET | `/brands/:brandId/categories` | — | `Category[]` (2-level tree with productCount) | 404 |
-| GET | `/categories/:categoryId` | — | `Category` | 400, 404 |
+| GET | `/categories/:categoryId` | — | `Category` with its real `children[]` and rolled-up `productCount` | 400, 404 |
 | GET | `/products` | `brandId, categoryId, search, sortBy (price_asc\|price_desc\|rating\|newest\|popular), minPrice, maxPrice, inStock, isFeatured, isNewArrival, page, limit` | Paginated `Product` | 400 bad filter id |
 | GET | `/products/:productId` | — | `Product` | 400, 404 (also 404 if brand suspended) |
 | GET | `/products/:productId/reviews` | `page,limit` | Paginated `ProductReview` | 400 |
 | GET | `/outlets` | `brandId, city, lat, lng, radiusKm, page, limit` | Paginated `OutletConfig` | 400 |
 | GET | `/outlets/:outletId` | — | `OutletConfig` | 404 |
+| GET | `/banners` | — | `Banner[]` — storefront promo carousel, active and inside its date window, `sortOrder` first | — |
 
 Suspended/pending brands and their products are invisible on all of the above.
 
@@ -51,17 +52,22 @@ Suspended/pending brands and their products are invisible on all of the above.
 | POST | `/cart/coupon` | `{ couponCode }` | 400 with user-facing reason (expired / limit / min order / wrong brand) |
 | DELETE | `/cart/coupon` | — | |
 | GET | `/coupons` | `?brandId` | currently usable coupons |
+| GET | `/delivery-options` | — | active delivery speed tiers `{ id, name, eta, description, cost }` from admin settings |
 | GET | `/wishlist` | — | items include populated `product` card |
 | POST | `/wishlist/:productId` | — | 404 |
 | DELETE | `/wishlist/:productId` | — | |
 
 Shipping rule: `shippingFeePerBrand` (PKR 150) per brand in cart, waived per brand at `freeShippingThreshold` (PKR 3000). Values come from admin settings — not constants.
 
+`GET /cart` also returns `brandBreakdown: [{ brandId, brandName, subtotal, shippingFee }]`, so the
+cart screen renders per-brand shipping from the server instead of recomputing it from its own copy
+of the fee and threshold.
+
 ## 3. Checkout & orders (Customer)
 
 | Method | Path | Body | Notes |
 |---|---|---|---|
-| POST | `/checkout` | `{ addressId \| shippingAddress, paymentMethod: 'wallet'\|'cod' }` | 201 `OrderGroupView`; revalidates lines, recomputes totals, atomic stock guard, splits per brand, wallet debit; 400 insufficient balance / stock with per-line reasons |
+| POST | `/checkout` | `{ addressId \| shippingAddress, paymentMethod: 'wallet'\|'cod', deliveryOptionId? }` | 201 `OrderGroupView`; revalidates lines, recomputes totals, atomic stock guard, splits per brand, wallet debit; 400 insufficient balance / stock with per-line reasons, or an unknown/disabled `deliveryOptionId` |
 | GET | `/orders` | `?status&page&limit` | my `OrderGroupView`s |
 | GET | `/orders/:id` | — | accepts groupId or child orderId |
 | GET | `/orders/:orderId/tracking` | — | statusHistory + trackingNumber (accepts groupId → first child) |
@@ -111,22 +117,34 @@ Cross-brand access (`:brandId` not yours or another brand's resources) → 403, 
 | POST / PATCH / DELETE | `/admin/brands[/:brandId]` | delete = soft |
 | PATCH | `/admin/brands/:brandId/status` | `{ status: active\|suspended\|pending, reason }` — suspend hides storefront instantly |
 | CRUD | `/admin/outlets…` | + `assign-brand`, `color-scheme`, `toggle-status` |
+| GET / POST | `/admin/banners` | promo carousel; `?isActive` filter on the list |
+| PATCH / DELETE | `/admin/banners/:bannerId` | 400 if `brandId`/`productId` names something that does not exist |
+| POST | `/admin/banners/:bannerId/image` | `{ image: <base64 data URI> }` → Cloudinary |
 | GET | `/admin/orders` | `?brandId&status&paymentStatus&from&to&search` |
 | GET | `/admin/orders/:orderId` | full trail + sibling orders of the group |
 | PATCH | `/admin/orders/:orderId/status` | force-transition; **reason mandatory** |
 | POST | `/admin/orders/:orderId/refund` | manual wallet refund; **reason mandatory**; paid orders only |
 | GET | `/admin/analytics` | `?from&to` — GMV series, revenueByBrand, commission, ordersByStatus, topProducts, returnRate |
 | GET | `/admin/dashboard` | pendingBrandApprovals, ordersToday, gmvToday, openReturnRequests, lowStockAlerts |
-| GET / PATCH | `/admin/settings` | commissionPercent, shippingFeePerBrand, freeShippingThreshold, lowStockThreshold, defaultReturnDays, autoApproveBrands — same values checkout/inventory read |
+| GET / PATCH | `/admin/settings` | commissionPercent, shippingFeePerBrand, freeShippingThreshold, lowStockThreshold, defaultReturnDays, autoApproveBrands, deliveryTiers — same values checkout/inventory read |
 
 Every admin mutation writes `ShoppingAuditLog { admin, action, targetType, targetId, before, after, reason, at }`.
 
 ## Scripts
 
 ```
-npm run seed:shopping    # idempotent multi-vendor demo dataset
-node scripts/seed-accounts.js   # admin / vendor / demo customer logins
+npm run seed:shopping    # Cougar + Outfitters from the scraped catalogue — DESTRUCTIVE, see below
+npm run seed:banners     # storefront promo banners — ADDITIVE, safe against live data
+node scripts/seed-accounts.js   # admin / vendor / customer logins (grants canManageShopping)
 npm run smoke:shopping   # 14-step critical path (needs API_URL env or localhost:5000)
 ```
 
-Demo logins: see seed script output (customer.demo@metromatrix.pk, vendor.*@metromatrix.pk, user1-3@metromatrix.pk).
+> **`seed:shopping` purges before it writes.** It runs `deleteMany({})` across nine collections
+> (orders, order groups, returns, reviews, inventory logs, coupons, outlets, categories, products)
+> and only spares the `cougar` / `outfitters` brands. Since `MONGODB_URI` normally points at the
+> same Atlas cluster the deployed API serves, running it destroys live order history. `seed:banners`
+> is additive and safe.
+
+Logins created by `brands.seed.js`: customers `shopper1-3.qa@metromatrix.pk` / `Shopper@123`,
+vendors `vendor.cougar@metromatrix.pk` and `vendor.outfitters@metromatrix.pk` / `Vendor@123`.
+`seed-accounts.js` additionally creates the super admin and `user1-3@metromatrix.pk` / `123456`.

@@ -65,12 +65,34 @@ const getCategoryById = asyncHandler(async (req, res) => {
   try {
     const category = await Category.findOne({ _id: req.params.categoryId, isActive: true });
     if (!category) return fail(res, 404, 'Category not found');
-    const json = category.toJSON();
-    json.children = [];
-    json.productCount = await Product.countDocuments({
-      categoryId: category._id,
-      isActive: true,
+
+    // Categories are a 2-level tree. Return the real children with their own
+    // counts and roll them up into the parent, matching getBrandCategories —
+    // this used to hardcode `children = []`, so a parent category always
+    // looked like a leaf here even when it had sub-categories.
+    const children = await Category.find({ parentId: category._id, isActive: true }).sort({
+      createdAt: 1,
     });
+    const ids = [category._id, ...children.map((c) => c._id)];
+    const counts = await Product.aggregate([
+      { $match: { categoryId: { $in: ids }, isActive: true } },
+      { $group: { _id: '$categoryId', n: { $sum: 1 } } },
+    ]);
+    const countMap = {};
+    counts.forEach((c) => {
+      if (c._id) countMap[String(c._id)] = c.n;
+    });
+
+    const json = category.toJSON();
+    json.children = children.map((c) => {
+      const child = c.toJSON();
+      child.children = [];
+      child.productCount = countMap[child.categoryId] || 0;
+      return child;
+    });
+    json.productCount =
+      (countMap[json.categoryId] || 0) +
+      json.children.reduce((s, c) => s + c.productCount, 0);
     return ok(res, json);
   } catch (e) {
     if (isCastError(e)) return fail(res, 400, 'Invalid category ID');
@@ -139,6 +161,12 @@ const getOutletById = asyncHandler(async (req, res) => {
   }
 });
 
+// @desc  GET /api/shopping/banners (public) — storefront promo carousel
+const getBanners = asyncHandler(async (req, res) => {
+  const banners = await catalogService.listActiveBanners();
+  return ok(res, banners);
+});
+
 module.exports = {
   getBrands,
   getBrandById,
@@ -149,4 +177,5 @@ module.exports = {
   getProductById,
   getOutlets,
   getOutletById,
+  getBanners,
 };

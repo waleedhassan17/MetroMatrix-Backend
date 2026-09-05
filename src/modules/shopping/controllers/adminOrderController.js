@@ -243,7 +243,11 @@ const adminDashboard = asyncHandler(async (req, res) => {
   let lowStockAlerts = 0;
   products.forEach((p) => {
     p.variants.forEach((v) => {
-      if (v.stockQuantity <= settings.lowStockThreshold) lowStockAlerts += 1;
+      // Running out, not already out — same rule as getInventory and the
+      // vendor dashboard, so the three counts agree.
+      if (v.stockQuantity > 0 && v.stockQuantity <= settings.lowStockThreshold) {
+        lowStockAlerts += 1;
+      }
     });
   });
 

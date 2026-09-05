@@ -3,6 +3,7 @@ const Brand = require('../models/Brand');
 const Category = require('../models/Category');
 const Product = require('../models/Product');
 const Outlet = require('../models/Outlet');
+const ShoppingBanner = require('../models/ShoppingBanner');
 
 /**
  * Pure query builders — exported separately so filter/sort/pagination
@@ -84,6 +85,19 @@ const parseBool = (v) => v === true || v === 'true' || v === '1' || v === 1;
 const escapeRegex = (s) => s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 
 /**
+ * Live-banner filter: active, and inside its optional date window. A null
+ * bound means "no bound", and `{ field: null }` also matches documents where
+ * the field was never set, so a banner with neither bound is always live.
+ */
+const buildActiveBannerQuery = (now = new Date()) => ({
+  isActive: true,
+  $and: [
+    { $or: [{ validFrom: null }, { validFrom: { $lte: now } }] },
+    { $or: [{ validUntil: null }, { validUntil: { $gte: now } }] },
+  ],
+});
+
+/**
  * DB-backed reads
  */
 
@@ -155,6 +169,33 @@ const getBrandCategories = async (brandId) => {
   return buildCategoryTree(cats, countMap);
 };
 
+/**
+ * Storefront promo banners. A banner pointing at a brand that has since been
+ * suspended or deleted is dropped rather than shown — tapping it would land
+ * the shopper on a 404.
+ */
+const listActiveBanners = async (now = new Date()) => {
+  const banners = await ShoppingBanner.find(buildActiveBannerQuery(now)).sort({
+    sortOrder: 1,
+    createdAt: -1,
+  });
+  if (banners.length === 0) return [];
+
+  const brandIds = banners.filter((b) => b.brandId).map((b) => b.brandId);
+  if (brandIds.length === 0) return banners.map((b) => b.toJSON());
+
+  const liveBrands = await Brand.find({
+    _id: { $in: brandIds },
+    status: 'active',
+    isDeleted: false,
+  }).select('_id');
+  const liveIds = new Set(liveBrands.map((b) => String(b._id)));
+
+  return banners
+    .filter((b) => !b.brandId || liveIds.has(String(b.brandId)))
+    .map((b) => b.toJSON());
+};
+
 const listOutlets = async (params, { skip, limit }) => {
   const filter = {};
   if (params.brandId) filter.brandId = params.brandId;
@@ -181,10 +222,12 @@ module.exports = {
   buildProductQuery,
   buildProductSort,
   buildCategoryTree,
+  buildActiveBannerQuery,
   parseBool,
   escapeRegex,
   listActiveBrands,
   listProducts,
   getBrandCategories,
+  listActiveBanners,
   listOutlets,
 };
