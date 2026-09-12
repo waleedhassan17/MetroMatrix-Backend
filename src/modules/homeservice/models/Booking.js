@@ -83,7 +83,16 @@ const bookingSchema = new mongoose.Schema(
       paidAt: Date,
     },
     cancellation: {
-      by: { type: String, enum: ['customer', 'provider', 'admin', null], default: null },
+      // 'system' is the platform withdrawing a request nobody chose to drop:
+      // the customer shopped the same job to several providers, one accepted,
+      // and the rest are released automatically. Recording it as 'customer'
+      // would blame a tap they never made, and the provider's cancellation
+      // stats read from this field.
+      by: {
+        type: String,
+        enum: ['customer', 'provider', 'admin', 'system', null],
+        default: null,
+      },
       reason: String,
       at: Date,
     },
@@ -102,6 +111,9 @@ const bookingSchema = new mongoose.Schema(
 
 bookingSchema.index({ 'address.coordinates': '2dsphere' });
 bookingSchema.index({ customer: 1, status: 1, createdAt: -1 });
+// Backs the duplicate-request guard: "does this customer already have a live
+// booking with this provider?" runs on every Book tap and on every create.
+bookingSchema.index({ customer: 1, provider: 1, status: 1 });
 bookingSchema.index({ provider: 1, status: 1, scheduledFor: 1 });
 
 module.exports = mongoose.model('HSBooking', bookingSchema);

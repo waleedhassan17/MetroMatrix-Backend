@@ -24,6 +24,16 @@ const ALL_STATUSES = Object.values(STATUS);
 
 const TERMINAL_STATUSES = [STATUS.COMPLETED, STATUS.REJECTED, STATUS.CANCELLED];
 
+/**
+ * Everything that is NOT terminal — a booking the customer still has running
+ * with a provider. This is the definition of "already requested": a customer
+ * may hold one active booking per provider at a time, so a second Book tap on
+ * the same provider reopens the first request instead of creating a duplicate.
+ * Derived from TERMINAL_STATUSES rather than listed by hand, so a status added
+ * to the lifecycle later counts as active until someone says otherwise.
+ */
+const ACTIVE_STATUSES = ALL_STATUSES.filter((s) => !TERMINAL_STATUSES.includes(s));
+
 const ALLOWED_TRANSITIONS = {
   [STATUS.PENDING]: [STATUS.ACCEPTED, STATUS.REJECTED, STATUS.CANCELLED],
   [STATUS.ACCEPTED]: [STATUS.EN_ROUTE, STATUS.CANCELLED],
@@ -49,16 +59,30 @@ const PROVIDER_TRANSITIONS = [
  * Transitions the CUSTOMER may perform, keyed by the status being moved FROM.
  *
  * COMPLETED is in PROVIDER_TRANSITIONS above and stays there — the provider
- * still completes their own jobs. This map is a narrow, additional grant: the
- * customer confirming from IN_PROGRESS that the work is actually done. Keyed by
- * source status rather than a flat list precisely so it cannot widen anything
- * else; adding COMPLETED to a flat customer list would also let a customer
- * complete from any other state the graph happens to allow later.
+ * still completes their own jobs. This map is an additional grant for the
+ * CUSTOMER only, and bookingService checks it INSTEAD of the main graph, so
+ * nothing here widens what a provider may do.
+ *
+ * The customer may close out a job from any point after a provider committed
+ * to it. That is deliberate, not lax: the lifecycle only advances when the
+ * provider drives it (EN_ROUTE → ARRIVED → IN_PROGRESS), and a provider who
+ * does the work but never touches those buttons would otherwise strand the
+ * customer on a booking they cannot finish — and strand the provider too,
+ * since they stay unbookable while it is live. Cancelling is the wrong escape
+ * there; it records a job that happened as one that never did.
+ *
+ * PENDING is excluded: nobody has agreed to the job yet, so there is no work
+ * to call finished. Cancellation covers that case.
+ *
+ * Keyed by source status rather than a flat list so each grant is explicit.
  *
  * Cancellation is NOT here — it has its own branch in bookingService with its
  * own CUSTOMER_CANCELLABLE_FROM window.
  */
 const CUSTOMER_TRANSITIONS = {
+  [STATUS.ACCEPTED]: [STATUS.COMPLETED],
+  [STATUS.EN_ROUTE]: [STATUS.COMPLETED],
+  [STATUS.ARRIVED]: [STATUS.COMPLETED],
   [STATUS.IN_PROGRESS]: [STATUS.COMPLETED],
 };
 
@@ -170,6 +194,7 @@ module.exports = {
   STATUS,
   ALL_STATUSES,
   TERMINAL_STATUSES,
+  ACTIVE_STATUSES,
   ALLOWED_TRANSITIONS,
   PROVIDER_TRANSITIONS,
   CUSTOMER_TRANSITIONS,

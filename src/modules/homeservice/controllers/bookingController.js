@@ -3,7 +3,12 @@ const Booking = require('../models/Booking');
 const SavedAddress = require('../models/SavedAddress');
 const Provider = require('../../../models/Provider');
 const { transition } = require('../services/bookingService');
-const { STATUS, toServiceStatus, toConfirmationStatus } = require('../services/statusMap');
+const {
+  STATUS,
+  ACTIVE_STATUSES,
+  toServiceStatus,
+  toConfirmationStatus,
+} = require('../services/statusMap');
 const {
   toBookingProvider,
   toSavedAddress,
@@ -14,8 +19,50 @@ const {
 const ok = (res, data, message, pagination) =>
   res.json({ success: true, data, message, ...(pagination ? { pagination } : {}) });
 
-// Booking screen time slots — generated, marking past slots unavailable for today.
-function buildTimeSlots() {
+// ---------------------------------------------------------------------------
+// One live request per provider.
+//
+// A customer may have several bookings running at once — that is deliberate,
+// and requests to DIFFERENT providers are how they get a job covered quickly.
+// What they may not have is the same provider booked twice over, which is what
+// tapping Book again produced: a second PENDING row the provider saw as two
+// separate jobs, and a confirmation screen that started its wait from scratch
+// while the first request was still live.
+//
+// So "already requested" is a first-class question, asked in three places —
+// the booking form's init, the create guard, and the customer's Book buttons —
+// and answered here once so all three agree.
+// ---------------------------------------------------------------------------
+function activeBookingQuery(customerId, providerId) {
+  return {
+    customer: customerId,
+    provider: providerId,
+    status: { $in: ACTIVE_STATUSES },
+  };
+}
+
+// The shape every caller returns to the app: enough to route straight to the
+// booking-status screen without a second request.
+function toActiveBooking(b) {
+  return {
+    bookingId: String(b._id),
+    providerId: String(b.provider && b.provider._id ? b.provider._id : b.provider),
+    status: toConfirmationStatus(b.status),
+    canonicalStatus: b.status,
+    category: b.serviceCategory,
+    scheduledFor: b.scheduledFor ? b.scheduledFor.toISOString() : null,
+    scheduledTime: b.scheduledTime || '',
+    createdAt: b.createdAt ? b.createdAt.toISOString() : '',
+  };
+}
+
+async function findActiveBooking(customerId, providerId) {
+  return Booking.findOne(activeBookingQuery(customerId, providerId)).sort({ createdAt: -1 });
+}
+
+// Booking screen time slots — generated, marking already-booked slots
+// unavailable for the requested date.
+function buildTimeSlots(bookedTimes = new Set()) {
   const defs = [
     ['09:00 AM', 'morning'], ['10:00 AM', 'morning'], ['11:00 AM', 'morning'],
     ['12:00 PM', 'afternoon'], ['02:00 PM', 'afternoon'], ['04:00 PM', 'afternoon'],
@@ -24,12 +71,46 @@ function buildTimeSlots() {
   return defs.map(([time, period], i) => ({
     id: String(i + 1),
     time,
-    available: true,
+    available: !bookedTimes.has(time),
     period,
   }));
 }
 
-// GET /api/bookings/init/:providerId — provider card + saved addresses + slots
+// PKT-midnight day bounds for a 'YYYY-MM-DD' string — same convention as
+// parseScheduledFor below, so a slot query and the booking it is checking
+// against always agree on which calendar day a scheduledFor instant falls on.
+function dayBoundsPKT(dateStr) {
+  const start = new Date(`${dateStr}T00:00:00.000+05:00`);
+  if (Number.isNaN(start.getTime())) return null;
+  return { start, end: new Date(start.getTime() + 24 * 60 * 60 * 1000) };
+}
+
+// The display slot labels ('02:00 PM') this provider already has a live
+// booking against on the given date. PENDING and ACCEPTED (and anything
+// further along — EN_ROUTE/ARRIVED/IN_PROGRESS) all hold the slot; only a
+// booking that has actually ended (COMPLETED) or fallen through
+// (REJECTED/CANCELLED) frees it up again — see ACTIVE_STATUSES.
+//
+// Scoped to ONE provider: the same date+time is perfectly bookable with a
+// DIFFERENT provider, so this must never be checked across providers.
+async function bookedSlotTimes(providerId, dateStr) {
+  if (!dateStr) return new Set();
+  const bounds = dayBoundsPKT(dateStr);
+  if (!bounds) return new Set();
+
+  const bookings = await Booking.find({
+    provider: providerId,
+    status: { $in: ACTIVE_STATUSES },
+    scheduledFor: { $gte: bounds.start, $lt: bounds.end },
+  }).select('scheduledTime');
+
+  return new Set(bookings.map((b) => b.scheduledTime).filter(Boolean));
+}
+
+// GET /api/bookings/init/:providerId?date=YYYY-MM-DD — provider card + saved
+// addresses + slots. `date` is optional (the form asks for it again once the
+// customer picks a date); without it every slot comes back available, exactly
+// as before a date is chosen.
 const initBooking = asyncHandler(async (req, res) => {
   const provider = await Provider.findById(req.params.providerId);
   if (!provider || provider.providerType !== 'home_service') {
@@ -40,11 +121,32 @@ const initBooking = asyncHandler(async (req, res) => {
     isDefault: -1,
     createdAt: -1,
   });
+  // A live request with this provider means the form is the wrong screen —
+  // the app sends the customer to the existing booking instead of letting them
+  // fill in a duplicate and meet a 409 at the end of it.
+  const active = await findActiveBooking(req.user._id, provider._id);
+  const booked = await bookedSlotTimes(provider._id, req.query.date);
+
   ok(res, {
     provider: toBookingProvider(provider),
     addresses: addresses.map(toSavedAddress),
-    timeSlots: buildTimeSlots(),
+    timeSlots: buildTimeSlots(booked),
+    activeBooking: active ? toActiveBooking(active) : null,
   }, 'Booking data fetched');
+});
+
+// GET /api/bookings/active — every live booking this customer holds.
+//
+// Feeds the Book buttons on the provider list and the provider profile, so a
+// provider the customer has already requested offers "View request" rather
+// than starting a booking that cannot be created.
+const getActiveBookings = asyncHandler(async (req, res) => {
+  const bookings = await Booking.find({
+    customer: req.user._id,
+    status: { $in: ACTIVE_STATUSES },
+  }).sort({ createdAt: -1 });
+
+  ok(res, { bookings: bookings.map(toActiveBooking) }, 'Active bookings fetched');
 });
 
 function parseScheduledFor(selectedDate, selectedTime) {
@@ -57,10 +159,21 @@ function parseScheduledFor(selectedDate, selectedTime) {
     if (/pm/i.test(m[3])) hours += 12;
     minutes = parseInt(m[2], 10);
   }
-  const d = new Date(`${selectedDate}T00:00:00.000+05:00`);
-  if (Number.isNaN(d.getTime())) return new Date();
-  d.setUTCHours(hours - 5, minutes, 0, 0); // PKT → UTC
-  return d;
+  const dateMatch = /^(\d{4})-(\d{2})-(\d{2})$/.exec(selectedDate || '');
+  if (!dateMatch) return new Date();
+  // Built straight from the PKT calendar date's own y/m/d, offset by PKT's
+  // fixed +05:00 — NOT by parsing local midnight into a Date and then
+  // overwriting its UTC hour. That round trip silently landed on the WRONG
+  // calendar day for every slot from 5 AM PKT onward (i.e. all of them:
+  // buildTimeSlots only offers 9 AM–7 PM): 'T00:00:00.000+05:00' for a given
+  // date is itself 19:00 UTC the day BEFORE, and setUTCHours(hour - 5, ...)
+  // sets that hour on THAT UTC day rather than advancing to the intended one
+  // — so "17 Sep, 2:00 PM" was stored as 16 Sep 09:00 UTC (16 Sep, 2 PM PKT),
+  // a booking scheduled a full day earlier than the customer picked, and
+  // invisible to anything scoping by the date the customer actually chose
+  // (the per-date slot lock included).
+  const [, year, month, day] = dateMatch;
+  return new Date(Date.UTC(Number(year), Number(month) - 1, Number(day), hours - 5, minutes));
 }
 
 // POST /api/bookings — create → PENDING
@@ -72,6 +185,23 @@ const createBooking = asyncHandler(async (req, res) => {
   if (!provider || provider.providerType !== 'home_service') {
     res.status(404);
     throw new Error('Provider not found');
+  }
+
+  // The duplicate guard, server-side. The app checks before it opens the form,
+  // but that check and this create are two round trips apart — long enough for
+  // a double tap, a retried request, or a second device. This is the one that
+  // actually holds.
+  //
+  // 409 with the existing booking in the body, not a bare error: the caller's
+  // next move is always to open that booking, and making them ask for it again
+  // is a round trip for something we already have in hand.
+  const existing = await findActiveBooking(req.user._id, provider._id);
+  if (existing) {
+    return res.status(409).json({
+      success: false,
+      message: `You already have a request with ${provider.fullName || 'this provider'}.`,
+      data: { activeBooking: toActiveBooking(existing) },
+    });
   }
 
   let address = null;
@@ -253,6 +383,14 @@ const getServiceStatus = asyncHandler(async (req, res) => {
   ok(res, {
     bookingId: String(b._id),
     status: toServiceStatus(b.status),
+    // The raw lifecycle status, because toServiceStatus() above cannot express
+    // "not started yet": it collapses PENDING/ACCEPTED/EN_ROUTE/ARRIVED into
+    // 'arrived', which was safe only while this screen was unreachable before
+    // ARRIVED. It is reachable from ACCEPTED now (the customer's booking
+    // detail offers "Service status" the moment a provider accepts), and the
+    // client needs the truth to decide whether completion is even a legal move
+    // — offering it earlier produced 'Illegal transition ACCEPTED → COMPLETED'.
+    canonicalStatus: b.status,
     provider: {
       id: String(b.provider._id),
       name: b.provider.fullName,
@@ -370,6 +508,7 @@ const cancelBooking = asyncHandler(async (req, res) => {
 
 module.exports = {
   initBooking,
+  getActiveBookings,
   createBooking,
   getBooking,
   getServiceStatus,
@@ -377,4 +516,5 @@ module.exports = {
   completeBookingByCustomer,
   cancelBooking,
   buildTimeSlots,
+  bookedSlotTimes,
 };

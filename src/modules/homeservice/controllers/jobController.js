@@ -2,7 +2,7 @@ const asyncHandler = require('express-async-handler');
 const Booking = require('../models/Booking');
 const HSNotification = require('../models/HSNotification');
 const Provider = require('../../../models/Provider');
-const { transition } = require('../services/bookingService');
+const { transition, releaseCompetingRequests } = require('../services/bookingService');
 const { STATUS, toJobBucket } = require('../services/statusMap');
 const { toJob, toDashboardJob, toProviderCard, avatar } = require('../services/serializers');
 
@@ -34,12 +34,21 @@ const listJobs = asyncHandler(async (req, res) => {
   const now = new Date();
   const withBuckets = all.map((b) => ({ b, bucket: toJobBucket(b.status, b.scheduledFor, now) }));
 
+  // One count per bucket toJobBucket can produce. 'available' and 'active'
+  // were missing, and 'available' is the one that matters most: it is the
+  // number of customers waiting on an answer from this provider. The app
+  // declares both in its JobStats type and was hardcoding them to 0, so the
+  // Jobs tab could not show a New-requests count even though the jobs were in
+  // the payload.
+  const countBucket = (name) => withBuckets.filter((x) => x.bucket === name).length;
   const stats = {
     total: all.length,
-    upcoming: withBuckets.filter((x) => x.bucket === 'upcoming').length,
-    today: withBuckets.filter((x) => x.bucket === 'today').length,
-    completed: withBuckets.filter((x) => x.bucket === 'completed').length,
-    cancelled: withBuckets.filter((x) => x.bucket === 'cancelled').length,
+    available: countBucket('available'),
+    upcoming: countBucket('upcoming'),
+    today: countBucket('today'),
+    active: countBucket('active'),
+    completed: countBucket('completed'),
+    cancelled: countBucket('cancelled'),
   };
 
   let filtered = withBuckets;
@@ -77,11 +86,43 @@ const makeTransitionHandler = (nextStatus, message) =>
     ok(res, { success: true, status: req.booking.status }, message);
   });
 
-// POST /accept /reject /start(EN_ROUTE) /arrived
-const acceptJob = makeTransitionHandler(STATUS.ACCEPTED, 'Job accepted');
+// POST /reject /start(EN_ROUTE) /arrived
 const rejectJob = makeTransitionHandler(STATUS.REJECTED, 'Job rejected');
 const startJob = makeTransitionHandler(STATUS.EN_ROUTE, 'En route to job');
 const arriveJob = makeTransitionHandler(STATUS.ARRIVED, 'Arrival confirmed');
+
+// POST /accept — PENDING → ACCEPTED, and the race is over.
+//
+// Not a plain makeTransitionHandler because accepting is the one provider
+// action with a consequence beyond this booking: the customer may have sent
+// the same job to several providers, and this one just won it. Every other
+// PENDING request for that job is released here — see
+// releaseCompetingRequests for exactly which bookings that means and why the
+// scope is narrow.
+//
+// The release runs AFTER the transition has saved, and cannot fail it: a
+// provider who accepted a job has accepted it, whatever happens to the rivals.
+const acceptJob = asyncHandler(async (req, res) => {
+  await transition(req.booking, STATUS.ACCEPTED, { id: req.user._id, role: 'provider' }, {
+    note: req.body && req.body.reason,
+  });
+
+  let released = [];
+  try {
+    released = await releaseCompetingRequests(req.booking);
+  } catch (e) {
+    console.error(`[job] releasing rivals failed booking=${req.booking._id}: ${e.message}`);
+  }
+
+  ok(res, {
+    success: true,
+    status: req.booking.status,
+    // The customer's other requests for this job, now withdrawn. Returned so
+    // the provider app can say what happened rather than the rows silently
+    // changing shape on next fetch.
+    releasedRequests: released,
+  }, 'Job accepted');
+});
 
 // POST /start-work — ARRIVED → IN_PROGRESS, returns startTime
 const startWork = asyncHandler(async (req, res) => {

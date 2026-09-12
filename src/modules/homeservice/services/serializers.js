@@ -101,11 +101,7 @@ function toBookingProvider(p) {
 function toUserBooking(b) {
   const p = b.provider || {};
   const scheduled = b.scheduledFor ? new Date(b.scheduledFor) : new Date();
-  const base = toBookingStatus(b.status);
-  // The bookings tab has an extra 'upcoming' filter bucket for accepted
-  // future bookings.
-  const status =
-    b.status === 'ACCEPTED' && scheduled > new Date() ? 'upcoming' : base;
+  const status = toBookingStatus(b.status);
   return {
     id: String(b._id),
     serviceId: b.serviceCategory,

@@ -44,7 +44,15 @@ async function transition(booking, nextStatus, actor, opts = {}) {
 
   const isAdminForce = actor.role === 'admin';
 
-  if (!isAdminForce && !ALLOWED_TRANSITIONS[current].includes(nextStatus)) {
+  // A customer grant is checked against CUSTOMER_TRANSITIONS rather than the
+  // main graph, so widening what a CUSTOMER may do never widens what a
+  // PROVIDER may do. ALLOWED_TRANSITIONS still forbids ACCEPTED → COMPLETED;
+  // only the booking's own customer may take that shortcut, and only to close
+  // out a job — see CUSTOMER_TRANSITIONS for why that shortcut exists.
+  const customerGrant =
+    actor.role === 'customer' && (CUSTOMER_TRANSITIONS[current] || []).includes(nextStatus);
+
+  if (!isAdminForce && !customerGrant && !ALLOWED_TRANSITIONS[current].includes(nextStatus)) {
     throw new StatusError(
       `Illegal transition ${current} → ${nextStatus}`
     );
@@ -55,8 +63,16 @@ async function transition(booking, nextStatus, actor, opts = {}) {
       throw new StatusError('Admin force-transition requires a reason');
     }
   } else if (nextStatus === STATUS.CANCELLED) {
-    if (actor.role !== 'customer') {
+    // 'system' is the platform releasing a request nobody chose to drop: the
+    // customer shopped the same job to several providers, one accepted, and
+    // the rest are let go. It is not the customer's cancellation — recording
+    // it as theirs would blame a tap they never made — so it is allowed here
+    // alongside them, and like an admin force it must say why.
+    if (actor.role !== 'customer' && actor.role !== 'system') {
       throw new StatusError('Only the customer may cancel a booking', 403);
+    }
+    if (actor.role === 'system' && (!reason || !String(reason).trim())) {
+      throw new StatusError('System cancellation requires a reason');
     }
     if (!CUSTOMER_CANCELLABLE_FROM.includes(current)) {
       throw new StatusError(
@@ -159,7 +175,11 @@ async function transition(booking, nextStatus, actor, opts = {}) {
       service: booking.serviceSubCategory || booking.serviceCategory,
     };
     if (nextStatus === STATUS.CANCELLED) {
-      await notify.notifyBookingCancelled(booking, actor.id, ctx);
+      await notify.notifyBookingCancelled(booking, actor.id, {
+        ...ctx,
+        byRole: actor.role,
+        reason: reason || note || '',
+      });
     } else {
       await notify.notifyBookingStatus(booking, nextStatus, ctx);
     }
@@ -170,4 +190,74 @@ async function transition(booking, nextStatus, actor, opts = {}) {
   return booking;
 }
 
-module.exports = { transition, StatusError, CUSTOMER_CANCELLABLE_FROM };
+/**
+ * First accept wins.
+ *
+ * A customer is allowed to send the same job to several providers at once —
+ * that is the point of a marketplace, and waiting on one provider at a time is
+ * how a five-minute repair becomes an afternoon. But the job is still ONE job:
+ * the moment a provider accepts, every other request for it is a promise the
+ * customer cannot keep, and leaving them PENDING means two electricians turn
+ * up at the same door.
+ *
+ * So acceptance releases the rest, and the scope of "the rest" is deliberate:
+ *
+ *   - Same customer, same serviceCategory. A pending plumber is a DIFFERENT
+ *     job and survives an electrician accepting — narrowing by category is
+ *     what keeps "book more than one person at a time" true for genuinely
+ *     separate work.
+ *   - PENDING only. A rival the customer already had ACCEPTED is a live
+ *     commitment with a provider who has planned their day around it; that is
+ *     the customer's to cancel, not ours.
+ *
+ * Best-effort per booking: the winning acceptance has already been saved by
+ * the time this runs, and one stubborn rival must never turn a successful
+ * accept into a 500. Each failure is logged with its booking id.
+ *
+ * @returns {Promise<string[]>} ids of the requests actually released
+ */
+async function releaseCompetingRequests(acceptedBooking, opts = {}) {
+  const Booking = require('../models/Booking');
+
+  const customerId =
+    acceptedBooking.customer && acceptedBooking.customer._id
+      ? acceptedBooking.customer._id
+      : acceptedBooking.customer;
+
+  const winner =
+    acceptedBooking.provider && acceptedBooking.provider.fullName
+      ? acceptedBooking.provider.fullName
+      : 'Another provider';
+
+  const reason =
+    opts.reason || `${winner} accepted this job first — request released automatically.`;
+
+  const rivals = await Booking.find({
+    _id: { $ne: acceptedBooking._id },
+    customer: customerId,
+    serviceCategory: acceptedBooking.serviceCategory,
+    status: STATUS.PENDING,
+  })
+    .populate('customer', 'fullName')
+    .populate('provider', 'fullName');
+
+  const released = [];
+  for (const rival of rivals) {
+    try {
+      await transition(rival, STATUS.CANCELLED, { id: null, role: 'system' }, { reason });
+      released.push(String(rival._id));
+    } catch (e) {
+      console.error(
+        `[booking] releasing rival request failed booking=${rival._id}: ${e.message}`
+      );
+    }
+  }
+  return released;
+}
+
+module.exports = {
+  transition,
+  releaseCompetingRequests,
+  StatusError,
+  CUSTOMER_CANCELLABLE_FROM,
+};

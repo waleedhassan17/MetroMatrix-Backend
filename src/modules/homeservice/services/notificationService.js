@@ -101,10 +101,32 @@ async function notifyBookingStatus(booking, status, ctx = {}) {
   });
 }
 
-/** A cancellation can come from either side; tell the other one. */
+/**
+ * A cancellation can come from either side; tell the other one.
+ *
+ * `ctx.byRole` is what distinguishes the three cases, because the id alone
+ * cannot: a request the PLATFORM released — the customer booked several
+ * providers for one job and someone else accepted first — has no human actor,
+ * so matching `cancelledBy` against the customer would have addressed it to
+ * the customer and told them their provider cancelled. It goes to the losing
+ * provider, and says why their pending job disappeared.
+ */
 async function notifyBookingCancelled(booking, cancelledBy, ctx = {}) {
   const customerId = booking.customer?._id || booking.customer;
   const providerId = booking.provider?._id || booking.provider;
+
+  if (ctx.byRole === 'system') {
+    return create({
+      recipient: providerId,
+      recipientRole: 'provider',
+      type: 'booking_cancelled',
+      title: 'Request no longer available',
+      message:
+        ctx.reason || 'Another provider accepted this job first.',
+      data: { bookingId: String(booking._id), roomType: 'homeservice' },
+    });
+  }
+
   const toProvider = String(cancelledBy) === String(customerId);
 
   return create({

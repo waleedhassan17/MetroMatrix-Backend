@@ -34,6 +34,8 @@ router.get('/service-categories', adminC.publicCategories);
 
 // ---------- Customer: bookings ----------
 router.get('/bookings/init/:providerId', protect, userOnly, bookingC.initBooking);
+// MUST precede '/bookings/:id' below, or Express matches "active" as an id.
+router.get('/bookings/active', protect, userOnly, bookingC.getActiveBookings);
 router.post('/bookings', protect, userOnly, bookingC.createBooking);
 router.get('/bookings/:id/service-status', protect, loadBookingWithAccess, bookingC.getServiceStatus);
 router.get('/bookings/:bookingId/tracking', protect, loadBookingWithAccess, trackingC.getTrackingData);
