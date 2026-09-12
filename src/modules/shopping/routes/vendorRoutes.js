@@ -37,6 +37,9 @@ router.post('/inventory/bulk', catalogCtrl.bulkUpdateStock);
 router.get('/orders', orderCtrl.getBrandOrders);
 router.get('/orders/:orderId', orderCtrl.getBrandOrder);
 router.patch('/orders/:orderId/status', orderCtrl.updateOrderStatus);
+// Tracking number / carrier / internal notes, saved independently of the status
+// machine so they can be entered early and corrected later.
+router.patch('/orders/:orderId/shipping', orderCtrl.updateShipping);
 router.get('/returns', orderCtrl.getBrandReturns);
 router.patch('/returns/:returnId', orderCtrl.updateReturnRequest);
 

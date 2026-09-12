@@ -75,6 +75,18 @@ const orderSchema = new mongoose.Schema(
       default: 'pending',
     },
     trackingNumber: { type: String, default: null },
+    // Shipping paperwork the vendor owns. Kept here rather than derived from
+    // the tracking number (BrandDeliveries used to guess the courier by
+    // splitting it on '-'), and written by PATCH /vendor/orders/:id/shipping so
+    // it survives every status change instead of riding on a transition.
+    carrier: { type: String, default: '' },
+    /**
+     * Vendor-private. Deleted in toJSON below, and re-attached only by the
+     * vendor controller's own serializer — the old "Internal Notes" box wrote
+     * into statusHistory[].note, which GET /orders/:id/tracking returns to the
+     * shopper, so the label promised a privacy the storage did not provide.
+     */
+    internalNotes: { type: String, default: '' },
     subtotal: { type: Number, required: true },
     discount: { type: Number, default: 0 },
     shippingFee: { type: Number, default: 0 },
@@ -133,6 +145,9 @@ orderSchema.set('toJSON', {
     if (ret.trackingNumber === null) delete ret.trackingNumber;
     delete ret._id;
     delete ret.vendorPayout;
+    // Vendor-only; the vendor controller adds it back explicitly. Stripping it
+    // here means no customer or admin response can ever carry it by accident.
+    delete ret.internalNotes;
     return ret;
   },
 });

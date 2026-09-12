@@ -1,12 +1,40 @@
 const asyncHandler = require('express-async-handler');
 const mongoose = require('mongoose');
 const Order = require('../models/Order');
+const OrderGroup = require('../models/OrderGroup');
 const Product = require('../models/Product');
 const ReturnRequest = require('../models/ReturnRequest');
 const ProductReview = require('../models/ProductReview');
 const orderService = require('../services/orderService');
 const { getShoppingSettings } = require('../services/settingsService');
 const { ok, paginated, fail, parsePagination } = require('../utils/respond');
+
+/**
+ * The vendor's view of an order.
+ *
+ * Two things the plain `Order.toJSON()` cannot give them:
+ *
+ *  - `internalNotes`, which the schema transform strips so it can never reach a
+ *    customer or admin response. The vendor is the audience, so it goes back on
+ *    here — the same shape as the statusHistory line below it.
+ *  - `deliveryOption`, which checkout snapshots on the parent OrderGroup only.
+ *    The child Order carries the surcharge folded into `shippingFee` but no
+ *    tier name, so without this the person who has to physically ship a same-day
+ *    order cannot see that same-day was bought.
+ */
+const serializeForVendor = (order, deliveryOption = null) => {
+  const json = order.toJSON();
+  json.internalNotes = order.internalNotes || '';
+  json.deliveryOption = deliveryOption
+    ? { id: deliveryOption.id, name: deliveryOption.name, surcharge: deliveryOption.surcharge }
+    : null;
+  if (order.userId && typeof order.userId === 'object') {
+    json.customerName = order.userId.name || order.userId.fullName || '';
+    json.customerEmail = order.userId.email;
+    json.userId = String(order.userId._id);
+  }
+  return json;
+};
 
 // @desc  GET /api/shopping/vendor/orders?status&page&limit
 const getBrandOrders = asyncHandler(async (req, res) => {
@@ -21,14 +49,16 @@ const getBrandOrders = asyncHandler(async (req, res) => {
       .limit(limit),
     Order.countDocuments(filter),
   ]);
-  const data = orders.map((o) => {
-    const json = o.toJSON();
-    if (o.userId && typeof o.userId === 'object') {
-      json.customerName = o.userId.name || o.userId.fullName || '';
-      json.userId = String(o.userId._id);
-    }
-    return json;
-  });
+  // One batched lookup, not one per row. The delivery tier has to be on the
+  // LIST response and not just the detail one: the vendor's order screen reads
+  // its order straight out of the list it was opened from.
+  const groups = await OrderGroup.find({
+    _id: { $in: orders.map((o) => o.orderGroup).filter(Boolean) },
+  }).select('deliveryOption');
+  const tierByGroup = new Map(groups.map((g) => [String(g._id), g.deliveryOption]));
+  const data = orders.map((o) =>
+    serializeForVendor(o, o.orderGroup ? tierByGroup.get(String(o.orderGroup)) : null)
+  );
   return paginated(res, { data, page, limit, total });
 });
 
@@ -40,12 +70,10 @@ const getBrandOrder = asyncHandler(async (req, res) => {
     'name fullName email phoneNumber'
   );
   if (!order) return fail(res, 404, 'Order not found');
-  const json = order.toJSON();
-  if (order.userId && typeof order.userId === 'object') {
-    json.customerName = order.userId.name || order.userId.fullName || '';
-    json.customerEmail = order.userId.email;
-    json.userId = String(order.userId._id);
-  }
+  const group = order.orderGroup
+    ? await OrderGroup.findById(order.orderGroup).select('deliveryOption')
+    : null;
+  const json = serializeForVendor(order, group ? group.deliveryOption : null);
   json.statusHistory = order.statusHistory;
   return ok(res, json);
 });
@@ -56,6 +84,9 @@ const updateOrderStatus = asyncHandler(async (req, res) => {
   const order = await Order.findOne({ _id: req.params.orderId, brandId: req.brand._id });
   if (!order) return fail(res, 404, 'Order not found');
   if (!req.body.status) return fail(res, 400, 'status is required');
+  // Shipping paperwork may ride along with the transition, but it is no longer
+  // the only way to save it — see updateShipping below.
+  if (req.body.carrier !== undefined) order.carrier = req.body.carrier;
   try {
     await orderService.transition(order, req.body.status, { id: req.user._id, role: 'vendor' }, {
       note: req.body.note,
@@ -65,7 +96,44 @@ const updateOrderStatus = asyncHandler(async (req, res) => {
     if (e.statusCode) return fail(res, e.statusCode, e.message);
     throw e;
   }
-  return ok(res, order);
+  const group = order.orderGroup
+    ? await OrderGroup.findById(order.orderGroup).select('deliveryOption')
+    : null;
+  return ok(res, serializeForVendor(order, group ? group.deliveryOption : null));
+});
+
+/**
+ * @desc  PATCH /api/shopping/vendor/orders/:orderId/shipping
+ *        { trackingNumber?, carrier?, internalNotes? }
+ *
+ * Shipping paperwork, decoupled from the state machine. Previously the only
+ * writer was the status transition, and since ALLOWED_TRANSITIONS has no
+ * same-status entry, a vendor who mistyped a tracking number on the
+ * processing → shipped step could never correct it.
+ *
+ * Unlike orderService.transition — which ignores empty values so a transition
+ * that omits the field cannot wipe it — an empty string here is a deliberate
+ * clear. That is the point of having a dedicated endpoint.
+ */
+const updateShipping = asyncHandler(async (req, res) => {
+  if (!mongoose.isValidObjectId(req.params.orderId)) return fail(res, 400, 'Invalid order ID');
+  const order = await Order.findOne({ _id: req.params.orderId, brandId: req.brand._id });
+  if (!order) return fail(res, 404, 'Order not found');
+
+  const { trackingNumber, carrier, internalNotes } = req.body;
+  if (trackingNumber === undefined && carrier === undefined && internalNotes === undefined) {
+    return fail(res, 400, 'Nothing to update: send trackingNumber, carrier or internalNotes');
+  }
+  // Only the keys actually sent, so a partial save never nulls a sibling.
+  if (trackingNumber !== undefined) order.trackingNumber = String(trackingNumber).trim() || null;
+  if (carrier !== undefined) order.carrier = String(carrier).trim();
+  if (internalNotes !== undefined) order.internalNotes = String(internalNotes);
+  await order.save();
+
+  const group = order.orderGroup
+    ? await OrderGroup.findById(order.orderGroup).select('deliveryOption')
+    : null;
+  return ok(res, serializeForVendor(order, group ? group.deliveryOption : null));
 });
 
 // @desc  GET /api/shopping/vendor/returns
@@ -328,6 +396,7 @@ module.exports = {
   getBrandOrders,
   getBrandOrder,
   updateOrderStatus,
+  updateShipping,
   getBrandReturns,
   updateReturnRequest,
   getBrandAnalytics,
