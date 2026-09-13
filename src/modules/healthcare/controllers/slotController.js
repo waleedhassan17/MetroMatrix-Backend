@@ -145,87 +145,85 @@ const getSlots = async (req, res, next) => {
   }
 };
 
-// @desc    Create slots (Doctor)
+/**
+ * The doctor slot endpoints answer validation problems with the message the
+ * service composed ("Slot 3: an in-clinic slot needs one of your clinics"), so
+ * the app can show the doctor exactly what to fix instead of a generic failure.
+ */
+const sendSlotError = (res, next, error) => {
+  if (error instanceof slotService.SlotInputError) {
+    return res.status(error.statusCode).json({ success: false, error: error.message, message: error.message });
+  }
+  if (error && error.name === 'CastError') {
+    return res.status(400).json({ success: false, error: 'Invalid slot ID', message: 'Invalid slot ID' });
+  }
+  // The partial unique index: the same single-patient slot already exists.
+  if (error && error.code === 11000) {
+    return res.status(409).json({
+      success: false,
+      error: 'You already have a slot at that time',
+      message: 'You already have a slot at that time',
+    });
+  }
+  return next(error);
+};
+
+// @desc    Create slots (Doctor). type may be 'video', 'in-clinic' or 'both'.
 // @route   POST /api/v1/healthcare/slots
 // @access  Private/Doctor
 const createSlots = async (req, res, next) => {
   try {
-    const { slots } = req.body;
-
-    if (!slots || !Array.isArray(slots) || slots.length === 0) {
-      return res.status(400).json({
-        success: false,
-        error: 'slots array is required and must not be empty',
-      });
-    }
-
-    const slotsData = slots.map((slot) => ({
-      ...slot,
-      doctorId: req.doctor._id,
-    }));
-
-    const created = await slotService.createSlots(slotsData);
-    res.status(201).json({ success: true, count: created.length, data: created });
+    const ids = await slotService.createDoctorSlots(req.doctor._id, req.body && req.body.slots);
+    res.status(201).json({ success: true, count: ids.length, data: { ids } });
   } catch (error) {
-    next(error);
+    sendSlotError(res, next, error);
   }
 };
 
-// @desc    Update slot status
+// @desc    Edit or open/close an unbooked slot (Doctor)
 // @route   PUT /api/v1/healthcare/slots/:id
 // @access  Private/Doctor
 const updateSlot = async (req, res, next) => {
   try {
-    const slot = await slotService.updateSlot(req.params.id, req.doctor._id, req.body);
-    if (!slot) {
-      return res.status(404).json({ success: false, error: 'Slot not found' });
-    }
+    const slot = await slotService.updateDoctorSlot(req.params.id, req.doctor._id, req.body || {});
     res.json({ success: true, data: slot });
   } catch (error) {
-    next(error);
+    sendSlotError(res, next, error);
   }
 };
 
-// @desc    Delete slot
+// @desc    Delete an unbooked slot (Doctor)
 // @route   DELETE /api/v1/healthcare/slots/:id
 // @access  Private/Doctor
 const deleteSlot = async (req, res, next) => {
   try {
-    const slot = await slotService.deleteSlot(req.params.id, req.doctor._id);
-    if (!slot) {
-      return res.status(404).json({ success: false, error: 'Slot not found or already booked' });
-    }
-    res.json({ success: true, data: {} });
+    const outcome = await slotService.deleteDoctorSlot(req.params.id, req.doctor._id);
+    res.json({
+      success: true,
+      data: { outcome },
+      message:
+        outcome === 'closed'
+          ? 'Closed — this time comes from your weekly schedule, so it is closed rather than deleted'
+          : 'Slot deleted',
+    });
   } catch (error) {
-    next(error);
+    sendSlotError(res, next, error);
   }
 };
 
-// @desc    Get my slots (Doctor)
-// @route   GET /api/v1/healthcare/slots/my-slots
+// @desc    A doctor's slots for one day, each with its booking state
+// @route   GET /api/v1/healthcare/slots/my-slots?date=YYYY-MM-DD
 // @access  Private/Doctor
 const getMySlots = async (req, res, next) => {
   try {
-    const Slot = require('../models/Slot');
-    const { date, status } = req.query;
-    const query = { doctorId: req.doctor._id };
-
-    if (date) {
-      const startOfDay = new Date(date);
-      startOfDay.setHours(0, 0, 0, 0);
-      const endOfDay = new Date(date);
-      endOfDay.setHours(23, 59, 59, 999);
-      query.date = { $gte: startOfDay, $lte: endOfDay };
-    }
-    if (status) query.status = status;
-
-    const slots = await Slot.find(query)
-      .populate('clinicId', 'name address')
-      .sort({ date: 1, startTime: 1 });
-
-    res.json({ success: true, count: slots.length, data: slots });
+    const slots = await slotService.getDoctorSlotsWithState(req.doctor._id, { date: req.query.date });
+    const summary = slots.reduce((acc, s) => {
+      acc[s.state] = (acc[s.state] || 0) + 1;
+      return acc;
+    }, {});
+    res.json({ success: true, count: slots.length, summary, data: slots });
   } catch (error) {
-    next(error);
+    sendSlotError(res, next, error);
   }
 };
 

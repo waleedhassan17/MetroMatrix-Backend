@@ -173,6 +173,7 @@ function expandDay({ dateKey, dayTemplate, clinicsById, slotDuration = 30, break
           clinicTimezone: tz,
           type: slotType,
           status: 'available',
+          source: 'template',
           maxPatients: 1,
           bookedCount: 0,
         });

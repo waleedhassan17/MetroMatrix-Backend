@@ -1,6 +1,14 @@
 const mongoose = require('mongoose');
 const Slot = require('../models/Slot');
-const { DEFAULT_TIMEZONE } = require('../../../utils/time');
+const {
+  DEFAULT_TIMEZONE,
+  HHMM,
+  safeZone,
+  localToUtc,
+  todayKey,
+  addDays,
+  toMinutes,
+} = require('../../../utils/time');
 
 /**
  * How far ahead of "now" a slot must start to be bookable.
@@ -290,6 +298,104 @@ const validateSlotForBooking = async (slotId, doctorId, session = null) => {
   return slot;
 };
 
+// ============================================================================
+// ONE DOCTOR, ONE PLACE AT A TIME.
+//
+// Slots are separate documents per type and per clinic, so a doctor who offers
+// 10:00 as both a video consult and an in-clinic visit — or at both clinics —
+// has several slots sharing one instant. The capacity guard in claimSlot only
+// ever looked at the slot being claimed, so booking the video slot left the
+// in-clinic slot at the same moment fully bookable. Two patients, one doctor,
+// same minute.
+//
+// So a booking now HOLDS every slot of the same doctor whose time overlaps it,
+// and releasing that booking gives them back. Overlap is the half-open
+// interval test on the real instants: a 10:00–10:30 slot does not collide with
+// one starting at 10:30.
+// ============================================================================
+
+/** Every OTHER slot of this doctor whose time range intersects [startUtc, endUtc). */
+const overlapFilter = (doctorId, startUtc, endUtc, excludeId) => ({
+  doctorId,
+  _id: { $ne: excludeId },
+  startUtc: { $lt: endUtc },
+  endUtc: { $gt: startUtc },
+});
+
+/** True when an overlapping slot of this doctor already carries a booking. */
+const hasOverlappingBooking = async (slot, session = null) => {
+  if (!slot.startUtc || !slot.endUtc) return false;
+  const clash = await Slot.findOne({
+    ...overlapFilter(slot.doctorId, slot.startUtc, slot.endUtc, slot._id),
+    bookedCount: { $gt: 0 },
+  })
+    .select('_id')
+    .session(session)
+    .lean();
+  return clash ? clash._id : false;
+};
+
+/**
+ * Take every open, unbooked overlapping slot off the market.
+ *
+ * Only 'available' slots are touched: a doctor's own 'blocked' slot stays
+ * blocked, and one already held by another booking keeps that holder.
+ */
+const holdOverlapping = async (slot, session = null) => {
+  if (!slot.startUtc || !slot.endUtc) return 0;
+  const res = await Slot.updateMany(
+    {
+      ...overlapFilter(slot.doctorId, slot.startUtc, slot.endUtc, slot._id),
+      status: 'available',
+      bookedCount: 0,
+    },
+    { $set: { status: 'held', heldBy: slot._id } },
+    { session }
+  );
+  return res.modifiedCount || 0;
+};
+
+/**
+ * Give back the slots a booking was holding — but only those nothing else still
+ * holds. A slot can overlap two bookings (10:15–10:45 against both 10:00 and
+ * 10:30); releasing one of them must re-point it at the other, not re-open it.
+ */
+const releaseHolds = async (slot, session = null) => {
+  const held = await Slot.find({ heldBy: slot._id, status: 'held' })
+    .select('_id doctorId startUtc endUtc')
+    .session(session)
+    .lean();
+
+  for (const h of held) {
+    const stillHeldBy = await hasOverlappingBooking(h, session);
+    await Slot.updateOne(
+      { _id: h._id, status: 'held' },
+      stillHeldBy
+        ? { $set: { heldBy: stillHeldBy } }
+        : { $set: { status: 'available', heldBy: null } },
+      { session }
+    );
+  }
+  return held.length;
+};
+
+/**
+ * Hold a single slot if it overlaps an existing booking. For slots that come
+ * into being ALREADY overlapping one — a doctor creating or unblocking a slot
+ * at a time they are already booked.
+ */
+const holdIfEngaged = async (slot, session = null) => {
+  if (slot.status !== 'available' || slot.bookedCount > 0) return false;
+  const holder = await hasOverlappingBooking(slot, session);
+  if (!holder) return false;
+  await Slot.updateOne(
+    { _id: slot._id, status: 'available', bookedCount: 0 },
+    { $set: { status: 'held', heldBy: holder } },
+    { session }
+  );
+  return true;
+};
+
 /**
  * CLAIM a slot: the atomic guard that actually prevents double-booking.
  *
@@ -329,6 +435,24 @@ const claimSlot = async (slotId, doctorId, session = null) => {
   );
 
   if (!claimed) return null;
+
+  // The FIRST booking on this slot commits the doctor to its time, so it must
+  // not collide with a booking on an overlapping slot, and it takes those
+  // overlapping slots off the market. A group slot's later bookings add
+  // nothing new: the doctor was already committed by the first.
+  if (claimed.bookedCount === 1) {
+    // A concurrent claim on an overlapping slot, or an overlapping slot that
+    // was booked before this one was created. Either way the doctor is taken.
+    if (await hasOverlappingBooking(claimed, session)) {
+      // Inside a transaction the caller aborts and this never lands. Outside
+      // one, put the count back ourselves rather than leak a phantom booking.
+      if (!session) {
+        await Slot.updateOne({ _id: claimed._id, bookedCount: { $gt: 0 } }, { $inc: { bookedCount: -1 } });
+      }
+      return null;
+    }
+    await holdOverlapping(claimed, session);
+  }
 
   // Flip to 'booked' once full. Conditional on the count so a concurrent
   // release cannot be overwritten by a stale status write.
@@ -387,13 +511,384 @@ const releaseSlot = async (slotId, session = null) => {
     released.status = 'available';
   }
 
+  // The last booking is gone, so the doctor is free at this time again — hand
+  // back whatever this slot was holding. (A group slot with bookings left
+  // still commits the doctor, so its holds stay.)
+  if (released.bookedCount === 0) {
+    await releaseHolds(released, session);
+  }
+
   return released;
 };
 
 /** @deprecated Use releaseSlot — this un-blocked doctor-blocked slots. */
 const decrementBookedCount = async (slotId, session = null) => releaseSlot(slotId, session);
 
+// ============================================================================
+// DOCTOR-AUTHORED SLOTS
+//
+// The previous write path was `Slot.insertMany(req.body.slots)` and
+// `findOneAndUpdate(id, req.body)`. That had three consequences:
+//
+//   · INVISIBLE TO PATIENTS. startUtc was never computed, and the patient date
+//     strip and "next available" both filter on it — so a date a doctor had
+//     just filled still showed as empty to every patient.
+//   · UNSAFE. The whole body was written, so a doctor could set bookedCount: 0
+//     on a booked slot, move a booked appointment's time out from under the
+//     patient, or attach another doctor's clinic.
+//   · NO "BOTH". A slot has exactly one type, so the app quietly saved "both"
+//     as in-clinic and no video slot ever existed.
+//
+// Everything below builds the SAME document shape as the weekly generator
+// (availabilityService.expandDay), so a hand-made slot and a generated one are
+// indistinguishable to every reader.
+// ============================================================================
+
+class SlotInputError extends Error {
+  constructor(message, statusCode = 400) {
+    super(message);
+    this.statusCode = statusCode;
+  }
+}
+
+const MAX_PATIENTS_CAP = 10;
+const DATE_KEY = /^\d{4}-\d{2}-\d{2}$/;
+const SLOT_TYPES = ['video', 'in-clinic'];
+
+/** The doctor's clinics, keyed by id, for ownership checks and timezones. */
+const clinicsFor = async (doctorId) => {
+  const Clinic = require('../models/Clinic');
+  const clinics = await Clinic.find({ doctorId }).select('_id name address timezone').lean();
+  return new Map(clinics.map((c) => [String(c._id), c]));
+};
+
+/**
+ * Turn one requested slot into one or two slot documents ("both" → a video slot
+ * and an in-clinic slot at the same time; booking either holds the other).
+ * Throws SlotInputError naming exactly what is wrong.
+ */
+const buildSlotDocs = (doctorId, input, clinicsById, label) => {
+  const where = label ? `${label}: ` : '';
+  const date = String((input && input.date) || '').slice(0, 10);
+  const startTime = input && input.startTime;
+  const endTime = input && input.endTime;
+  const requested = input && input.type;
+
+  if (!DATE_KEY.test(date)) throw new SlotInputError(`${where}date must be YYYY-MM-DD`);
+  if (!HHMM.test(startTime || '') || !HHMM.test(endTime || '')) {
+    throw new SlotInputError(`${where}startTime and endTime must be HH:MM`);
+  }
+  if (toMinutes(endTime) <= toMinutes(startTime)) {
+    throw new SlotInputError(`${where}endTime must be after startTime`);
+  }
+
+  const types = requested === 'both' ? ['video', 'in-clinic'] : [requested];
+  if (!types.every((t) => SLOT_TYPES.includes(t))) {
+    throw new SlotInputError(`${where}type must be video, in-clinic or both`);
+  }
+
+  const clinicId = input && input.clinicId ? String(input.clinicId) : null;
+  const clinic = clinicId ? clinicsById.get(clinicId) : null;
+  if (clinicId && !clinic) {
+    // Not "not found" — it may well exist, just not as this doctor's.
+    throw new SlotInputError(`${where}that clinic is not one of yours`, 403);
+  }
+  if (types.includes('in-clinic') && !clinic) {
+    throw new SlotInputError(`${where}an in-clinic slot needs one of your clinics`);
+  }
+
+  const maxPatients = input.maxPatients == null ? 1 : Number(input.maxPatients);
+  if (!Number.isInteger(maxPatients) || maxPatients < 1 || maxPatients > MAX_PATIENTS_CAP) {
+    throw new SlotInputError(`${where}maxPatients must be a whole number from 1 to ${MAX_PATIENTS_CAP}`);
+  }
+
+  // A video consult has no location; it still takes the clinic's zone when one
+  // is given, so "10:00" means the same moment for both halves of a "both".
+  const tz = safeZone((clinic && clinic.timezone) || DEFAULT_TIMEZONE);
+  const startUtc = localToUtc(date, startTime, tz);
+  const endUtc = localToUtc(date, endTime, tz);
+  if (!startUtc || !endUtc) throw new SlotInputError(`${where}that date or time does not exist`);
+  if (startUtc <= bookableFrom()) {
+    throw new SlotInputError(`${where}${date} ${startTime} is in the past or too soon to book`);
+  }
+
+  return types.map((type) => ({
+    doctorId,
+    clinicId: type === 'in-clinic' ? clinic._id : null,
+    date: localToUtc(date, '00:00', tz),
+    startTime,
+    endTime,
+    startUtc,
+    endUtc,
+    clinicTimezone: tz,
+    type,
+    status: 'available',
+    source: 'manual',
+    heldBy: null,
+    maxPatients,
+    bookedCount: 0,
+  }));
+};
+
+/**
+ * The same offering twice: same type, same clinic, overlapping time. That is a
+ * genuine mistake, unlike a video slot overlapping an in-clinic one, which is a
+ * doctor offering two ways to be seen at 10:00 (held together at booking).
+ */
+const sameOfferingClash = (doctorId, doc, excludeId = null) =>
+  Slot.findOne({
+    doctorId,
+    type: doc.type,
+    clinicId: doc.clinicId,
+    startUtc: { $lt: doc.endUtc },
+    endUtc: { $gt: doc.startUtc },
+    ...(excludeId ? { _id: { $ne: excludeId } } : {}),
+  })
+    .select('_id startTime endTime type')
+    .lean();
+
+const describe = (d) => `${d.type === 'video' ? 'video' : 'in-clinic'} ${d.startTime}–${d.endTime}`;
+
+/** Create slots from a doctor's request. Validates everything before writing anything. */
+const createDoctorSlots = async (doctorId, inputs) => {
+  if (!Array.isArray(inputs) || inputs.length === 0) {
+    throw new SlotInputError('slots array is required and must not be empty');
+  }
+  if (inputs.length > 200) throw new SlotInputError('At most 200 slots per request');
+
+  const clinicsById = await clinicsFor(doctorId);
+  const docs = inputs.flatMap((input, i) =>
+    buildSlotDocs(doctorId, input, clinicsById, inputs.length > 1 ? `Slot ${i + 1}` : '')
+  );
+
+  // Clashes inside the request itself, then against what is already stored.
+  for (let i = 0; i < docs.length; i++) {
+    for (let j = i + 1; j < docs.length; j++) {
+      const a = docs[i];
+      const b = docs[j];
+      if (
+        a.type === b.type &&
+        String(a.clinicId) === String(b.clinicId) &&
+        a.startUtc < b.endUtc &&
+        b.startUtc < a.endUtc
+      ) {
+        throw new SlotInputError(`${describe(a)} and ${describe(b)} overlap`, 409);
+      }
+    }
+  }
+  for (const d of docs) {
+    const clash = await sameOfferingClash(doctorId, d);
+    if (clash) {
+      throw new SlotInputError(
+        `That overlaps your existing ${describe(clash)} slot`,
+        409
+      );
+    }
+  }
+
+  const created = await Slot.insertMany(docs);
+
+  // A slot created at a time the doctor is already booked goes straight to held.
+  for (const slot of created) await holdIfEngaged(slot);
+
+  return created.map((s) => String(s._id));
+};
+
+/**
+ * Edit a slot the doctor owns. Only while nobody has booked it and no booking
+ * is holding it — changing a booked slot would move a patient's appointment
+ * without telling them.
+ */
+const updateDoctorSlot = async (slotId, doctorId, body = {}) => {
+  const slot = await Slot.findOne({ _id: slotId, doctorId });
+  if (!slot) throw new SlotInputError('Slot not found', 404);
+  if (slot.bookedCount > 0) {
+    throw new SlotInputError('This slot has a booking and can no longer be changed', 409);
+  }
+  if (slot.status === 'held') {
+    throw new SlotInputError('This slot overlaps a booked appointment and cannot be changed', 409);
+  }
+
+  // Open/close without touching the time. Only the two states a doctor owns.
+  if (body.status !== undefined && !['available', 'blocked'].includes(body.status)) {
+    throw new SlotInputError('status can only be set to available or blocked');
+  }
+
+  const timingChanged = ['date', 'startTime', 'endTime', 'type', 'clinicId', 'maxPatients'].some(
+    (k) => body[k] !== undefined
+  );
+
+  if (timingChanged) {
+    if (body.type === 'both') {
+      throw new SlotInputError('An existing slot has one type; add a second slot for the other');
+    }
+    const clinicsById = await clinicsFor(doctorId);
+    const tz = slot.clinicTimezone || DEFAULT_TIMEZONE;
+    const merged = {
+      date: body.date !== undefined ? body.date : slot.startUtc.toLocaleDateString('en-CA', { timeZone: tz }),
+      startTime: body.startTime !== undefined ? body.startTime : slot.startTime,
+      endTime: body.endTime !== undefined ? body.endTime : slot.endTime,
+      type: body.type !== undefined ? body.type : slot.type,
+      clinicId: body.clinicId !== undefined ? body.clinicId : slot.clinicId,
+      maxPatients: body.maxPatients !== undefined ? body.maxPatients : slot.maxPatients,
+    };
+    const [doc] = buildSlotDocs(doctorId, merged, clinicsById);
+
+    const clash = await sameOfferingClash(doctorId, doc, slot._id);
+    if (clash) {
+      throw new SlotInputError(`That would overlap your ${describe(clash)} slot`, 409);
+    }
+
+    Object.assign(slot, {
+      clinicId: doc.clinicId,
+      date: doc.date,
+      startTime: doc.startTime,
+      endTime: doc.endTime,
+      startUtc: doc.startUtc,
+      endUtc: doc.endUtc,
+      clinicTimezone: doc.clinicTimezone,
+      type: doc.type,
+      maxPatients: doc.maxPatients,
+    });
+  }
+
+  if (body.status !== undefined) slot.status = body.status;
+  await slot.save();
+
+  // Reopened, or moved onto a time the doctor is already booked for.
+  if (slot.status === 'available') await holdIfEngaged(slot);
+
+  return slot;
+};
+
+/**
+ * Delete an unbooked slot the doctor owns.
+ *
+ * Resolves to 'deleted', or 'closed' for a slot generated from the weekly
+ * template: the horizon job re-creates any template slot that is missing, so a
+ * real delete would silently come back the next night. Closing it leaves a
+ * record the generator de-duplicates against, which is what makes it stick.
+ */
+const deleteDoctorSlot = async (slotId, doctorId) => {
+  const slot = await Slot.findOne({ _id: slotId, doctorId }).select('_id bookedCount source status').lean();
+  if (!slot) throw new SlotInputError('Slot not found', 404);
+  if (slot.bookedCount > 0) {
+    throw new SlotInputError('This slot has a booking; cancel the appointment first', 409);
+  }
+  if (slot.source === 'template') {
+    const res = await Slot.updateOne(
+      { _id: slotId, doctorId, bookedCount: 0 },
+      { $set: { status: 'blocked', heldBy: null } }
+    );
+    if (!res.matchedCount) {
+      throw new SlotInputError('This slot was just booked and can no longer be removed', 409);
+    }
+    return 'closed';
+  }
+  // Conditional on the count, so a patient booking it this instant still wins.
+  const res = await Slot.deleteOne({ _id: slotId, doctorId, bookedCount: 0 });
+  if (!res.deletedCount) {
+    throw new SlotInputError('This slot was just booked and can no longer be deleted', 409);
+  }
+  return 'deleted';
+};
+
+/**
+ * A doctor's slots for a day, each with the state the doctor needs to see:
+ *   open · requested (a patient asked, awaiting approval) · booked (approved)
+ *   · held (overlaps a booking) · blocked (closed by the doctor) · past
+ */
+const getDoctorSlotsWithState = async (doctorId, { date } = {}) => {
+  const Appointment = require('../models/Appointment');
+  const clinicsById = await clinicsFor(doctorId);
+  const first = [...clinicsById.values()][0];
+  const tz = safeZone((first && first.timezone) || DEFAULT_TIMEZONE);
+
+  const dayKey = DATE_KEY.test(date || '') ? date : todayKey(tz);
+  const from = localToUtc(dayKey, '00:00', tz);
+  const to = localToUtc(addDays(dayKey, 1, tz), '00:00', tz);
+
+  const slots = await Slot.find({
+    doctorId,
+    // startUtc for everything current; the date range only for legacy rows
+    // that predate the backfill and have no instant.
+    $or: [{ startUtc: { $gte: from, $lt: to } }, { startUtc: null, date: { $gte: from, $lt: to } }],
+  })
+    .populate('clinicId', 'name address')
+    .sort({ startUtc: 1, startTime: 1 })
+    .lean();
+
+  const ids = slots.map((s) => s._id);
+  const appointments = ids.length
+    ? await Appointment.find({
+        slotId: { $in: ids },
+        status: { $in: ['pending', 'confirmed', 'completed'] },
+      })
+        .select('slotId status patientInfo.name type')
+        .lean()
+    : [];
+
+  const bySlot = new Map();
+  for (const a of appointments) {
+    const k = String(a.slotId);
+    if (!bySlot.has(k)) bySlot.set(k, []);
+    bySlot.get(k).push({
+      id: String(a._id),
+      status: a.status,
+      patientName: (a.patientInfo && a.patientInfo.name) || 'Patient',
+    });
+  }
+  const byId = new Map(slots.map((s) => [String(s._id), s]));
+  const now = new Date();
+
+  return slots.map((s) => {
+    const appts = bySlot.get(String(s._id)) || [];
+    const isPast = !!s.startUtc && s.startUtc <= now;
+
+    let state;
+    if (appts.some((a) => a.status === 'confirmed' || a.status === 'completed')) state = 'booked';
+    else if (appts.some((a) => a.status === 'pending')) state = 'requested';
+    else if (s.status === 'held') state = 'held';
+    else if (s.status === 'blocked') state = 'blocked';
+    else if (isPast) state = 'past';
+    else state = 'open';
+
+    const holder = s.heldBy ? byId.get(String(s.heldBy)) : null;
+
+    return {
+      id: String(s._id),
+      date: dayKey,
+      startTime: s.startTime,
+      endTime: s.endTime,
+      startUtc: s.startUtc,
+      endUtc: s.endUtc,
+      type: s.type,
+      clinic: s.clinicId
+        ? { id: String(s.clinicId._id), name: s.clinicId.name, address: s.clinicId.address }
+        : null,
+      status: s.status,
+      state,
+      isPast,
+      maxPatients: s.maxPatients,
+      bookedCount: s.bookedCount,
+      appointments: appts,
+      heldBy: holder
+        ? { id: String(holder._id), type: holder.type, startTime: holder.startTime, endTime: holder.endTime }
+        : null,
+      canEdit: !isPast && s.bookedCount === 0 && (state === 'open' || state === 'blocked'),
+      canDelete: s.bookedCount === 0 && state !== 'requested' && state !== 'booked',
+    };
+  });
+};
+
 module.exports = {
+  SlotInputError,
+  createDoctorSlots,
+  updateDoctorSlot,
+  deleteDoctorSlot,
+  getDoctorSlotsWithState,
+  holdIfEngaged,
+  releaseHolds,
   BOOKING_LEAD_MINUTES,
   bookableFrom,
   getGroupedSlots,

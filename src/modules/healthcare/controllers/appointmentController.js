@@ -462,7 +462,27 @@ const bookAppointment = async (req, res, next) => {
       data: populated,
     });
   } catch (error) {
-    await session.abortTransaction();
+    // Only abort a transaction that is still open — the failure may come after
+    // commit (e.g. reading the populated appointment back), and aborting then
+    // throws over the real error.
+    if (session.inTransaction()) await session.abortTransaction();
+
+    // Two patients booking DIFFERENT but overlapping slots of the same doctor
+    // at the same moment each try to hold the other's slot, so WiredTiger
+    // rejects one transaction with a write conflict. That is the overlap lock
+    // working, not a server fault: answer it exactly like a same-slot race.
+    const labels = (error && error.errorLabels) || [];
+    const isWriteConflict =
+      (error && error.code === 112) ||
+      (typeof error?.hasErrorLabel === 'function' && error.hasErrorLabel('TransientTransactionError')) ||
+      labels.includes('TransientTransactionError');
+    if (isWriteConflict && !res.headersSent) {
+      return res.status(409).json({
+        success: false,
+        error: 'SLOT_TAKEN',
+        message: 'That time was just booked. Please choose another time.',
+      });
+    }
     next(error);
   } finally {
     session.endSession();

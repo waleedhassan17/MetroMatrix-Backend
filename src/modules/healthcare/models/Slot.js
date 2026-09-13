@@ -62,10 +62,34 @@ const slotSchema = new mongoose.Schema(
       enum: ['in-clinic', 'video'],
       required: [true, 'Slot type is required'],
     },
+    // 'held' is set by the system, never by a doctor: the slot overlaps another
+    // slot of the SAME doctor that has a booking, so it cannot be offered. A
+    // doctor is one person — a 10:00 video consult and a 10:00 in-clinic visit
+    // (or visits at two clinics) cannot both happen. Every discovery and claim
+    // query filters on status 'available', so a held slot drops out of the
+    // patient view with no further change to any reader.
+    //
+    // Distinct from 'blocked', which is the doctor's own decision (holiday,
+    // absence). Releasing a booking restores 'held' slots and must never touch
+    // 'blocked' ones — keeping the two apart is what makes that possible.
     status: {
       type: String,
-      enum: ['available', 'booked', 'blocked'],
+      enum: ['available', 'booked', 'blocked', 'held'],
       default: 'available',
+    },
+    // Where the slot came from. The nightly horizon job re-creates any
+    // TEMPLATE slot that is missing, so deleting one would only last until the
+    // next run; such a slot is closed instead of deleted (see deleteDoctorSlot).
+    // Absent on slots that predate this field.
+    source: {
+      type: String,
+      enum: ['template', 'manual'],
+    },
+    // The booked slot whose booking is holding this one. Null unless held.
+    heldBy: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: 'Slot',
+      default: null,
     },
     maxPatients: {
       type: Number,
@@ -113,6 +137,8 @@ slotSchema.index({ doctorId: 1, startUtc: 1 });
 // The hot availability read filters on status too; the compound above stopped
 // at `date`, so status was always an in-memory filter.
 slotSchema.index({ doctorId: 1, date: 1, status: 1 });
+// Releasing a booking looks up the slots it was holding.
+slotSchema.index({ heldBy: 1 });
 
 // ---------------------------------------------------------------------------
 // THE DOUBLE-BOOKING BACKSTOP.

@@ -8,6 +8,7 @@ const Specialty = require('../modules/healthcare/models/Specialty');
 const Clinic = require('../modules/healthcare/models/Clinic');
 const Appointment = require('../modules/healthcare/models/Appointment');
 const Slot = require('../modules/healthcare/models/Slot');
+const slotService = require('../modules/healthcare/services/slotService');
 const Review = require('../modules/healthcare/models/Review');
 const Prescription = require('../modules/healthcare/models/Prescription');
 const MedicalNote = require('../modules/healthcare/models/MedicalNote');
@@ -16,7 +17,7 @@ const {
   validateWeeklyAvailability,
   ownedClinicIds,
 } = require('../modules/healthcare/services/availabilityService');
-const { todayKey, addDays, DEFAULT_TIMEZONE } = require('../utils/time');
+const { todayKey, addDays, DEFAULT_TIMEZONE, localToUtc, toDateKey } = require('../utils/time');
 const Notification = require('../models/Notification');
 const hcNotificationService = require('../modules/healthcare/services/notificationService');
 const { generateTokens } = require('../utils/generateToken');
@@ -689,6 +690,8 @@ const unblockSlot = asyncHandler(async (req, res) => {
 
   slot.status = 'available';
   await slot.save();
+  // Unblocking a time the doctor is already booked for must not offer it.
+  await slotService.holdIfEngaged(slot);
 
   res.json({ success: true, message: 'Slot unblocked' });
 });
@@ -885,7 +888,10 @@ const getMyAppointments = asyncHandler(async (req, res) => {
   // For proper date filtering we'll use aggregation. But to avoid complexity, we'll use .find and populate, then filter.
   let appointments = await Appointment.find(query)
     .populate('patientId', 'fullName profilePhoto')
-    .populate('slotId', 'startTime endTime date') // slotId is Slot
+    // clinicTimezone so the app can put the appointment on the right calendar
+    // day: `date` is midnight AT THE CLINIC stored as a UTC instant, and only
+    // the clinic's zone turns it back into a day.
+    .populate('slotId', 'startTime endTime date startUtc clinicTimezone') // slotId is Slot
     .populate('clinicId', 'name')
     .sort({ createdAt: -1 });
 
@@ -894,8 +900,16 @@ const getMyAppointments = asyncHandler(async (req, res) => {
   // memory, so past days were always empty and anything past the page limit
   // was invisible. `date` (exact day) is unchanged.
   if (from || to) {
-    const fromTs = from ? new Date(`${from}T00:00:00.000Z`).getTime() : -Infinity;
-    const toTs = to ? new Date(`${to}T23:59:59.999Z`).getTime() : Infinity;
+    // Bounds in the CLINIC's zone, not UTC. A slot's `date` is local midnight
+    // at the clinic, which in Karachi is 19:00 UTC the previous day — so a UTC
+    // "from" of 00:00 excluded the first day of every week the schedule asked
+    // for (Sunday's appointments never loaded), and a UTC "to" of 23:59 pulled
+    // in the following day.
+    const tz = DEFAULT_TIMEZONE;
+    const fromTs = from ? (localToUtc(from, '00:00', tz) || new Date(`${from}T00:00:00.000Z`)).getTime() : -Infinity;
+    const toTs = to
+      ? (localToUtc(addDays(to, 1, tz), '00:00', tz) || new Date(`${to}T23:59:59.999Z`)).getTime() - 1
+      : Infinity;
     appointments = appointments.filter((appt) => {
       if (!appt.slotId) return false;
       const ts = new Date(appt.slotId.date).getTime();
@@ -905,11 +919,13 @@ const getMyAppointments = asyncHandler(async (req, res) => {
 
   // Filter by date if provided (exact date match)
   if (date) {
-    const filterDate = new Date(date);
+    // Compared as calendar KEYS in the clinic's zone. toDateString() used the
+    // server's own clock — UTC on Vercel — which files a Karachi-midnight slot
+    // under the previous day.
+    const wanted = String(date).slice(0, 10);
     appointments = appointments.filter(appt => {
       if (!appt.slotId) return false;
-      const slotDate = new Date(appt.slotId.date);
-      return slotDate.toDateString() === filterDate.toDateString();
+      return toDateKey(appt.slotId.date, appt.slotId.clinicTimezone || DEFAULT_TIMEZONE) === wanted;
     });
   }
 
@@ -1178,16 +1194,12 @@ const cancelAppointment = asyncHandler(async (req, res) => {
     console.error('Refund failed:', refundErr.message);
   }
 
-  // Update time slot
-  const slot = await Slot.findById(appointment.slotId);
-  if (slot) {
-    if (slot.bookedCount > 0) {
-      slot.bookedCount -= 1;
-    }
-    if (slot.bookedCount === 0 && slot.status !== 'blocked') {
-      slot.status = 'available';
-    }
-    await slot.save();
+  // Give the time back. releaseSlot rather than a read-modify-write here: it is
+  // atomic, keeps a doctor-blocked slot blocked, and — the reason it matters now
+  // — also releases the overlapping slots this booking was holding, so a
+  // rejected 10:00 video request re-opens the doctor's 10:00 in-clinic slot too.
+  if (appointment.slotId) {
+    await slotService.releaseSlot(appointment.slotId);
   }
 
   // Notify patient

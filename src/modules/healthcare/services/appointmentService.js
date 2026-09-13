@@ -26,7 +26,9 @@ const DETAIL_POPULATE = [
     ],
   },
   { path: 'patientId', select: 'fullName email phoneNumber avatar' },
-  { path: 'slotId', select: 'date startTime endTime type status maxPatients bookedCount' },
+  // clinicTimezone: `date` is local midnight at the clinic as a UTC instant, and
+  // the app needs the zone to show it on the right calendar day.
+  { path: 'slotId', select: 'date startTime endTime startUtc clinicTimezone type status maxPatients bookedCount' },
   { path: 'clinicId', select: 'name address phone city area location' },
 ];
 
@@ -234,36 +236,31 @@ const rescheduleAppointment = async (appointmentId, patientId, newSlotId, sessio
     };
   }
 
-  // Validate new slot
-  const newSlot = await Slot.findOne({
-    _id: newSlotId,
-    doctorId: appointment.doctorId,
-    status: 'available',
-  }).session(session);
+  const oldSlotId = appointment.slotId._id || appointment.slotId;
+  if (String(oldSlotId) === String(newSlotId)) {
+    return { error: 'That is already the time of this appointment', status: 400 };
+  }
 
+  // RELEASE FIRST, THEN CLAIM — through the same two functions as booking and
+  // cancelling. This used to be its own read-modify-write swap, which:
+  //   · set the old slot 'available' unconditionally, re-opening a slot the
+  //     doctor had deliberately BLOCKED (the bug releaseSlot exists to prevent);
+  //   · checked nothing about the new slot's time, so a patient could move onto
+  //     a slot that had already started;
+  //   · knew nothing about overlap holds.
+  // Release comes first because the new time may overlap the old one (10:00 →
+  // 10:15), and the old booking would otherwise be holding the very slot being
+  // claimed. Both run inside the caller's transaction, so a failed claim rolls
+  // the release back and the patient keeps their original time.
+  await slotService.releaseSlot(oldSlotId, session);
+
+  const newSlot = await slotService.claimSlot(newSlotId, appointment.doctorId, session);
   if (!newSlot) {
-    return { error: 'New slot is not available or does not belong to the same doctor', status: 400 };
+    return {
+      error: 'That time is no longer available. Please choose another.',
+      status: 409,
+    };
   }
-  if (newSlot.bookedCount >= newSlot.maxPatients) {
-    return { error: 'New slot is fully booked', status: 400 };
-  }
-
-  // Release old slot
-  const oldSlot = await Slot.findById(appointment.slotId._id || appointment.slotId).session(session);
-  if (oldSlot) {
-    oldSlot.bookedCount = Math.max(0, oldSlot.bookedCount - 1);
-    if (oldSlot.bookedCount < oldSlot.maxPatients) {
-      oldSlot.status = 'available';
-    }
-    await oldSlot.save({ session });
-  }
-
-  // Book new slot
-  newSlot.bookedCount += 1;
-  if (newSlot.bookedCount >= newSlot.maxPatients) {
-    newSlot.status = 'booked';
-  }
-  await newSlot.save({ session });
 
   // Update appointment
   appointment.slotId = newSlot._id;
