@@ -4,6 +4,44 @@ const User = require('../models/User');
 const Provider = require('../models/Provider');
 const Admin = require('../models/Admin');
 
+// Which collection to look in first, keyed by the token's `userType`.
+//
+// Every request used to try User, then Provider, then Admin — one sequential
+// round trip per miss, so every provider request paid for a User lookup that
+// could never succeed before its own. Every sign-in path (and /auth/refresh)
+// signs `userType`, so the token already says where the account lives. The
+// remaining collections stay as a fallback: a token without `userType`, or one
+// whose account type changed, still resolves exactly as it did before.
+const LEGACY_ORDER = ['user', 'provider', 'admin'];
+const ORDER_BY_USER_TYPE = {
+  user: LEGACY_ORDER,
+  provider: ['provider', 'user', 'admin'],
+  admin: ['admin', 'user', 'provider'],
+};
+
+/**
+ * Resolve the account a verified token belongs to.
+ *
+ * Returns HYDRATED documents on purpose: logout, admin permission checks and
+ * checkout call methods and `save()` on `req.user`.
+ *
+ * @returns {Promise<{ account: object|null, kind: 'user'|'provider'|'admin'|null }>}
+ */
+async function loadAccount(decoded) {
+  const models = { user: User, provider: Provider, admin: Admin };
+  const order = ORDER_BY_USER_TYPE[decoded?.userType] || LEGACY_ORDER;
+  for (const kind of order) {
+    const account = await models[kind].findById(decoded.id).select('-password');
+    if (account) return { account, kind };
+  }
+  return { account: null, kind: null };
+}
+
+function applyAccountKind(req, kind) {
+  req.isProvider = kind === 'provider';
+  req.isAdmin = kind === 'admin';
+}
+
 // Protect routes
 const protect = asyncHandler(async (req, res, next) => {
   let token;
@@ -19,29 +57,8 @@ const protect = asyncHandler(async (req, res, next) => {
       // Verify token
       const decoded = jwt.verify(token, process.env.JWT_SECRET);
 
-      // Try User first
-      let user = await User.findById(decoded.id).select('-password');
-      
-      if (!user) {
-        // Try Provider
-        user = await Provider.findById(decoded.id).select('-password');
-        if (user) {
-          req.isProvider = true;
-          req.isAdmin = false;
-        }
-      } else {
-        req.isProvider = false;
-        req.isAdmin = false;
-      }
-
-      if (!user) {
-        // Try Admin
-        user = await Admin.findById(decoded.id).select('-password');
-        if (user) {
-          req.isAdmin = true;
-          req.isProvider = false;
-        }
-      }
+      const { account: user, kind } = await loadAccount(decoded);
+      if (user) applyAccountKind(req, kind);
 
       if (!user) {
         res.status(401);
@@ -142,31 +159,10 @@ const optionalAuth = asyncHandler(async (req, res, next) => {
     try {
       token = req.headers.authorization.split(' ')[1];
       const decoded = jwt.verify(token, process.env.JWT_SECRET);
-      
-      // Try User first
-      let user = await User.findById(decoded.id).select('-password');
-      
-      if (!user) {
-        // Try Provider
-        user = await Provider.findById(decoded.id).select('-password');
-        if (user) {
-          req.isProvider = true;
-          req.isAdmin = false;
-        }
-      } else {
-        req.isProvider = false;
-        req.isAdmin = false;
-      }
 
-      if (!user) {
-        // Try Admin
-        user = await Admin.findById(decoded.id).select('-password');
-        if (user) {
-          req.isAdmin = true;
-          req.isProvider = false;
-        }
-      }
-      
+      const { account: user, kind } = await loadAccount(decoded);
+      if (user) applyAccountKind(req, kind);
+
       if (user && user.isActive) {
         req.user = user;
       }
@@ -180,6 +176,7 @@ const optionalAuth = asyncHandler(async (req, res, next) => {
 });
 
 module.exports = {
+  loadAccount,
   protect,
   userOnly,
   providerOnly,

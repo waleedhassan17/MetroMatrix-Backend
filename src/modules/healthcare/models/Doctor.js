@@ -146,9 +146,45 @@ const doctorSchema = new mongoose.Schema(
       ],
       default: [],
     },
-    // Specific dates the doctor is absent (overrides weeklyAvailability).
+    /**
+     * @deprecated Use `timeOff`. One Date per day, no reason, and compared
+     * across zones as instants. Still read (unioned with timeOff) until
+     * scripts/healthcare-migrate-absent-dates.js has run.
+     */
     absentDates: {
       type: [Date],
+      default: [],
+    },
+
+    // ── Booking settings (the doctor app's Availability hub) ──────────────
+    // Consultation length lived nowhere: the app hardcoded 30 and the nightly
+    // job read an env var, so the two could generate overlapping grids. Null
+    // means "not chosen yet" and resolves to DEFAULT_SLOT_MINUTES.
+    slotDuration: { type: Number, min: 5, max: 240, default: null },
+    // Minutes of gap after each slot.
+    bufferMinutes: { type: Number, min: 0, max: 120, default: 0 },
+    // The app showed a "Video consultations" switch that was never stored.
+    videoConsultation: { type: Boolean, default: true },
+    // Bookings go straight to confirmed instead of waiting for approval.
+    autoConfirm: { type: Boolean, default: false },
+    // Zone for slots with no clinic (video). Null falls back to the first
+    // active clinic's zone, then Asia/Karachi.
+    timezone: { type: String, default: null },
+    // Optimistic concurrency for applying weekly hours, so two devices cannot
+    // silently overwrite each other's template.
+    availabilityVersion: { type: Number, default: 0 },
+    // Leave, as inclusive ranges of calendar days in the doctor's zone.
+    timeOff: {
+      type: [
+        {
+          from: { type: String, required: true }, // YYYY-MM-DD
+          to: { type: String, required: true }, // YYYY-MM-DD
+          reason: { type: String, default: '', maxlength: 200 },
+          createdAt: { type: Date, default: Date.now },
+          // Migrated from absentDates rather than entered in the hub.
+          legacy: { type: Boolean, default: false },
+        },
+      ],
       default: [],
     },
   },

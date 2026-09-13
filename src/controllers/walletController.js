@@ -88,6 +88,17 @@ const getMyWallet = asyncHandler(async (req, res) => {
   const ownerId = req.user._id;
   const ownerType = req.isProvider ? 'Provider' : 'User';
 
+  // `limit=0` asks for the balance only — what a dashboard wallet card shows.
+  // It used to be `parseInt('0') || 20`, so the card downloaded (and counted)
+  // twenty transactions it never displayed.
+  if (req.query.limit === '0') {
+    const wallet = await WalletService.getOrCreateWallet(ownerId, ownerType);
+    return res.status(200).json({
+      success: true,
+      wallet: { balance: wallet.balance, currency: wallet.currency },
+    });
+  }
+
   const limit = parseInt(req.query.limit) || 20;
   const page = parseInt(req.query.page) || 1;
 

@@ -1,8 +1,19 @@
 const slotService = require('../services/slotService');
+const Doctor = require('../models/Doctor');
 const { todayKey, addDays, localToUtc, DEFAULT_TIMEZONE } = require('../../../utils/time');
 
 /** How far ahead a patient may browse. Matches the generation horizon. */
 const BROWSE_DAYS = Number(process.env.SLOT_HORIZON_DAYS || 60);
+
+/**
+ * Only verified, active doctors are offered to patients. A doctor can now set
+ * up their hours while still under review (so they are ready on approval),
+ * which means their slots exist — discovery must not show them. Booking
+ * already refuses unverified doctors; this keeps patients from reaching that
+ * refusal at the very end of the flow.
+ */
+const isDiscoverable = async (doctorId) =>
+  !!(await Doctor.exists({ _id: doctorId, verificationStatus: 'verified', isActive: true }));
 
 // ============================================================================
 // WHY THERE ARE TWO DISCOVERY ENDPOINTS BESIDES THE PER-DATE ONE.
@@ -33,6 +44,10 @@ const getAvailabilitySummary = async (req, res, next) => {
     // Clamp rather than reject: an over-long range is a client bug, not a
     // reason to give the patient an error instead of availability.
     if (toKey > maxKey) toKey = maxKey;
+
+    if (!(await isDiscoverable(req.params.doctorId))) {
+      return res.json({ success: true, data: { from: fromKey, to: toKey, days: [], totalDays: 0 } });
+    }
 
     const days = await slotService.getAvailabilitySummary(req.params.doctorId, {
       fromUtc: localToUtc(fromKey, '00:00', tz),
@@ -67,6 +82,10 @@ const getNextAvailable = async (req, res, next) => {
   try {
     const tz = DEFAULT_TIMEZONE;
     const toKey = addDays(todayKey(tz), BROWSE_DAYS, tz);
+
+    if (!(await isDiscoverable(req.params.doctorId))) {
+      return res.json({ success: true, data: null });
+    }
 
     const next = await slotService.getNextAvailable(req.params.doctorId, {
       toUtc: localToUtc(addDays(toKey, 1, tz), '00:00', tz),
@@ -105,6 +124,10 @@ const getDoctorSlots = async (req, res, next) => {
         success: false,
         error: 'date must be in YYYY-MM-DD format',
       });
+    }
+
+    if (!(await isDiscoverable(req.params.doctorId))) {
+      return res.json({ success: true, date, totalSlots: 0, data: [] });
     }
 
     // Now an array of { clinic, slots } — grouped by WHERE, not by time of

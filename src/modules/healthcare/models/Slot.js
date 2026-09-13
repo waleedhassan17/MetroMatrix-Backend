@@ -56,6 +56,15 @@ const slotSchema = new mongoose.Schema(
       type: String,
       default: 'Asia/Karachi',
     },
+    // The calendar day in `clinicTimezone`, as `YYYY-MM-DD`. `date` cannot
+    // answer "which day" without knowing how it was encoded (UTC midnight for
+    // hand-made slots, clinic midnight for generated ones), which is how a
+    // doctor's "15th" came back holding the 16th's slots. Queries pair this
+    // with a padded startUtc range — see utils/time.paddedRange.
+    dateKey: {
+      type: String,
+      default: null,
+    },
 
     type: {
       type: String,
@@ -76,6 +85,17 @@ const slotSchema = new mongoose.Schema(
       type: String,
       enum: ['available', 'booked', 'blocked', 'held'],
       default: 'available',
+    },
+    // WHY a slot is blocked, so undoing one reason cannot undo another:
+    // removing time off must not reopen a slot the doctor closed by hand, and
+    // unblocking a day must not reopen slots that fall inside leave.
+    //   doctor    — closed by the doctor (a slot or a whole day)
+    //   time_off  — inside a time-off range
+    //   template  — no longer in the weekly hours, kept only for its booking
+    blockedBy: {
+      type: String,
+      enum: ['doctor', 'time_off', 'template', null],
+      default: null,
     },
     // Where the slot came from. The nightly horizon job re-creates any
     // TEMPLATE slot that is missing, so deleting one would only last until the
@@ -153,16 +173,23 @@ slotSchema.index({ heldBy: 1 });
 // PARTIAL, on purpose. `maxPatients > 1` slots legitimately allow several
 // bookings; a blanket unique index would forbid group consultations outright.
 // Also skips docs without startUtc so pre-backfill rows do not collide.
+//
+// `type` IS PART OF THE KEY. The first version was {doctorId, clinicId,
+// startUtc}, so "video 10:00 from Gulberg" and "in-clinic 10:00 at Gulberg" —
+// the same doctor offering both ways to be seen, which the booking overlap
+// lock handles — collided, and the generator swallowed the E11000 and silently
+// dropped the in-clinic slot. The old index must be dropped by
+// scripts/healthcare-sync-indexes.js; Mongoose never drops indexes itself.
 // ---------------------------------------------------------------------------
 slotSchema.index(
-  { doctorId: 1, clinicId: 1, startUtc: 1 },
+  { doctorId: 1, type: 1, clinicId: 1, startUtc: 1 },
   {
     unique: true,
     partialFilterExpression: {
       maxPatients: { $eq: 1 },
       startUtc: { $type: 'date' },
     },
-    name: 'uniq_single_patient_slot',
+    name: 'uniq_single_patient_slot_v2',
   }
 );
 

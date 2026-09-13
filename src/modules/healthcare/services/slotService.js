@@ -555,10 +555,16 @@ const MAX_PATIENTS_CAP = 10;
 const DATE_KEY = /^\d{4}-\d{2}-\d{2}$/;
 const SLOT_TYPES = ['video', 'in-clinic'];
 
-/** The doctor's clinics, keyed by id, for ownership checks and timezones. */
+/**
+ * The doctor's clinics, keyed by id, for ownership checks and timezones.
+ * Deleted (inactive) clinics are excluded: a doctor must not be able to publish
+ * new hours at a clinic they closed.
+ */
 const clinicsFor = async (doctorId) => {
   const Clinic = require('../models/Clinic');
-  const clinics = await Clinic.find({ doctorId }).select('_id name address timezone').lean();
+  const clinics = await Clinic.find({ doctorId, isActive: { $ne: false } })
+    .select('_id name address timezone isActive')
+    .lean();
   return new Map(clinics.map((c) => [String(c._id), c]));
 };
 
@@ -566,8 +572,11 @@ const clinicsFor = async (doctorId) => {
  * Turn one requested slot into one or two slot documents ("both" → a video slot
  * and an in-clinic slot at the same time; booking either holds the other).
  * Throws SlotInputError naming exactly what is wrong.
+ *
+ * @param {string} [defaultTz] zone for a video slot with no clinic — the
+ *   doctor's, so "19:00" means the same moment the doctor sees on their calendar.
  */
-const buildSlotDocs = (doctorId, input, clinicsById, label) => {
+const buildSlotDocs = (doctorId, input, clinicsById, label, defaultTz = DEFAULT_TIMEZONE) => {
   const where = label ? `${label}: ` : '';
   const date = String((input && input.date) || '').slice(0, 10);
   const startTime = input && input.startTime;
@@ -604,7 +613,7 @@ const buildSlotDocs = (doctorId, input, clinicsById, label) => {
 
   // A video consult has no location; it still takes the clinic's zone when one
   // is given, so "10:00" means the same moment for both halves of a "both".
-  const tz = safeZone((clinic && clinic.timezone) || DEFAULT_TIMEZONE);
+  const tz = safeZone((clinic && clinic.timezone) || defaultTz);
   const startUtc = localToUtc(date, startTime, tz);
   const endUtc = localToUtc(date, endTime, tz);
   if (!startUtc || !endUtc) throw new SlotInputError(`${where}that date or time does not exist`);
@@ -616,6 +625,7 @@ const buildSlotDocs = (doctorId, input, clinicsById, label) => {
     doctorId,
     clinicId: type === 'in-clinic' ? clinic._id : null,
     date: localToUtc(date, '00:00', tz),
+    dateKey: date,
     startTime,
     endTime,
     startUtc,
@@ -650,7 +660,7 @@ const sameOfferingClash = (doctorId, doc, excludeId = null) =>
 const describe = (d) => `${d.type === 'video' ? 'video' : 'in-clinic'} ${d.startTime}–${d.endTime}`;
 
 /** Create slots from a doctor's request. Validates everything before writing anything. */
-const createDoctorSlots = async (doctorId, inputs) => {
+const createDoctorSlots = async (doctorId, inputs, { defaultTz = DEFAULT_TIMEZONE } = {}) => {
   if (!Array.isArray(inputs) || inputs.length === 0) {
     throw new SlotInputError('slots array is required and must not be empty');
   }
@@ -658,7 +668,7 @@ const createDoctorSlots = async (doctorId, inputs) => {
 
   const clinicsById = await clinicsFor(doctorId);
   const docs = inputs.flatMap((input, i) =>
-    buildSlotDocs(doctorId, input, clinicsById, inputs.length > 1 ? `Slot ${i + 1}` : '')
+    buildSlotDocs(doctorId, input, clinicsById, inputs.length > 1 ? `Slot ${i + 1}` : '', defaultTz)
   );
 
   // Clashes inside the request itself, then against what is already stored.
@@ -719,20 +729,35 @@ const updateDoctorSlot = async (slotId, doctorId, body = {}) => {
   );
 
   if (timingChanged) {
+    // A weekly-hours slot cannot be moved: the nightly horizon job re-creates
+    // the template's original time, so a moved slot came back as a duplicate
+    // offering. Close it and add one-off hours instead.
+    if (slot.source === 'template') {
+      throw new SlotInputError(
+        'This time comes from your weekly hours. Close it and add one-off hours instead of moving it.',
+        409
+      );
+    }
     if (body.type === 'both') {
       throw new SlotInputError('An existing slot has one type; add a second slot for the other');
     }
     const clinicsById = await clinicsFor(doctorId);
     const tz = slot.clinicTimezone || DEFAULT_TIMEZONE;
+    // Legacy slots predate startUtc; calling a method on null was a 500.
+    const currentDay =
+      slot.dateKey ||
+      (slot.startUtc
+        ? slot.startUtc.toLocaleDateString('en-CA', { timeZone: tz })
+        : require('./appointmentTime').inferSlotInstants(slot, tz).dateKey);
     const merged = {
-      date: body.date !== undefined ? body.date : slot.startUtc.toLocaleDateString('en-CA', { timeZone: tz }),
+      date: body.date !== undefined ? body.date : currentDay,
       startTime: body.startTime !== undefined ? body.startTime : slot.startTime,
       endTime: body.endTime !== undefined ? body.endTime : slot.endTime,
       type: body.type !== undefined ? body.type : slot.type,
       clinicId: body.clinicId !== undefined ? body.clinicId : slot.clinicId,
       maxPatients: body.maxPatients !== undefined ? body.maxPatients : slot.maxPatients,
     };
-    const [doc] = buildSlotDocs(doctorId, merged, clinicsById);
+    const [doc] = buildSlotDocs(doctorId, merged, clinicsById, '', tz);
 
     const clash = await sameOfferingClash(doctorId, doc, slot._id);
     if (clash) {
@@ -742,6 +767,7 @@ const updateDoctorSlot = async (slotId, doctorId, body = {}) => {
     Object.assign(slot, {
       clinicId: doc.clinicId,
       date: doc.date,
+      dateKey: doc.dateKey,
       startTime: doc.startTime,
       endTime: doc.endTime,
       startUtc: doc.startUtc,
@@ -752,7 +778,11 @@ const updateDoctorSlot = async (slotId, doctorId, body = {}) => {
     });
   }
 
-  if (body.status !== undefined) slot.status = body.status;
+  if (body.status !== undefined) {
+    slot.status = body.status;
+    // Record who closed it, so lifting time off never reopens it.
+    slot.blockedBy = body.status === 'blocked' ? 'doctor' : null;
+  }
   await slot.save();
 
   // Reopened, or moved onto a time the doctor is already booked for.
@@ -778,7 +808,7 @@ const deleteDoctorSlot = async (slotId, doctorId) => {
   if (slot.source === 'template') {
     const res = await Slot.updateOne(
       { _id: slotId, doctorId, bookedCount: 0 },
-      { $set: { status: 'blocked', heldBy: null } }
+      { $set: { status: 'blocked', blockedBy: 'doctor', heldBy: null } }
     );
     if (!res.matchedCount) {
       throw new SlotInputError('This slot was just booked and can no longer be removed', 409);
@@ -888,6 +918,7 @@ module.exports = {
   deleteDoctorSlot,
   getDoctorSlotsWithState,
   holdIfEngaged,
+  holdOverlapping,
   releaseHolds,
   BOOKING_LEAD_MINUTES,
   bookableFrom,

@@ -262,14 +262,74 @@ const rescheduleAppointment = async (appointmentId, patientId, newSlotId, sessio
     };
   }
 
-  // Update appointment
+  // Update appointment — including the copied time, or every doctor date
+  // query would keep filing it under the old day.
   appointment.slotId = newSlot._id;
+  Object.assign(appointment, require('./appointmentTime').appointmentTimeFields(newSlot));
   if (newSlot.clinicId) {
     appointment.clinicId = newSlot.clinicId;
   }
   await appointment.save({ session });
 
   return { appointment, newSlot };
+};
+
+// ─── Doctor: cancel (refund, release, notify) ───────
+/**
+ * Cancel an appointment on the doctor's side.
+ *
+ * The status flip is CONDITIONAL. It used to be read, check, save — so a
+ * double tap (or time off cancelling an appointment the doctor was declining
+ * at the same moment) passed the check twice, refunded twice and released the
+ * slot twice. Now the second caller finds nothing active and stops.
+ *
+ * @returns {Promise<{appointment, refunded:number} | {error:string, status:number}>}
+ */
+const cancelByDoctor = async (appointmentId, doctorId, reason) => {
+  const appointment = await Appointment.findOneAndUpdate(
+    { _id: appointmentId, doctorId, status: { $in: ['pending', 'confirmed'] } },
+    { $set: { status: 'cancelled', cancellationReason: reason, cancelledBy: 'doctor' } },
+    { new: true }
+  );
+
+  if (!appointment) {
+    const exists = await Appointment.exists({ _id: appointmentId, doctorId });
+    return exists
+      ? { error: 'Can only cancel pending or confirmed appointments', status: 400 }
+      : { error: 'Appointment not found', status: 404 };
+  }
+
+  // Doctor-initiated cancellation always refunds the patient in full.
+  let refunded = 0;
+  try {
+    refunded = await require('./paymentService').refundAppointment(appointment, {
+      cancelledBy: 'doctor',
+      reason: `Refund: appointment cancelled by doctor (${reason})`,
+    });
+  } catch (err) {
+    console.error('Refund failed:', err.message);
+  }
+
+  // Atomic, keeps a doctor-blocked slot blocked, and releases the overlapping
+  // slots this booking was holding.
+  if (appointment.slotId) await slotService.releaseSlot(appointment.slotId);
+
+  try {
+    await require('./notificationService').createNotification({
+      userId: appointment.patientId,
+      type: 'appointment_cancelled',
+      title: 'Appointment Cancelled',
+      message:
+        refunded > 0
+          ? `Your appointment has been cancelled by the doctor and PKR ${refunded} was refunded to your wallet. Reason: ${reason}`
+          : `Your appointment has been cancelled by the doctor. Reason: ${reason}`,
+      data: { appointmentId: appointment._id },
+    });
+  } catch (err) {
+    console.error('Cancellation notification failed:', err.message);
+  }
+
+  return { appointment, refunded };
 };
 
 // ─── Doctor: get appointments ───────────────────────
@@ -325,6 +385,7 @@ module.exports = {
   getPatientAppointments,
   getAppointmentDetail,
   cancelAppointment,
+  cancelByDoctor,
   rescheduleAppointment,
   getDoctorAppointments,
   createAppointment,

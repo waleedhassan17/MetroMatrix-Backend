@@ -6,9 +6,10 @@ const {
   refreshAllDoctors,
   ensureHorizon,
   availabilityRunway,
+  GenerationLimitError,
   HORIZON_DAYS,
 } = require('../services/slotGenerationService');
-const { DEFAULT_TIMEZONE } = require('../../../utils/time');
+const { resolveDoctorTimezone } = require('../services/availabilityService');
 
 // ============================================================================
 // The production trigger for the rolling slot horizon.
@@ -67,16 +68,20 @@ const refreshHorizon = asyncHandler(async (req, res) => {
  * rather than something inferred client-side.
  */
 const getAvailabilityStatus = asyncHandler(async (req, res) => {
-  const doctor = await Doctor.findOne({ providerId: req.user._id }).select(
-    '_id weeklyAvailability'
-  );
+  const doctor =
+    req.doctor ||
+    (await Doctor.findOne({ providerId: req.user._id }).select('_id weeklyAvailability timezone').lean());
   if (!doctor) {
     res.status(404);
     throw new Error('Doctor profile not found');
   }
 
-  const clinics = await Clinic.find({ doctorId: doctor._id }).select('timezone').lean();
-  const tz = clinics[0]?.timezone || DEFAULT_TIMEZONE;
+  // Active clinics only: a doctor whose only clinic was deleted has nowhere to
+  // hold in-clinic hours, and the banner should say so.
+  const clinics = await Clinic.find({ doctorId: doctor._id, isActive: { $ne: false } })
+    .select('timezone isActive')
+    .lean();
+  const tz = resolveDoctorTimezone(doctor, clinics);
 
   const hasTemplate = (doctor.weeklyAvailability || []).some(
     (d) =>
@@ -113,12 +118,20 @@ const getAvailabilityStatus = asyncHandler(async (req, res) => {
  * Idempotent; safe to press twice.
  */
 const refreshMyHorizon = asyncHandler(async (req, res) => {
-  const doctor = await Doctor.findOne({ providerId: req.user._id });
+  const doctor = req.doctor || (await Doctor.findOne({ providerId: req.user._id }).lean());
   if (!doctor) {
     res.status(404);
     throw new Error('Doctor profile not found');
   }
-  const result = await ensureHorizon(doctor, req.body?.slotDuration);
+  // The doctor's own slot length. This passed `req.body.slotDuration` straight
+  // through unvalidated, so one request could ask for 1-minute slots.
+  let result;
+  try {
+    result = await ensureHorizon(doctor);
+  } catch (err) {
+    if (err instanceof GenerationLimitError) res.status(400);
+    throw err;
+  }
   res.json({ success: true, data: { ...result, horizonDays: HORIZON_DAYS } });
 });
 

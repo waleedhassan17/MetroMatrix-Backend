@@ -130,6 +130,89 @@ function toMinutes(hhmm) {
   return h * 60 + m;
 }
 
+/** `HH:mm` for minutes since midnight (0–1439). */
+function fromMinutes(minutes) {
+  return `${String(Math.floor(minutes / 60)).padStart(2, '0')}:${String(minutes % 60).padStart(2, '0')}`;
+}
+
+/** A strict `YYYY-MM-DD` that is a real calendar day ('2026-02-30' is not). */
+function isDateKey(value) {
+  if (typeof value !== 'string' || !/^\d{4}-\d{2}-\d{2}$/.test(value)) return false;
+  return DateTime.fromISO(value, { zone: 'utc' }).isValid;
+}
+
+/**
+ * The half-open UTC window `[from, to)` that is calendar day `dateKey` in `tz`.
+ *
+ * This replaces `new Date(date).setHours(0,0,0,0)`, which asks the SERVER what
+ * midnight is. On Vercel that is UTC, while a Karachi clinic's day starts at
+ * 19:00Z the evening before — so "the 15th" returned the 16th's slots.
+ */
+function dayWindow(dateKey, tz = DEFAULT_TIMEZONE) {
+  if (!isDateKey(dateKey)) return null;
+  const start = DateTime.fromISO(dateKey, { zone: safeZone(tz) }).startOf('day');
+  return {
+    from: start.toUTC().toJSDate(),
+    to: start.plus({ days: 1 }).toUTC().toJSDate(),
+  };
+}
+
+// Every UTC offset in use lies within ±14h.
+const RANGE_PAD_MS = 14 * 60 * 60 * 1000;
+
+/**
+ * A Mongo filter fragment for "documents on local days fromKey..toKey".
+ *
+ * Documents in one query can belong to clinics in different zones, so no single
+ * UTC window is exact. The padded `startUtc` bound is what lets the
+ * `{doctorId, startUtc}` index do the work; the `dateKey` bound (the day in the
+ * document's OWN zone) is what makes the result exact. `tz` only widens the
+ * pad around the caller's days. Returns null for invalid keys.
+ */
+function paddedRange(fromKey, toKey = fromKey, tz = DEFAULT_TIMEZONE) {
+  const first = dayWindow(fromKey, tz);
+  const last = dayWindow(toKey, tz);
+  if (!first || !last || toKey < fromKey) return null;
+  return {
+    startUtc: {
+      $gte: new Date(first.from.getTime() - RANGE_PAD_MS),
+      $lt: new Date(last.to.getTime() + RANGE_PAD_MS),
+    },
+    dateKey: { $gte: fromKey, $lte: toKey },
+  };
+}
+
+/**
+ * First day of the week containing `dateKey`.
+ * @param {number} weekStartsOn 0 = Sunday, 1 = Monday (the app's calendars).
+ */
+function startOfWeekKey(dateKey, tz = DEFAULT_TIMEZONE, weekStartsOn = 1) {
+  if (!isDateKey(dateKey)) return null;
+  const dt = DateTime.fromISO(dateKey, { zone: safeZone(tz) });
+  // Luxon: 1 = Monday … 7 = Sunday. `% 7` maps Sunday to 0.
+  const back = ((dt.weekday % 7) - weekStartsOn + 7) % 7;
+  return dt.minus({ days: back }).toFormat('yyyy-MM-dd');
+}
+
+/** First day of the month containing `dateKey`. */
+function startOfMonthKey(dateKey) {
+  return isDateKey(dateKey) ? `${dateKey.slice(0, 8)}01` : null;
+}
+
+/** `dateKey` shifted by whole months (clamped to the month's length). */
+function addMonthsKey(dateKey, months, tz = DEFAULT_TIMEZONE) {
+  if (!isDateKey(dateKey)) return null;
+  return DateTime.fromISO(dateKey, { zone: safeZone(tz) }).plus({ months }).toFormat('yyyy-MM-dd');
+}
+
+/** Whole days from `fromKey` to `toKey` (negative when `toKey` is earlier). */
+function daysBetween(fromKey, toKey) {
+  if (!isDateKey(fromKey) || !isDateKey(toKey)) return null;
+  const a = DateTime.fromISO(fromKey, { zone: 'utc' });
+  const b = DateTime.fromISO(toKey, { zone: 'utc' });
+  return Math.round(b.diff(a, 'days').days);
+}
+
 module.exports = {
   DEFAULT_TIMEZONE,
   HHMM,
@@ -144,4 +227,12 @@ module.exports = {
   eachDay,
   weekdayName,
   toMinutes,
+  fromMinutes,
+  isDateKey,
+  dayWindow,
+  paddedRange,
+  startOfWeekKey,
+  startOfMonthKey,
+  addMonthsKey,
+  daysBetween,
 };

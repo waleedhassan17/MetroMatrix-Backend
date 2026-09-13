@@ -338,6 +338,18 @@ const bookAppointment = async (req, res, next) => {
       return res.status(404).json({ success: false, error: 'Doctor not found or not verified' });
     }
 
+    // The doctor app's "Video consultations" switch is now stored; honour it
+    // at the moment of booking, not only when generating slots.
+    if (type === 'video' && doctor.videoConsultation === false) {
+      await session.abortTransaction();
+      session.endSession();
+      return res.status(409).json({
+        success: false,
+        error: 'VIDEO_UNAVAILABLE',
+        message: 'This doctor is not taking video consultations right now.',
+      });
+    }
+
     // 2. CLAIM the slot — atomically, before anything else is written.
     //
     // This used to be a read (validateSlotForBooking), with a separate
@@ -360,6 +372,18 @@ const bookAppointment = async (req, res, next) => {
         success: false,
         error: 'SLOT_TAKEN',
         message: 'That slot was just booked. Please choose another time.',
+      });
+    }
+
+    // A video appointment on an in-clinic slot (or the reverse) books a
+    // consultation the doctor never offered. Rolling back releases the claim.
+    if (type && slot.type !== type) {
+      await session.abortTransaction();
+      session.endSession();
+      return res.status(409).json({
+        success: false,
+        error: 'SLOT_TYPE_MISMATCH',
+        message: `That time is offered as ${slot.type === 'video' ? 'a video consultation' : 'an in-clinic visit'}.`,
       });
     }
 
@@ -395,7 +419,11 @@ const bookAppointment = async (req, res, next) => {
           // value is now only a fallback for slots that carry no clinic.
           clinicId: slot.clinicId || clinicId || null,
           type,
-          status: 'pending',
+          // When it happens, copied from the slot so every doctor date query
+          // can use an index instead of joining slots.
+          ...require('../services/appointmentTime').appointmentTimeFields(slot),
+          // A doctor who turned on auto-confirm does not review requests.
+          status: doctor.autoConfirm ? 'confirmed' : 'pending',
           patientInfo: {
             name: patientInfo.name,
             phone: patientInfo.phone,
@@ -445,7 +473,9 @@ const bookAppointment = async (req, res, next) => {
       await notificationService.createNotification({
         userId: req.user._id,
         title: 'Appointment Booked',
-        message: 'Your appointment request has been received. You will be notified when the doctor confirms.',
+        message: doctor.autoConfirm
+          ? 'Your appointment is confirmed.'
+          : 'Your appointment request has been received. You will be notified when the doctor confirms.',
         type: 'appointment_booked',
         data: { appointmentId: appointment._id },
       });

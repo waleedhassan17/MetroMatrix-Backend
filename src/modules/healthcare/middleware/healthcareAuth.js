@@ -51,6 +51,38 @@ const requireDoctor = async (req, res, next) => {
   }
 };
 
+/** The doctor fields handlers read. Kept narrow: the profile is not needed per request. */
+const DOCTOR_CONTEXT_FIELDS =
+  '_id providerId verificationStatus isActive isAvailable unavailableFrom unavailableTo rating totalReviews ' +
+  'consultationFee videoConsultationFee timezone slotDuration bufferMinutes ' +
+  'videoConsultation autoConfirm availabilityVersion weeklyAvailability timeOff absentDates';
+
+/**
+ * attachDoctor - load the signed-in provider's Doctor profile ONCE per request
+ * as `req.doctor` (lean). Must run after protect + providerOnly.
+ *
+ * Every /doctors/me handler used to open with its own
+ * `Doctor.findOne({ providerId })` — fully hydrated, and repeated again by
+ * requireTreatingDoctor on the routes that use both. Handlers that need to
+ * write the doctor use `Doctor.updateOne` with `req.doctor._id`.
+ */
+const attachDoctor = (select = DOCTOR_CONTEXT_FIELDS) => async (req, res, next) => {
+  try {
+    if (req.doctor) return next();
+    const Doctor = require('../models/Doctor');
+    const doctor = await Doctor.findOne({ providerId: req.user._id }).select(select).lean();
+    if (!doctor) {
+      return res
+        .status(404)
+        .json({ success: false, error: 'DOCTOR_NOT_FOUND', message: 'Doctor profile not found' });
+    }
+    req.doctor = doctor;
+    next();
+  } catch (error) {
+    next(error);
+  }
+};
+
 /**
  * requireAdmin - Ensures the authenticated account is an Admin.
  * Reuses the same detection the main authMiddleware performs (protect sets
@@ -138,7 +170,8 @@ const requireTreatingDoctor = async (req, res, next) => {
   try {
     const Doctor = require('../models/Doctor');
     const Appointment = require('../models/Appointment');
-    const doctor = await Doctor.findOne({ providerId: req.user._id });
+    // Reuse the profile attachDoctor already loaded for this request.
+    const doctor = req.doctor || (await Doctor.findOne({ providerId: req.user._id }));
     if (!doctor) {
       return res.status(403).json({ success: false, error: 'Doctor profile required' });
     }
@@ -164,6 +197,8 @@ const requireTreatingDoctor = async (req, res, next) => {
 };
 
 module.exports = {
+  DOCTOR_CONTEXT_FIELDS,
+  attachDoctor,
   requireUser,
   requireDoctor,
   requireAdmin,

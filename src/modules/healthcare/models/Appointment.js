@@ -109,6 +109,19 @@ const appointmentSchema = new mongoose.Schema(
       type: Date,
       default: null,
     },
+
+    // ── When it happens, copied from the slot (see services/appointmentTime) ─
+    // The date lived only on Slot, so every "today" / "this week" query loaded
+    // the doctor's entire history, joined slots and filtered in JavaScript.
+    // Copied at booking and re-copied on reschedule so those queries use an
+    // index — and so the appointment keeps its time if the slot is removed.
+    startUtc: { type: Date, default: null },
+    endUtc: { type: Date, default: null },
+    // Calendar day in `timezone`, `YYYY-MM-DD`.
+    dateKey: { type: String, default: null },
+    startTime: { type: String, default: '' },
+    endTime: { type: String, default: '' },
+    timezone: { type: String, default: null },
   },
   {
     timestamps: true,
@@ -134,5 +147,27 @@ appointmentSchema.index({ type: 1 });
 appointmentSchema.index({ patientId: 1, status: 1 });
 appointmentSchema.index({ doctorId: 1, status: 1 });
 appointmentSchema.index({ createdAt: -1 });
+// Every doctor date query: today's list, the week, the dashboard, earnings.
+appointmentSchema.index({ doctorId: 1, startUtc: 1 });
+// The doctor's transaction ledger: completed, newest first.
+appointmentSchema.index({ doctorId: 1, status: 1, completedAt: -1 });
+
+// Safety net for any write path that sets or changes slotId without copying
+// the time (a script, a future endpoint). The booking and reschedule paths set
+// the fields explicitly; this only fills what is missing.
+appointmentSchema.pre('save', async function copyTimeFromSlot() {
+  if (!this.slotId) return;
+  if (this.startUtc && !this.isModified('slotId')) return;
+  const Slot = require('./Slot');
+  const query = Slot.findById(this.slotId)
+    .select('date dateKey startTime endTime startUtc endUtc clinicTimezone')
+    .lean();
+  const session = typeof this.$session === 'function' ? this.$session() : null;
+  if (session) query.session(session);
+  const slot = await query;
+  if (!slot) return;
+  const { appointmentTimeFields } = require('../services/appointmentTime');
+  Object.assign(this, appointmentTimeFields(slot));
+});
 
 module.exports = mongoose.model('Appointment', appointmentSchema);
