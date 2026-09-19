@@ -8,6 +8,8 @@ const {
   todayKey,
   addDays,
   toMinutes,
+  paddedRange,
+  isDateKey,
 } = require('../../../utils/time');
 
 /**
@@ -42,36 +44,67 @@ const getTimeBucket = (startTime) => {
 };
 
 /**
- * Get available slots for a doctor on a specific date, grouped by time of day.
+ * Get available slots for a doctor on a specific date, grouped by clinic.
  * @param {string} doctorId
- * @param {Object} filters - { date (YYYY-MM-DD, required), type, clinicId }
+ * @param {Object} filters - { date (YYYY-MM-DD, required), type, clinicId, tz }
  */
 const getGroupedSlots = async (doctorId, filters = {}) => {
-  const { date, type, clinicId } = filters;
+  const { date, type, clinicId, tz } = filters;
+  const zone = safeZone(tz || DEFAULT_TIMEZONE);
 
-  const startOfDay = new Date(date);
-  startOfDay.setHours(0, 0, 0, 0);
-  const endOfDay = new Date(date);
-  endOfDay.setHours(23, 59, 59, 999);
+  // The route validates the FORMAT, which '2026-02-30' satisfies without being
+  // a day. No such day has slots, and a half-built window would silently match
+  // rows with a null instant.
+  if (!isDateKey(date)) return [];
+
+  // --------------------------------------------------------------------
+  // WHICH DAY THIS IS.
+  //
+  // This used to be `new Date(date).setHours(0,0,0,0)` bounding the `date`
+  // field — which asks the SERVER what midnight is. On Vercel that is UTC,
+  // while a Karachi clinic's day starts at 19:00Z the evening before, and
+  // template-generated slots store `date` at CLINIC midnight. The window
+  // therefore missed the day's real slots and could pick up the next day's.
+  //
+  // Patients saw this as a direct contradiction: availability-summary, which
+  // groups startUtc in the clinic's zone, marked a day as bookable in the date
+  // strip, and tapping that day produced "No Slots Available".
+  //
+  // Same shape the doctor-side calendar already uses: `dateKey` for everything
+  // backfilled, the instant window for rows that predate that field.
+  // --------------------------------------------------------------------
+  const legacyDayWindow = {
+    $gte: localToUtc(date, '00:00', zone),
+    $lt: localToUtc(addDays(date, 1, zone), '00:00', zone),
+  };
 
   const query = {
     doctorId: new mongoose.Types.ObjectId(doctorId),
-    date: { $gte: startOfDay, $lte: endOfDay },
     status: 'available',
-    // ------------------------------------------------------------------
-    // ONLY SLOTS THAT ARE STILL IN THE FUTURE.
-    //
-    // There was no time filter of any kind here — the query bounded the DAY
-    // and nothing else. So at 18:00 a patient was still offered this
-    // morning's 09:00 slot, and could book it. Past dates returned their
-    // stale slots in full. This is the single most visible correctness bug
-    // in patient discovery.
-    //
-    // Compared on startUtc, the real instant, not the wall-clock string. The
-    // $or keeps slots that predate the backfill visible rather than making
-    // them vanish; they simply cannot be time-filtered until backfilled.
-    // ------------------------------------------------------------------
-    $or: [{ startUtc: { $gt: bookableFrom() } }, { startUtc: null }],
+    // Both conditions are $or-shaped, and two `$or` keys in one object would
+    // clobber each other — so they are combined explicitly.
+    $and: [
+      {
+        $or: [
+          paddedRange(date, date, zone),
+          { dateKey: null, startUtc: legacyDayWindow },
+        ],
+      },
+      // ------------------------------------------------------------------
+      // ONLY SLOTS THAT ARE STILL IN THE FUTURE.
+      //
+      // There was no time filter of any kind here — the query bounded the DAY
+      // and nothing else. So at 18:00 a patient was still offered this
+      // morning's 09:00 slot, and could book it. Past dates returned their
+      // stale slots in full. This is the single most visible correctness bug
+      // in patient discovery.
+      //
+      // Compared on startUtc, the real instant, not the wall-clock string. The
+      // $or keeps slots that predate the backfill visible rather than making
+      // them vanish; they simply cannot be time-filtered until backfilled.
+      // ------------------------------------------------------------------
+      { $or: [{ startUtc: { $gt: bookableFrom() } }, { startUtc: null }] },
+    ],
   };
 
   if (type) query.type = type;
