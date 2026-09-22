@@ -29,12 +29,12 @@ const {
   APPOINTMENT_LIST_FIELDS,
   DAY_MS,
   MAX_LIST_LIMIT,
-  DASHBOARD_GROUP,
   buildDoctorAppointmentFilter,
+  buildDashboardPipeline,
   buildEarningsPipeline,
   computeDashboardWindows,
   ensureAppointmentTimes,
-  pickStats,
+  mergeStats,
   resolveEarningsWindow,
   summarizeByType,
   toAppointmentListItem,
@@ -922,8 +922,7 @@ const getDashboard = asyncHandler(async (req, res) => {
 
   const now = new Date();
   const { todayKey: today, weekStartKey, monthStartKey } = computeDashboardWindows(now, tz);
-  const earliest = weekStartKey < monthStartKey ? weekStartKey : monthStartKey;
-  // Bounds the scan for "next" and "requests" to recent instants.
+  // Bounds the scan for "next appointment" to recent instants.
   const recent = { $gt: new Date(now.getTime() - DAY_MS) };
 
   // One indexed pass over this month (or this week, when it began last month),
@@ -931,16 +930,9 @@ const getDashboard = asyncHandler(async (req, res) => {
   // slots for EVERY appointment the doctor ever had, then filter by date; and
   // "next appointment" sorted on a field that does not exist.
   const [facets, todayRows, next, pendingRequests] = await Promise.all([
-    Appointment.aggregate([
-      { $match: { doctorId: doctor._id, ...paddedRange(earliest, today, tz) } },
-      {
-        $facet: {
-          today: [{ $match: { dateKey: today } }, DASHBOARD_GROUP],
-          thisWeek: [{ $match: { dateKey: { $gte: weekStartKey } } }, DASHBOARD_GROUP],
-          thisMonth: [{ $match: { dateKey: { $gte: monthStartKey } } }, DASHBOARD_GROUP],
-        },
-      },
-    ]),
+    Appointment.aggregate(
+      buildDashboardPipeline(doctor._id, { todayKey: today, weekStartKey, monthStartKey }, tz)
+    ),
     Appointment.find({
       doctorId: doctor._id,
       ...paddedRange(today, today, tz),
@@ -963,12 +955,12 @@ const getDashboard = asyncHandler(async (req, res) => {
       .populate('clinicId', 'name')
       .sort({ startUtc: 1 })
       .lean(),
-    Appointment.countDocuments({
-      doctorId: doctor._id,
-      status: 'pending',
-      startUtc: recent,
-      endUtc: { $gt: now },
-    }),
+    // Every request still waiting on this doctor — which is what the tile says
+    // and what the doctor needs to act on. It used to require the slot to be
+    // in the future (`startUtc: recent, endUtc: { $gt: now }`), so a request
+    // the doctor had left unanswered until its time passed simply stopped
+    // being counted, on the Home tile and on the Schedule tab badge alike.
+    Appointment.countDocuments({ doctorId: doctor._id, status: 'pending' }),
   ]);
 
   const facet = facets[0] || {};
@@ -978,9 +970,9 @@ const getDashboard = asyncHandler(async (req, res) => {
     data: {
       doctorName: req.user.fullName || '',
       timezone: tz,
-      today: pickStats(facet.today),
-      thisWeek: pickStats(facet.thisWeek),
-      thisMonth: pickStats(facet.thisMonth),
+      today: mergeStats(facet.today, facet.todaySettled),
+      thisWeek: mergeStats(facet.thisWeek, facet.weekSettled),
+      thisMonth: mergeStats(facet.thisMonth, facet.monthSettled),
       rating: doctor.rating,
       totalReviews: doctor.totalReviews,
       // Requests still awaiting the doctor's approval, across all days.

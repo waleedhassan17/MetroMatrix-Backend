@@ -20,6 +20,8 @@ const {
   eachDay,
   paddedRange,
   toDateKey,
+  localToUtc,
+  safeZone,
 } = require('../../../utils/time');
 
 // ============================================================================
@@ -125,7 +127,22 @@ const toConflictItem = (a) => ({
 /** Future slots of this doctor on the local days from..to. */
 function futureSlotsFilter(doctorId, from, to, tz, now) {
   const range = paddedRange(from, to, tz);
-  return { doctorId, dateKey: range.dateKey, startUtc: { ...range.startUtc, $gt: now } };
+  const zone = safeZone(tz);
+  // Same fallback the day view and patient discovery already carry: a slot
+  // that predates the dateKey backfill fails the exact bound, so time off
+  // silently skipped it while patients could still book it.
+  const legacy = {
+    $gte: localToUtc(from, '00:00', zone),
+    $lt: localToUtc(addDays(to, 1, zone), '00:00', zone),
+  };
+  return {
+    doctorId,
+    startUtc: { $gt: now },
+    $or: [
+      { dateKey: range.dateKey, startUtc: range.startUtc },
+      { dateKey: null, startUtc: legacy },
+    ],
+  };
 }
 
 /** Active appointments inside a range — what the doctor must decide about. */

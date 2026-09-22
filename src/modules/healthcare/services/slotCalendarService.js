@@ -474,6 +474,18 @@ async function setSlotBlocked(doctor, slotId, body = {}, now = new Date()) {
       if (!res.modifiedCount) {
         throw new CalendarError('SLOT_FULLY_BOOKED', 'This slot is fully booked; cancel the appointment to free it', 409);
       }
+      // ------------------------------------------------------------------
+      // CLOSING A SLOT CLOSES THE INSTANT, NOT ONE DOCUMENT.
+      //
+      // A doctor offering 10:00 both in clinic and over video has TWO slot
+      // documents at that instant — the unique index is keyed on `type`
+      // precisely to allow it. Booking has always taken the twins off the
+      // market (claimSlot → holdOverlapping); closing wrote this single _id
+      // and stopped, so the video twin stayed `available` and patients could
+      // still book an hour the doctor had explicitly closed. In-clinic never
+      // showed the bug because it has no same-type twin.
+      // ------------------------------------------------------------------
+      await slotService.holdOverlapping(current);
     }
   } else if (current.status === 'blocked') {
     if (current.blockedBy === 'time_off') {
@@ -483,6 +495,11 @@ async function setSlotBlocked(doctor, slotId, body = {}, now = new Date()) {
       throw new CalendarError('NOT_IN_WEEKLY_HOURS', 'This time is no longer in your weekly hours.', 409);
     }
     await reopenBlockedSlots({ _id: current._id, doctorId: doctor._id });
+    // Give the twins back, now that this slot is open again. Ordered after the
+    // reopen on purpose: releaseHolds re-checks for an overlapping engagement,
+    // and this slot would still count as one if it were still blocked. A twin
+    // that overlaps some OTHER closure or booking stays held.
+    await slotService.releaseHolds(current);
     await rehold([current._id]);
   }
 
@@ -513,7 +530,24 @@ async function deleteSlot(doctor, slotId) {
 
 function dayFilter(doctor, date, tz, now) {
   const range = paddedRange(date, date, tz);
-  return { doctorId: doctor._id, dateKey: range.dateKey, startUtc: { ...range.startUtc, $gt: now } };
+  const zone = safeZone(tz);
+  // A slot that predates the dateKey backfill has `dateKey: null` and fails the
+  // exact bound, so "Close day" skipped it — while getDayView SHOWS it to the
+  // doctor and getGroupedSlots SERVES it to patients. Both of those already
+  // carry this fallback; this filter did not, so the doctor closed a day and a
+  // patient booked into it anyway.
+  const legacy = {
+    $gte: localToUtc(date, '00:00', zone),
+    $lt: localToUtc(addDays(date, 1, zone), '00:00', zone),
+  };
+  return {
+    doctorId: doctor._id,
+    startUtc: { $gt: now },
+    $or: [
+      { dateKey: range.dateKey, startUtc: range.startUtc },
+      { dateKey: null, startUtc: legacy },
+    ],
+  };
 }
 
 function assertBookableDay(date, tz) {

@@ -369,6 +369,28 @@ const hasOverlappingBooking = async (slot, session = null) => {
 };
 
 /**
+ * True when an overlapping slot of this doctor is ENGAGED — booked, or closed
+ * by the doctor.
+ *
+ * Both mean the same thing for availability: the doctor cannot be seen at that
+ * instant. Booking already held the twins; closing did not, which is how a
+ * patient could still book the VIDEO slot at a time whose in-clinic twin the
+ * doctor had explicitly closed. Used when deciding whether a held slot may be
+ * given back, so two overlapping closures cannot reopen each other's twins.
+ */
+const hasOverlappingEngagement = async (slot, session = null) => {
+  if (!slot.startUtc || !slot.endUtc) return false;
+  const clash = await Slot.findOne({
+    ...overlapFilter(slot.doctorId, slot.startUtc, slot.endUtc, slot._id),
+    $or: [{ bookedCount: { $gt: 0 } }, { status: 'blocked' }],
+  })
+    .select('_id')
+    .session(session)
+    .lean();
+  return clash ? clash._id : false;
+};
+
+/**
  * Take every open, unbooked overlapping slot off the market.
  *
  * Only 'available' slots are touched: a doctor's own 'blocked' slot stays
@@ -389,9 +411,11 @@ const holdOverlapping = async (slot, session = null) => {
 };
 
 /**
- * Give back the slots a booking was holding — but only those nothing else still
- * holds. A slot can overlap two bookings (10:15–10:45 against both 10:00 and
- * 10:30); releasing one of them must re-point it at the other, not re-open it.
+ * Give back the slots a booking or a closure was holding — but only those
+ * nothing else still holds. A slot can overlap two bookings (10:15–10:45
+ * against both 10:00 and 10:30); releasing one of them must re-point it at the
+ * other, not re-open it. The same is true of a second closure, which is why the
+ * re-check is `hasOverlappingEngagement` and not `hasOverlappingBooking`.
  */
 const releaseHolds = async (slot, session = null) => {
   const held = await Slot.find({ heldBy: slot._id, status: 'held' })
@@ -400,7 +424,7 @@ const releaseHolds = async (slot, session = null) => {
     .lean();
 
   for (const h of held) {
-    const stillHeldBy = await hasOverlappingBooking(h, session);
+    const stillHeldBy = await hasOverlappingEngagement(h, session);
     await Slot.updateOne(
       { _id: h._id, status: 'held' },
       stillHeldBy
@@ -833,7 +857,9 @@ const updateDoctorSlot = async (slotId, doctorId, body = {}) => {
  * record the generator de-duplicates against, which is what makes it stick.
  */
 const deleteDoctorSlot = async (slotId, doctorId) => {
-  const slot = await Slot.findOne({ _id: slotId, doctorId }).select('_id bookedCount source status').lean();
+  const slot = await Slot.findOne({ _id: slotId, doctorId })
+    .select('_id doctorId bookedCount source status startUtc endUtc')
+    .lean();
   if (!slot) throw new SlotInputError('Slot not found', 404);
   if (slot.bookedCount > 0) {
     throw new SlotInputError('This slot has a booking; cancel the appointment first', 409);
@@ -846,6 +872,10 @@ const deleteDoctorSlot = async (slotId, doctorId) => {
     if (!res.matchedCount) {
       throw new SlotInputError('This slot was just booked and can no longer be removed', 409);
     }
+    // Closing this instant closes it for every consultation type — see
+    // setSlotBlocked. Without this the video twin of a closed in-clinic slot
+    // stayed bookable.
+    await holdOverlapping(slot);
     return 'closed';
   }
   // Conditional on the count, so a patient booking it this instant still wins.
@@ -952,6 +982,7 @@ module.exports = {
   getDoctorSlotsWithState,
   holdIfEngaged,
   holdOverlapping,
+  hasOverlappingEngagement,
   releaseHolds,
   BOOKING_LEAD_MINUTES,
   bookableFrom,

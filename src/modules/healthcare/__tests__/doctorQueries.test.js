@@ -3,8 +3,10 @@
  */
 const {
   buildDoctorAppointmentFilter,
+  buildDashboardPipeline,
   buildEarningsPipeline,
   computeDashboardWindows,
+  mergeStats,
   pickStats,
   resolveEarningsWindow,
   summarizeByType,
@@ -129,12 +131,98 @@ describe('resolveEarningsWindow', () => {
   });
 });
 
+describe('dashboard pipeline', () => {
+  const SETTLED = { $ifNull: ['$completedAt', '$startUtc'] };
+  const windows = { todayKey: '2026-09-17', weekStartKey: '2026-09-14', monthStartKey: '2026-09-01' };
+
+  it('admits appointments settled in the window even when scheduled before it', () => {
+    const [match] = buildDashboardPipeline('doc1', windows, tz);
+    const [scheduled, settled] = match.$match.$or;
+
+    // The original bound — still there, so "Today" keeps counting what is
+    // booked for today.
+    expect(scheduled.dateKey).toEqual({ $gte: '2026-09-01', $lte: '2026-09-17' });
+    // ...plus anything completed inside the window, however long ago it was
+    // booked. Without this an appointment from July completed today never
+    // entered the pipeline and "Seen" read 0 for a day's work.
+    expect(settled.status).toBe('completed');
+    expect(settled.$expr.$and[0].$gte[0]).toEqual(SETTLED);
+  });
+
+  it('counts Seen and earnings on settlement, everything else on the scheduled day', () => {
+    const [, facet] = buildDashboardPipeline('doc1', windows, tz);
+
+    expect(facet.$facet.today[0].$match).toEqual({ dateKey: '2026-09-17' });
+    expect(facet.$facet.todaySettled[0].$match.status).toBe('completed');
+    expect(facet.$facet.todaySettled[1].$group).toEqual({
+      _id: null,
+      completed: { $sum: 1 },
+      earnings: { $sum: '$totalAmount' },
+    });
+  });
+
+  it('mergeStats takes completed and earnings from the settled facet', () => {
+    const scheduled = [{ _id: null, appointments: 4, completed: 1, cancelled: 1, earnings: 500 }];
+    const settled = [{ _id: null, completed: 3, earnings: 4500 }];
+
+    expect(mergeStats(scheduled, settled)).toMatchObject({
+      appointments: 4,
+      cancelled: 1,
+      completed: 3,
+      earnings: 4500,
+    });
+    // Nothing settled today: those two read zero rather than falling back to
+    // the scheduled-day figures.
+    expect(mergeStats(scheduled, [])).toMatchObject({ appointments: 4, completed: 0, earnings: 0 });
+  });
+});
+
 describe('earnings pipeline', () => {
-  it('matches completed appointments across previous + current and buckets months by dateKey', () => {
+  // A doctor earns on the day they COMPLETE the consultation, not the day it
+  // was booked for. This used to match and bucket on `dateKey`, so an 8 July
+  // appointment completed on 23 September was missing from September and
+  // retroactively changed July's total.
+  const SETTLED = { $ifNull: ['$completedAt', '$startUtc'] };
+
+  it('matches and buckets on the settlement instant, not the scheduled day', () => {
     const w = resolveEarningsWindow({ range: 'thisYear', tz, now });
     const [match, facet] = buildEarningsPipeline('doc1', w, tz);
-    expect(match.$match).toMatchObject({ doctorId: 'doc1', status: 'completed', dateKey: { $gte: '2025-01-01', $lte: '2026-09-17' } });
-    expect(facet.$facet.current[1].$group._id.bucket).toEqual({ $substrBytes: ['$dateKey', 0, 7] });
+
+    expect(match.$match).toMatchObject({ doctorId: 'doc1', status: 'completed' });
+    // No scheduled-day bound anywhere in the match.
+    expect(match.$match.dateKey).toBeUndefined();
+    expect(match.$match.startUtc).toBeUndefined();
+
+    // Bounded by when the work was settled: 2025-01-01 through end of today,
+    // as local days in the doctor's zone (Asia/Karachi is UTC+5).
+    const [lower, upper] = match.$match.$expr.$and;
+    expect(lower.$gte[0]).toEqual(SETTLED);
+    expect(lower.$gte[1].toISOString()).toBe('2024-12-31T19:00:00.000Z');
+    expect(upper.$lt[1].toISOString()).toBe('2026-09-17T19:00:00.000Z');
+
+    expect(facet.$facet.current[1].$group._id.bucket).toEqual({
+      $dateToString: { date: SETTLED, format: '%Y-%m', timezone: tz },
+    });
+  });
+
+  it('splits current from previous on the settlement instant too', () => {
+    const w = resolveEarningsWindow({ range: 'thisMonth', tz, now });
+    const [, facet] = buildEarningsPipeline('doc1', w, tz);
+
+    const currentFrom = facet.$facet.current[0].$match.$expr.$gte[1];
+    const previousBefore = facet.$facet.previous[0].$match.$expr.$lt[1];
+    // The two facets meet exactly at the start of this month; nothing is
+    // counted twice and nothing falls between them.
+    expect(currentFrom.toISOString()).toBe(previousBefore.toISOString());
+    expect(currentFrom.toISOString()).toBe('2026-08-31T19:00:00.000Z');
+  });
+
+  it('buckets by day for a short range', () => {
+    const w = resolveEarningsWindow({ range: 'thisMonth', tz, now });
+    const [, facet] = buildEarningsPipeline('doc1', w, tz);
+    expect(facet.$facet.current[1].$group._id.bucket).toEqual({
+      $dateToString: { date: SETTLED, format: '%Y-%m-%d', timezone: tz },
+    });
   });
 
   it('summarizes totals per consultation type', () => {

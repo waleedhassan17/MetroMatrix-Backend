@@ -212,6 +212,87 @@ function pickStats(rows) {
   return { ...EMPTY_DASHBOARD_STATS, ...stats };
 }
 
+/**
+ * WHEN A DOCTOR EARNED SOMETHING IS WHEN THEY COMPLETED IT.
+ *
+ * `$ifNull: ['$completedAt', '$startUtc']` — the instant the consultation was
+ * settled, falling back to when it was scheduled for rows that never recorded
+ * one (the legacy `PUT /appointments/:id/status` path sets `status` and
+ * nothing else). The transactions ledger on the Earnings screen already dates
+ * itself this way, `a.completedAt || a.startUtc || a.createdAt`; the chart
+ * above it did not, so the two disagreed about the same appointment.
+ */
+const SETTLED_AT = { $ifNull: ['$completedAt', '$startUtc'] };
+
+/** Work SETTLED in a period, however long ago it was booked. */
+const SETTLED_GROUP = {
+  $group: { _id: null, completed: { $sum: 1 }, earnings: { $sum: '$totalAmount' } },
+};
+
+/**
+ * The dashboard's counters for one period.
+ *
+ * `appointments`, `upcoming`, `pending` and `cancelled` are counted on the day
+ * the appointment is SCHEDULED for — that is what those labels mean. But
+ * "Seen" and "earnings" are counted on the day the work was SETTLED, so a
+ * doctor spending today closing out an older backlog sees it. Previously every
+ * figure came off `dateKey`, and that doctor's Home screen read "Seen 0 ·
+ * PKR 0" for a day's work.
+ */
+function mergeStats(scheduledRows, settledRows) {
+  const settled = (settledRows && settledRows[0]) || null;
+  return {
+    ...pickStats(scheduledRows),
+    completed: settled ? settled.completed : 0,
+    earnings: settled ? settled.earnings : 0,
+  };
+}
+
+/** Aggregation for GET /doctors/me/dashboard. */
+function buildDashboardPipeline(doctorId, windows, tz = DEFAULT_TIMEZONE) {
+  const zone = safeZone(tz);
+  const { todayKey: today, weekStartKey, monthStartKey } = windows;
+  const earliest = weekStartKey < monthStartKey ? weekStartKey : monthStartKey;
+
+  const endOfToday = localToUtc(addDays(today, 1, zone), '00:00', zone);
+  const settledSince = (fromKey) => ({
+    $and: [
+      { $gte: [SETTLED_AT, localToUtc(fromKey, '00:00', zone)] },
+      { $lt: [SETTLED_AT, endOfToday] },
+    ],
+  });
+  const settledFacet = (fromKey) => [
+    { $match: { status: 'completed', $expr: settledSince(fromKey) } },
+    SETTLED_GROUP,
+  ];
+
+  return [
+    {
+      $match: {
+        doctorId,
+        // Scheduled in this window OR settled in it. An appointment booked for
+        // July and completed today belongs in today's "Seen" and today's
+        // earnings; bounded by the scheduled day alone it never even entered
+        // the pipeline.
+        $or: [
+          paddedRange(earliest, today, zone),
+          { status: 'completed', $expr: settledSince(earliest) },
+        ],
+      },
+    },
+    {
+      $facet: {
+        today: [{ $match: { dateKey: today } }, DASHBOARD_GROUP],
+        thisWeek: [{ $match: { dateKey: { $gte: weekStartKey } } }, DASHBOARD_GROUP],
+        thisMonth: [{ $match: { dateKey: { $gte: monthStartKey } } }, DASHBOARD_GROUP],
+        todaySettled: settledFacet(today),
+        weekSettled: settledFacet(weekStartKey),
+        monthSettled: settledFacet(monthStartKey),
+      },
+    },
+  ];
+}
+
 const fmtKey = (key, format) => DateTime.fromISO(key, { zone: 'utc' }).toFormat(format);
 
 /**
@@ -314,24 +395,49 @@ function resolveEarningsWindow({ range, period, startDate, endDate, tz = DEFAULT
   };
 }
 
-/** Aggregation for GET /doctors/me/earnings over a resolved window. */
+/** The settlement instant as a calendar day (or month) in the doctor's zone. */
+const settledBucket = (bucket, tz) => ({
+  $dateToString: {
+    date: SETTLED_AT,
+    format: bucket === 'month' ? '%Y-%m' : '%Y-%m-%d',
+    timezone: tz,
+  },
+});
+
+/**
+ * Aggregation for GET /doctors/me/earnings over a resolved window.
+ *
+ * This used to match and bucket on `dateKey` — the day the appointment was
+ * SCHEDULED for. An 8 July appointment completed on 23 September was therefore
+ * excluded from September twice over (the outer window never reached July, and
+ * the inner `dateKey >= fromKey` failed) and instead retroactively changed
+ * July's total: a closed month's earnings moved after the fact, and the money
+ * the doctor actually made that day appeared nowhere.
+ */
 function buildEarningsPipeline(doctorId, window, tz = DEFAULT_TIMEZONE) {
-  const bucketExpr = window.bucket === 'month' ? { $substrBytes: ['$dateKey', 0, 7] } : '$dateKey';
+  const zone = safeZone(tz);
+  // Half-open UTC bounds for [prevFrom .. to] as local days in the doctor's zone.
+  const from = localToUtc(window.prevFromKey, '00:00', zone);
+  const until = localToUtc(addDays(window.toKey, 1, zone), '00:00', zone);
+  const currentFrom = localToUtc(window.fromKey, '00:00', zone);
+
   return [
     {
       $match: {
         doctorId,
         status: 'completed',
-        ...paddedRange(window.prevFromKey, window.toKey, safeZone(tz)),
+        $expr: {
+          $and: [{ $gte: [SETTLED_AT, from] }, { $lt: [SETTLED_AT, until] }],
+        },
       },
     },
     {
       $facet: {
         current: [
-          { $match: { dateKey: { $gte: window.fromKey } } },
+          { $match: { $expr: { $gte: [SETTLED_AT, currentFrom] } } },
           {
             $group: {
-              _id: { bucket: bucketExpr, type: '$type' },
+              _id: { bucket: settledBucket(window.bucket, zone), type: '$type' },
               total: { $sum: '$totalAmount' },
               count: { $sum: 1 },
             },
@@ -347,7 +453,7 @@ function buildEarningsPipeline(doctorId, window, tz = DEFAULT_TIMEZONE) {
           { $sort: { _id: 1 } },
         ],
         previous: [
-          { $match: { dateKey: { $lte: window.prevToKey } } },
+          { $match: { $expr: { $lt: [SETTLED_AT, currentFrom] } } },
           { $group: { _id: null, total: { $sum: '$totalAmount' }, count: { $sum: 1 } } },
         ],
       },
@@ -420,9 +526,11 @@ module.exports = {
   EMPTY_DASHBOARD_STATS,
   QueryInputError,
   buildDoctorAppointmentFilter,
+  buildDashboardPipeline,
   buildEarningsPipeline,
   computeDashboardWindows,
   ensureAppointmentTimes,
+  mergeStats,
   pickStats,
   resolveEarningsWindow,
   summarizeByType,

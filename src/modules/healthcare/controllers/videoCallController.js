@@ -4,6 +4,16 @@ const Slot = require('../models/Slot');
 const { createNotification } = require('../services/notificationService');
 const { emitVideoCallStarted, emitVideoCallEnded } = require('../services/roomEvents');
 
+/**
+ * How long before its start time a consultation can be opened.
+ *
+ * Must stay in step with the app's CONSULT_LEAD_MINUTES (both the patient's
+ * join window and the doctor's call button): if the server and the two clients
+ * disagree, one party is offered a room the other cannot enter.
+ */
+const CONSULT_LEAD_MINUTES = Number(process.env.CONSULT_LEAD_MINUTES || 15);
+const CONSULT_LEAD_MS = CONSULT_LEAD_MINUTES * 60 * 1000;
+
 // Agora token generation
 const generateAgoraToken = (channelName, uid) => {
   try {
@@ -77,6 +87,38 @@ const joinVideoCall = async (req, res, next) => {
       return res
         .status(400)
         .json({ success: false, error: 'This appointment is already complete' });
+    }
+
+    // ------------------------------------------------------------------
+    // ONLY INSIDE THE CONSULTATION'S OWN WINDOW.
+    //
+    // There was no time check of any kind: a doctor could open a call weeks
+    // ahead of the appointment. The patient could not answer it — their join
+    // opens CONSULT_LEAD_MINUTES before — so it could only ring out, and the
+    // appointment was then stranded in 'confirmed', because completing a
+    // future appointment is refused (see completeAppointment). The payout is
+    // settled at completion, so the doctor's fee was stranded with it.
+    //
+    // Compared on the real instants, and only when the appointment carries
+    // them: rows that predate the startUtc backfill stay joinable rather than
+    // becoming unreachable.
+    // ------------------------------------------------------------------
+    const start = appointment.startUtc || (appointment.slotId && appointment.slotId.startUtc);
+    const end = appointment.endUtc || (appointment.slotId && appointment.slotId.endUtc);
+    if (start && end) {
+      const now = Date.now();
+      const opensAt = new Date(start).getTime() - CONSULT_LEAD_MS;
+      if (now < opensAt) {
+        return res.status(400).json({
+          success: false,
+          error: `This consultation opens ${CONSULT_LEAD_MINUTES} minutes before its start time.`,
+        });
+      }
+      if (now > new Date(end).getTime()) {
+        return res
+          .status(400)
+          .json({ success: false, error: 'This consultation time has passed.' });
+      }
     }
 
     if (appointment.status === 'pending' && isDoctor) {
