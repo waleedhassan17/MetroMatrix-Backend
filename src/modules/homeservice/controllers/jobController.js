@@ -182,8 +182,13 @@ const completeJob = asyncHandler(async (req, res) => {
   const { finalAmount, notes, photos } = req.body || {};
   const b = req.booking;
 
+  // 0 means "no amount entered": app builds already in the wild send
+  // finalAmount: 0 when the provider completes without typing one, and that
+  // must keep completing the job at its estimate, not fail it.
   let amount = null;
-  if (finalAmount !== undefined && finalAmount !== null && finalAmount !== '') {
+  const given =
+    finalAmount !== undefined && finalAmount !== null && finalAmount !== '' && Number(finalAmount) !== 0;
+  if (given) {
     try {
       assertPriceEditable(b);
       amount = parseProviderAmount(finalAmount, b, 'Final amount');

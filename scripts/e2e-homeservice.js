@@ -600,7 +600,7 @@ S.S10 = async () => {
   const { bookingId } = await book(c, p, 'S10 money bounds');
   if (!bookingId) throw new Error('booking failed');
   for (const s of ['accept', 'start', 'arrived', 'start-work']) await p.post(`/provider/jobs/${bookingId}/${s}`);
-  for (const bad of [-500, 0, 'abc', 10000000]) {
+  for (const bad of [-500, 'abc', 10000000]) {
     const r = await p.post(`/provider/jobs/${bookingId}/complete`, { finalAmount: bad });
     check(`final amount ${JSON.stringify(bad)} is refused`, r.status === 400, msgOf(r));
   }

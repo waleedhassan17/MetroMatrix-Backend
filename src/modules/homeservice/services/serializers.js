@@ -206,6 +206,13 @@ function toDashboardJob(b) {
     price: j.price,
     status: toDashboardStatus(b.status),
     phone: j.customerPhone,
+    // Where the job is. The dashboard opened jobs with a hardcoded city-centre
+    // position because these were missing, so the job map and "Start
+    // navigation" pointed at central Lahore instead of the customer.
+    city: j.city,
+    coordinates: j.coordinates,
+    specialInstructions: j.specialInstructions,
+    bucket: j.status,
   };
 }
 

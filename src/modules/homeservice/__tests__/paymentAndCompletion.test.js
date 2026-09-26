@@ -223,6 +223,14 @@ describe('POST /provider/jobs/:id/complete — final amount', () => {
     expect(res.body.data.finalAmount).toBe(1500);
   });
 
+  it('finalAmount 0 is "no amount entered" (older app builds send it) — completes at the estimate', async () => {
+    const b = makeBooking({ status: STATUS.IN_PROGRESS, pricing: { estimatedPrice: 500, finalPrice: null } });
+    const { status } = await call(completeJob, providerReq(b, { finalAmount: 0 }));
+    expect(status).toBe(200);
+    expect(b.pricing.finalPrice).toBeNull();
+    expect(transition).toHaveBeenCalled();
+  });
+
   it('the price is locked once the customer has paid (409)', async () => {
     const b = makeBooking({ payment: { status: 'paid', method: 'wallet', requestedAmount: null } });
     const { status } = await call(completeJob, providerReq(b, { finalAmount: 99 }));
