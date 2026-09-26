@@ -93,6 +93,16 @@ async function main() {
   await act(() =>
     Provider.updateMany({ _id: { $in: badLabels.map((p) => p._id) } }, { $set: { profession: 'AC Technician' } })
   );
+  // Bookings copy the label at creation, so older ones still carry it into the
+  // customer's bookings list and the provider's jobs.
+  const badBookingLabels = await Booking.countDocuments({ serviceSubCategory: { $regex: /^ac[ _]repairer$/i } });
+  say(`${badBookingLabels} booking(s) titled "Ac repairer" → "AC Technician"`);
+  await act(() =>
+    Booking.updateMany(
+      { serviceSubCategory: { $regex: /^ac[ _]repairer$/i } },
+      { $set: { serviceSubCategory: 'AC Technician' } }
+    )
+  );
 
   // 3. Test reviews
   head('3. Test reviews');
