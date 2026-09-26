@@ -125,6 +125,13 @@ const walletTransactionSchema = new mongoose.Schema(
     /**
      * Counterparty for transfer-related transactions
      * Points to the other party involved (sender or receiver)
+     *
+     * 'Platform' is the commission ledger (WalletService.PLATFORM_OWNER_ID, a
+     * sentinel id with no document behind it — never populate it). It was
+     * missing here while WalletService.settle() already accepted Platform as
+     * a payee, so every settle() paying the platform directly failed
+     * validation inside its transaction: a home-service provider confirming a
+     * cash payment always got an error.
      */
     counterparty: {
       id: {
@@ -133,7 +140,7 @@ const walletTransactionSchema = new mongoose.Schema(
       },
       type: {
         type: String,
-        enum: ['User', 'Provider'],
+        enum: ['User', 'Provider', 'Platform'],
       },
     },
 
