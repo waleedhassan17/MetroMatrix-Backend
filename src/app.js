@@ -120,10 +120,37 @@ if (rateLimitDisabled) {
   console.log('⚠ Rate limiting DISABLED (DISABLE_RATE_LIMIT=true, non-production only)');
 }
 
+// Signed-in traffic is limited PER ACCOUNT, anonymous traffic per IP.
+//
+// This was 100 requests per 10 minutes per IP for everything. One provider on
+// the "awaiting approval" screen (which checks every 6 seconds) spends exactly
+// that in ten minutes, after which every request of theirs — the approval
+// check included — fails with 429. Mobile carriers in Pakistan also put many
+// subscribers behind one public IP, so strangers were throttling each other.
+// A verified token identifies the account; an invalid or forged one gets no
+// bucket of its own and falls back to the IP.
+const limiterKey = (req) => {
+  if (req.rateLimitKey) return req.rateLimitKey;
+  let key = `ip:${req.ip}`;
+  const header = req.headers.authorization || '';
+  if (header.startsWith('Bearer ')) {
+    try {
+      const decoded = require('jsonwebtoken').verify(header.slice(7), process.env.JWT_SECRET);
+      if (decoded && decoded.id) key = `user:${decoded.id}`;
+    } catch (e) {
+      // expired or forged — rate-limited by address like any anonymous caller
+    }
+  }
+  req.rateLimitKey = key;
+  return key;
+};
 const limiter = rateLimit({
   windowMs: 10 * 60 * 1000, // 10 minutes
-  max: 100, // limit each IP to 100 requests per windowMs
-  message: 'Too many requests from this IP, please try again later.',
+  // ~2 requests a second on average for a signed-in account: room for every
+  // polling screen at once; anonymous callers get a quarter of that.
+  max: (req) => (limiterKey(req).startsWith('user:') ? 1200 : 300),
+  keyGenerator: limiterKey,
+  message: 'Too many requests, please try again in a few minutes.',
   skip: () => rateLimitDisabled,
 });
 app.use('/api/', limiter);
