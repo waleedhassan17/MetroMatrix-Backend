@@ -25,6 +25,7 @@ const mongoose = require('mongoose');
 const Provider = require('../src/models/Provider');
 const ServiceCategory = require('../src/modules/homeservice/models/ServiceCategory');
 const { CATEGORY_TO_SUBTYPE } = require('../src/modules/homeservice/services/serializers');
+const { searchableProviderFilter } = require('../src/modules/homeservice/services/providerVisibility');
 
 const FIX = process.argv.includes('--fix');
 const SLUGS = Object.keys(CATEGORY_TO_SUBTYPE);
@@ -42,9 +43,12 @@ async function main() {
   console.log('✓ MongoDB connected\n=== Home Services validation ===');
   console.log(`  catalogue: ${SLUGS.join(', ')}\n`);
 
-  // 1. Provider tagging
+  // 1. Provider tagging — for every provider a customer can find. Test and QA
+  //    accounts hidden from search (hideFromSearch) are listed but not failed:
+  //    no customer can reach them, whatever they are tagged as.
   const untagged = await Provider.find({
     providerType: 'home_service',
+    hideFromSearch: { $ne: true },
     $or: [
       { providerSubType: { $exists: false } },
       { providerSubType: null },
@@ -60,6 +64,11 @@ async function main() {
     untagged.forEach((p) =>
       note(`    ${p.email || p._id} — ${p.fullName} — subType=${JSON.stringify(p.providerSubType)}`)
     );
+  }
+
+  const hidden = await Provider.find({ providerType: 'home_service', hideFromSearch: true }).select('fullName email');
+  if (hidden.length) {
+    note(`  ${hidden.length} test account(s) hidden from customer search: ${hidden.map((p) => p.fullName).join(', ')}`);
   }
 
   // 2 & 3. Catalogue integrity
@@ -96,14 +105,10 @@ async function main() {
       providerType: 'home_service',
       providerSubType: subType,
     });
-    const active = await Provider.countDocuments({
-      providerType: 'home_service',
-      providerSubType: subType,
-      adminVerified: 'active',
-      isActive: true,
-    });
+    // Exactly the filter customer search applies.
+    const active = await Provider.countDocuments(searchableProviderFilter(subType));
     const flag = active === 0 ? '  ← nothing will show for this category' : '';
-    note(`    ${slug.padEnd(18)} ${subType.padEnd(14)} ${String(active).padStart(3)} active / ${total} total${flag}`);
+    note(`    ${slug.padEnd(18)} ${subType.padEnd(14)} ${String(active).padStart(3)} visible / ${total} total${flag}`);
   }
 
   console.log(

@@ -32,6 +32,7 @@ const ProviderReview = require('../src/modules/homeservice/models/ProviderReview
 const Dispute = require('../src/modules/homeservice/models/Dispute');
 const PayoutRequest = require('../src/modules/homeservice/models/PayoutRequest');
 const { STATUS } = require('../src/modules/homeservice/services/statusMap');
+const { recomputeProviderCounters } = require('../src/modules/homeservice/services/providerCounters');
 
 const log = (m) => console.log(`  ${m}`);
 const DAY = 86400000;
@@ -72,7 +73,15 @@ const LAHORE = [
   ['Wapda Town', 31.4308, 74.2708],
 ];
 
+// Customer-facing trade names. The label used to be machine-made from the
+// subtype ("Ac repairer"), and it is what every profile and card shows.
+const TRADE_LABEL = { electrician: 'Electrician', plumber: 'Plumber', ac_repairer: 'AC Technician' };
+
 // [name, subType, basePrice, experience, ratingAvg, ratingCount, isOnline]
+// ratingAvg/ratingCount are no longer written: a provider's rating and job
+// counters are computed from the reviews and bookings this seed actually
+// creates (recomputeProviderCounters, after step 6), so a profile can never claim
+// "132 reviews" above an empty review list again.
 const PROVIDERS = [
   ['Ahmad Khan', 'electrician', 500, '5 years', 4.8, 62, true],
   ['Bilal Ahmed', 'electrician', 450, '3 years', 4.3, 28, true],
@@ -185,8 +194,7 @@ async function main() {
   // 2. Providers
   const providers = [];
   for (let i = 0; i < PROVIDERS.length; i += 1) {
-    const [fullName, subType, basePrice, experience, ratingAvg, ratingCount, isOnline] =
-      PROVIDERS[i];
+    const [fullName, subType, basePrice, experience, , , isOnline] = PROVIDERS[i];
     const email = `provider${i + 1}.hs@metromatrix.pk`;
     const spot = LAHORE[i % LAHORE.length];
 
@@ -199,7 +207,7 @@ async function main() {
         phoneNumber: `030099900${String(i + 1).padStart(2, '0')}`,
         providerType: 'home_service',
         providerSubType: subType,
-        profession: `${subType[0].toUpperCase()}${subType.slice(1).replace('_', ' ')}`,
+        profession: TRADE_LABEL[subType],
         experience,
         briefDescription: `${fullName} is an experienced ${subType.replace('_', ' ')} serving Lahore.`,
         basePrice,
@@ -215,9 +223,9 @@ async function main() {
         isOnline,
         serviceRadius: 15,
         currentLocation: { type: 'Point', coordinates: [spot[2], spot[1]] },
-        ratings: { average: ratingAvg, count: ratingCount },
-        totalBookings: ratingCount,
-        completedBookings: Math.round(ratingCount * 0.9),
+        ratings: { average: 0, count: 0 },
+        totalBookings: 0,
+        completedBookings: 0,
       });
     } else if (provider.adminVerified !== 'active') {
       provider.adminVerified = 'active';
@@ -466,32 +474,13 @@ async function main() {
       comment: rating >= 4 ? 'Professional, on time, and fixed the issue quickly.' : 'Job done but took longer than expected.',
       tags: rating >= 4 ? ['Professional', 'On Time'] : ['Good Value'],
     });
-    await Provider.updateOne({ _id: booking.provider }, [
-      {
-        $set: {
-          'ratings.count': { $add: [{ $ifNull: ['$ratings.count', 0] }, 1] },
-          'ratings.average': {
-            $round: [
-              {
-                $divide: [
-                  {
-                    $add: [
-                      { $multiply: [{ $ifNull: ['$ratings.average', 0] }, { $ifNull: ['$ratings.count', 0] }] },
-                      rating,
-                    ],
-                  },
-                  { $add: [{ $ifNull: ['$ratings.count', 0] }, 1] },
-                ],
-              },
-              2,
-            ],
-          },
-        },
-      },
-    ]);
     reviewsCreated += 1;
   }
-  log(`reviews seeded: ${reviewsCreated} (on completed bookings, atomic rating recompute applied)`);
+  log(`reviews seeded: ${reviewsCreated} (on completed bookings)`);
+
+  // Ratings, review counts and job counters from what was actually seeded.
+  const recounted = await recomputeProviderCounters({ _id: { $in: providers.map((p) => p._id) } });
+  log(`provider counters recomputed from real reviews/bookings: ${recounted.length} changed`);
 
   // 7. Disputes (2 open) — against two of the completed-but-unhappy bookings
   const disputeCandidates = completedBookings.filter((c) => !c.plan.review).slice(0, 2);
@@ -513,7 +502,10 @@ async function main() {
   log(`disputes seeded: ${disputesCreated} (status: open)`);
 
   // 8. Payout requests (3 pending) — for providers with completed jobs
-  const payoutCandidates = providers.filter((p) => p.completedBookings > 0).slice(0, 3);
+  const payoutCandidates = await Provider.find({
+    _id: { $in: providers.map((p) => p._id) },
+    completedBookings: { $gt: 0 },
+  }).limit(3);
   let payoutsCreated = 0;
   for (const provider of payoutCandidates) {
     const exists = await PayoutRequest.findOne({ provider: provider._id, status: 'pending' });
