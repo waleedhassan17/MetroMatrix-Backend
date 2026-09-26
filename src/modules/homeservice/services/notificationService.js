@@ -155,7 +155,7 @@ async function notifyBookingCancelled(booking, cancelledBy, ctx = {}) {
  */
 async function notifyPaymentReceived(booking, ctx = {}) {
   const providerId = booking.provider?._id || booking.provider;
-  const amount = ctx.amount != null ? `PKR ${Number(ctx.amount).toLocaleString()}` : 'Payment';
+  const amount = rupees(ctx.amount);
 
   return create({
     recipient: providerId,
@@ -172,10 +172,57 @@ async function notifyPaymentReceived(booking, ctx = {}) {
   });
 }
 
+const rupees = (amount) =>
+  amount != null ? `Rs. ${Math.round(Number(amount)).toLocaleString('en-PK')}` : 'Payment';
+
+/** The provider asked the customer to pay — tell the customer what and how much. */
+async function notifyPaymentRequested(booking, ctx = {}) {
+  const customerId = booking.customer?._id || booking.customer;
+  return create({
+    recipient: customerId,
+    recipientRole: 'user',
+    type: 'payment_requested',
+    title: 'Payment requested',
+    message: `${ctx.providerName || 'Your provider'} requested ${rupees(ctx.amount)} for the ${
+      (ctx.service || 'service').toLowerCase()
+    } job.`,
+    data: { bookingId: String(booking._id), roomType: 'homeservice', amount: ctx.amount },
+  });
+}
+
+/** The customer chose to pay in cash — the provider must confirm receipt. */
+async function notifyCashSelected(booking, ctx = {}) {
+  const providerId = booking.provider?._id || booking.provider;
+  return create({
+    recipient: providerId,
+    recipientRole: 'provider',
+    type: 'payment_requested',
+    title: 'Cash payment',
+    message: `${ctx.customerName || 'The customer'} will pay ${rupees(ctx.amount)} in cash. Confirm it once you have received it.`,
+    data: { bookingId: String(booking._id), roomType: 'homeservice', amount: ctx.amount, method: 'cash' },
+  });
+}
+
+/** The provider confirmed the cash arrived — the customer's receipt. */
+async function notifyCashConfirmed(booking, ctx = {}) {
+  const customerId = booking.customer?._id || booking.customer;
+  return create({
+    recipient: customerId,
+    recipientRole: 'user',
+    type: 'payment_received',
+    title: 'Payment confirmed',
+    message: `${ctx.providerName || 'Your provider'} confirmed your cash payment of ${rupees(ctx.amount)}.`,
+    data: { bookingId: String(booking._id), roomType: 'homeservice', amount: ctx.amount, method: 'cash' },
+  });
+}
+
 module.exports = {
   create,
   notifyBookingStatus,
   notifyBookingCancelled,
   notifyPaymentReceived,
+  notifyPaymentRequested,
+  notifyCashSelected,
+  notifyCashConfirmed,
   BOOKING_EVENTS,
 };

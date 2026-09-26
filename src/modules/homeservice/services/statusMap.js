@@ -156,12 +156,14 @@ function toJobBucket(status, scheduledFor, now = new Date()) {
     case STATUS.PENDING:
       return 'available';
     case STATUS.ACCEPTED: {
-      const d = scheduledFor ? new Date(scheduledFor) : now;
-      const sameDay =
-        d.getFullYear() === now.getFullYear() &&
-        d.getMonth() === now.getMonth() &&
-        d.getDate() === now.getDate();
-      return sameDay ? 'today' : 'upcoming';
+      // Calendar days in Pakistan time — the server runs in UTC, and
+      // comparing local getDate()s filed the first five hours after PKT
+      // midnight under the previous day. A job whose day has already passed
+      // but which is still accepted (not yet started, not yet expired) is due
+      // now, so it belongs with today's work, not with the future.
+      const { pktDateString } = require('./time');
+      const day = pktDateString(scheduledFor ? new Date(scheduledFor) : now);
+      return day > pktDateString(now) ? 'upcoming' : 'today';
     }
     case STATUS.EN_ROUTE:
     case STATUS.ARRIVED:

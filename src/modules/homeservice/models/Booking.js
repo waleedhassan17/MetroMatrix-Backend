@@ -81,6 +81,9 @@ const bookingSchema = new mongoose.Schema(
       walletTransactionId: { type: mongoose.Schema.Types.ObjectId, ref: 'WalletTransaction', default: null },
       requestedAmount: { type: Number, default: null },
       paidAt: Date,
+      // Set while a settlement (wallet payment or cash confirmation) is in
+      // flight — see claimSettlement in services/paymentService.js.
+      settlingSince: { type: Date, default: null },
     },
     cancellation: {
       // 'system' is the platform withdrawing a request nobody chose to drop:
@@ -95,6 +98,11 @@ const bookingSchema = new mongoose.Schema(
       },
       reason: String,
       at: Date,
+      // Machine-readable cause, for anything that must tell them apart:
+      // 'released' (another provider accepted first), 'expired_pending' (no
+      // answer before the booking time), 'expired_accepted' (the booking time
+      // passed without the job starting). Null for a person's own cancellation.
+      code: { type: String, default: null },
     },
     instructions: { type: String, default: '' },
     // Work timing (start-work / complete-work on the provider side)

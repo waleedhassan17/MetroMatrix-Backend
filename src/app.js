@@ -1624,6 +1624,14 @@ app.use('/api/v1/healthcare', require('./modules/healthcare/routes/index'));
   app.get('/api/internal/slots/refresh-horizon', refreshHorizon);
   app.post('/api/internal/slots/refresh-horizon', refreshHorizon);
 }
+// Home services: the daily sweep that closes requests and bookings whose time
+// has passed (the lazy per-read pass in expiryService does the same for any
+// booking someone looks at). Same auth as the slot horizon above.
+{
+  const { runExpiry } = require('./modules/homeservice/controllers/maintenanceController');
+  app.get('/api/internal/homeservice/expire', runExpiry);
+  app.post('/api/internal/homeservice/expire', runExpiry);
+}
 // Shopping module (multi-vendor storefront) — peer module of healthcare.
 app.use('/api/shopping', require('./modules/shopping/routes/index'));
 // Healthcare admin routes (doctor approval, specialty CRUD, analytics).

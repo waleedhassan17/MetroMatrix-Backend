@@ -16,6 +16,10 @@
     {
       "path": "/api/internal/slots/refresh-horizon",
       "schedule": "20 3 * * *"
+    },
+    {
+      "path": "/api/internal/homeservice/expire",
+      "schedule": "30 21 * * *"
     }
   ]
 }

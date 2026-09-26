@@ -21,6 +21,9 @@ const CATEGORY_TO_SUBTYPE = {
   'ac-repairers': 'ac_repairer',
 };
 
+const { pktDateString } = require('./time');
+const { billOf } = require('./money');
+
 const DEFAULT_AVATAR = 'https://ui-avatars.com/api/?background=4F46E5&color=fff&name=';
 
 function avatar(name, photo) {
@@ -77,6 +80,29 @@ function toProviderCard(p, extras = {}) {
   };
 }
 
+/**
+ * The provider card as ANYONE may see it. /providers and /providers/:id are
+ * public — no login — and used to hand every provider's email address and
+ * phone number to whoever asked. A customer never needs either: calls and
+ * messages go through the app, and the phone number is shared with a
+ * customer only once they have a booking (service status, tracking).
+ */
+function toPublicProviderCard(p, extras = {}) {
+  const card = toProviderCard(p, extras);
+  delete card.email;
+  delete card.phoneNumber;
+  return card;
+}
+
+/** "Sarah Malik" → "Sarah M." — how a public review names its author. */
+function publicName(fullName) {
+  const parts = String(fullName || '').trim().split(/\s+/).filter(Boolean);
+  if (!parts.length) return 'Customer';
+  const first = parts[0][0].toUpperCase() + parts[0].slice(1);
+  if (parts.length === 1) return first;
+  return `${first} ${parts[parts.length - 1][0].toUpperCase()}.`;
+}
+
 // → models/serviceProviders/booking.ts BookingProvider
 function toBookingProvider(p) {
   const card = toProviderCard(p);
@@ -112,12 +138,12 @@ function toUserBooking(b) {
     providerName: p.fullName || '',
     providerAvatar: avatar(p.fullName, p.profilePhoto),
     status,
-    date: scheduled.toISOString().slice(0, 10),
+    date: pktDateString(scheduled),
     time: b.scheduledTime || '',
     address: [b.address && b.address.line1, b.address && b.address.city]
       .filter(Boolean)
       .join(', '),
-    price: (b.pricing && (b.pricing.finalPrice || b.pricing.estimatedPrice)) || 0,
+    price: billOf(b),
     // The list needs to know a completed booking is still unpaid, so the
     // bookings tab can offer "Pay now" — otherwise a customer who left the
     // service screen before paying has no route back to payment. Only the
@@ -156,9 +182,9 @@ function toJob(b, now = new Date()) {
     customerPhone: c.phoneNumber || '',
     location: (b.address && b.address.line1) || '',
     city: (b.address && b.address.city) || '',
-    date: scheduled.toISOString().slice(0, 10),
+    date: pktDateString(scheduled),
     time: b.scheduledTime || '',
-    price: (b.pricing && (b.pricing.finalPrice || b.pricing.estimatedPrice)) || 0,
+    price: billOf(b),
     status: toJobBucket(b.status, b.scheduledFor, now),
     coordinates: coords(b.address && b.address.coordinates),
     specialInstructions: b.instructions || b.description || '',
@@ -189,6 +215,8 @@ module.exports = {
   avatar,
   coords,
   toProviderCard,
+  toPublicProviderCard,
+  publicName,
   toBookingProvider,
   toUserBooking,
   toSavedAddress,

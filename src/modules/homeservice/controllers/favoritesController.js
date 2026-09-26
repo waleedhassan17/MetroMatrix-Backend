@@ -13,7 +13,7 @@
 const asyncHandler = require('express-async-handler');
 const Favorite = require('../models/Favorite');
 const Provider = require('../../../models/Provider');
-const { toProviderCard } = require('../services/serializers');
+const { toPublicProviderCard } = require('../services/serializers');
 
 const ok = (res, data, message) => res.json({ success: true, data, message });
 const fail = (res, code, message) => res.status(code).json({ success: false, message });
@@ -39,7 +39,7 @@ const serialize = async (list) => {
     // rather than serializing null and crashing the list.
     .filter((it) => it.provider)
     .map((it) => ({
-      ...toProviderCard(it.provider),
+      ...toPublicProviderCard(it.provider),
       favoritedAt: it.addedAt,
     }));
 };

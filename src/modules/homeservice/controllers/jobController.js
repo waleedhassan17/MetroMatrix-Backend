@@ -5,6 +5,16 @@ const Provider = require('../../../models/Provider');
 const { transition, releaseCompetingRequests } = require('../services/bookingService');
 const { STATUS, toJobBucket } = require('../services/statusMap');
 const { toJob, toDashboardJob, toProviderCard, avatar } = require('../services/serializers');
+const { expireStale } = require('../services/expiryService');
+const { billOf, parseProviderAmount, assertPriceEditable, AmountError } = require('../services/money');
+const { pktDayBounds } = require('../services/time');
+const { outcomeStats } = require('../services/providerStats');
+const { getHomeserviceSettings } = require('../services/settingsService');
+const {
+  servicesFor,
+  weeklyAvailability,
+  parseAvailabilityPatch,
+} = require('../services/catalogue');
 
 const ok = (res, data, message, pagination) =>
   res.json({ success: true, data, message, ...(pagination ? { pagination } : {}) });
@@ -27,12 +37,16 @@ const listJobs = asyncHandler(async (req, res) => {
   const limit = parseInt(req.query.limit, 10) || 15;
   const bucket = req.query.status;
 
+  await expireStale({ provider: req.user._id });
+
   const all = await Booking.find({ provider: req.user._id })
     .populate('customer', 'fullName phoneNumber profilePhoto')
     .sort({ scheduledFor: -1 });
 
   const now = new Date();
-  const withBuckets = all.map((b) => ({ b, bucket: toJobBucket(b.status, b.scheduledFor, now) }));
+  const withBuckets = all
+    .map((b) => ({ b, bucket: toJobBucket(b.status, b.scheduledFor, now) }))
+    .sort(byJobPriority);
 
   // One count per bucket toJobBucket can produce. 'available' and 'active'
   // were missing, and 'available' is the one that matters most: it is the
@@ -65,6 +79,21 @@ const listJobs = asyncHandler(async (req, res) => {
   }, 'Jobs fetched');
 });
 
+// Work that needs the provider comes first — a job under way, then requests
+// waiting on an answer, then today's and later bookings, soonest first — and
+// history after it, most recent first. The list used to be one flat
+// newest-scheduled-first sort, so a request due in an hour could sit below a
+// month of completed jobs.
+const BUCKET_RANK = { active: 0, available: 1, today: 2, upcoming: 3, completed: 4, cancelled: 5 };
+function byJobPriority(a, b) {
+  const ra = BUCKET_RANK[a.bucket] ?? 9;
+  const rb = BUCKET_RANK[b.bucket] ?? 9;
+  if (ra !== rb) return ra - rb;
+  const ta = a.b.scheduledFor ? new Date(a.b.scheduledFor).getTime() : 0;
+  const tb = b.b.scheduledFor ? new Date(b.b.scheduledFor).getTime() : 0;
+  return ra <= BUCKET_RANK.upcoming ? ta - tb : tb - ta;
+}
+
 // GET /api/provider/jobs/:jobId — JobDetail
 const getJobDetail = asyncHandler(async (req, res) => {
   const b = req.booking;
@@ -74,6 +103,8 @@ const getJobDetail = asyncHandler(async (req, res) => {
     customerName: job.customer,
     estimatedPrice: b.pricing.estimatedPrice,
     canonicalStatus: b.status,
+    payment: { status: b.payment.status, method: b.payment.method, amount: billOf(b) },
+    cancellation: b.cancellation && b.cancellation.by ? b.cancellation : null,
   }, 'Job detail fetched');
 });
 
@@ -132,27 +163,68 @@ const startWork = asyncHandler(async (req, res) => {
 
 // POST /complete-work — IN_PROGRESS → COMPLETED, returns duration
 const completeWork = asyncHandler(async (req, res) => {
+  // The completed-jobs counter is bumped inside transition(), once, whoever
+  // completes the job.
   await transition(req.booking, STATUS.COMPLETED, { id: req.user._id, role: 'provider' });
-  await Provider.updateOne({ _id: req.user._id }, { $inc: { completedBookings: 1 } });
   ok(res, {
-    endTime: req.booking.work.endedAt.toISOString(),
+    endTime: (req.booking.work.endedAt || new Date()).toISOString(),
     duration: req.booking.work.actualDurationMinutes || 0,
   }, 'Work completed');
 });
 
 // POST /complete — completion with final amount + notes + photos
+//
+// The final amount is validated (a positive number of rupees within this
+// job's ceiling — see services/money.js) and is fixed once the customer has
+// paid. It used to take any value, negative included, and could be rewritten
+// after payment.
 const completeJob = asyncHandler(async (req, res) => {
-  const { finalAmount, notes, photos } = req.body;
+  const { finalAmount, notes, photos } = req.body || {};
   const b = req.booking;
-  if (b.status !== STATUS.COMPLETED) {
-    await transition(b, STATUS.COMPLETED, { id: req.user._id, role: 'provider' }, { save: false });
-    await Provider.updateOne({ _id: req.user._id }, { $inc: { completedBookings: 1 } });
+
+  let amount = null;
+  if (finalAmount !== undefined && finalAmount !== null && finalAmount !== '') {
+    try {
+      assertPriceEditable(b);
+      amount = parseProviderAmount(finalAmount, b, 'Final amount');
+    } catch (e) {
+      if (e instanceof AmountError) {
+        res.status(e.statusCode);
+        throw new Error(e.message);
+      }
+      throw e;
+    }
   }
-  if (finalAmount) b.pricing.finalPrice = Number(finalAmount);
-  if (notes) b.work.notes = notes;
-  if (Array.isArray(photos)) b.work.photos = photos;
-  await b.save();
-  ok(res, { success: true }, 'Job completed');
+
+  const priceChanged = amount !== null && amount !== billOf(b);
+  if (amount !== null) {
+    b.pricing.finalPrice = amount;
+    // An open payment request follows the price, so the bill never has two answers.
+    if (b.payment.requestedAmount) b.payment.requestedAmount = amount;
+  }
+  if (notes) b.work.notes = String(notes).slice(0, 2000);
+  if (Array.isArray(photos)) b.work.photos = photos.filter((p) => typeof p === 'string').slice(0, 10);
+
+  if (b.status !== STATUS.COMPLETED) {
+    // One conditional save carries the price and the completion together.
+    await transition(b, STATUS.COMPLETED, { id: req.user._id, role: 'provider' });
+  } else {
+    await b.save();
+    if (priceChanged && b.payment.status === 'requested') {
+      // The customer is looking at a bill that just changed.
+      try {
+        const { emitToBooking } = require('../../../sockets');
+        await emitToBooking(b._id, 'payment_requested', {
+          bookingId: String(b._id),
+          roomId: String(b._id),
+          amount: billOf(b),
+        });
+      } catch (e) {
+        console.error(`[job] price-change publish failed booking=${b._id}: ${e.message}`);
+      }
+    }
+  }
+  ok(res, { success: true, finalAmount: billOf(b) }, 'Job completed');
 });
 
 // POST /finalize — provider confirms completion flow finished
@@ -174,7 +246,7 @@ const getAwaitingApproval = asyncHandler(async (req, res) => {
     customerName: b.customer.fullName,
     address: [b.address.line1, b.address.city].filter(Boolean).join(', '),
     actualDuration: b.work.actualDurationMinutes,
-    estimatedPrice: b.pricing.finalPrice || b.pricing.estimatedPrice,
+    estimatedPrice: billOf(b),
   }, 'Awaiting approval data fetched');
 });
 
@@ -241,7 +313,7 @@ const getCompletionData = asyncHandler(async (req, res) => {
     serviceType: b.serviceSubCategory || b.serviceCategory,
     customerName: b.customer.fullName,
     actualDuration: b.work.actualDurationMinutes || 0,
-    earnings: b.pricing.finalPrice || b.pricing.estimatedPrice,
+    earnings: billOf(b),
     paymentMethod: b.payment.method === 'cash' ? 'cash' : 'online',
     transactionId: b.payment.walletTransactionId
       ? String(b.payment.walletTransactionId)
@@ -273,15 +345,22 @@ const getNavigationData = asyncHandler(async (req, res) => {
 
 // GET /api/provider/dashboard — DashboardData
 const getDashboard = asyncHandler(async (req, res) => {
-  const provider = await Provider.findById(req.user._id);
+  await expireStale({ provider: req.user._id });
+
+  const [provider, settings] = await Promise.all([
+    Provider.findById(req.user._id),
+    getHomeserviceSettings(),
+  ]);
   const all = await Booking.find({ provider: provider._id })
     .populate('customer', 'fullName phoneNumber profilePhoto')
     .sort({ scheduledFor: 1 });
 
   const now = new Date();
-  const startOfDay = new Date(now.getFullYear(), now.getMonth(), now.getDate());
-  const endOfDay = new Date(startOfDay.getTime() + 86400000);
+  // Pakistan's today, not the server's (UTC) today.
+  const { start: startOfDay, end: endOfDay } = pktDayBounds(now);
   const weekAgo = new Date(now.getTime() - 7 * 86400000);
+  const twoWeeksAgo = new Date(now.getTime() - 14 * 86400000);
+  const keep = 1 - settings.commissionPercent / 100;
 
   const pending = all.filter((b) => b.status === STATUS.PENDING);
   const today = all.filter(
@@ -293,21 +372,24 @@ const getDashboard = asyncHandler(async (req, res) => {
   const upcoming = all.filter(
     (b) => b.status === STATUS.ACCEPTED && b.scheduledFor >= endOfDay
   );
-  const weekCompleted = all.filter(
-    (b) => b.status === STATUS.COMPLETED && b.updatedAt >= weekAgo
-  );
-  const weekEarnings = weekCompleted.reduce(
-    (sum, b) => sum + (b.pricing.finalPrice || b.pricing.estimatedPrice || 0),
-    0
-  );
-  const decided = all.filter((b) =>
-    [STATUS.COMPLETED, STATUS.CANCELLED, STATUS.REJECTED].includes(b.status)
-  );
-  const completionRate = decided.length
-    ? Math.round(
-        (decided.filter((b) => b.status === STATUS.COMPLETED).length / decided.length) * 100
-      )
-    : 100;
+
+  // Completed = when the work ended, not whenever the document last changed.
+  const endedAt = (b) => (b.work && b.work.endedAt) || b.updatedAt;
+  const weekCompleted = all.filter((b) => b.status === STATUS.COMPLETED && endedAt(b) >= weekAgo);
+
+  // What the provider actually took home: paid jobs, net of commission.
+  const paidBetween = (from, to) =>
+    all
+      .filter((b) => b.payment.status === 'paid' && b.payment.paidAt >= from && b.payment.paidAt < to)
+      .reduce((sum, b) => sum + billOf(b), 0);
+  const weekEarnings = Math.round(paidBetween(weekAgo, now) * keep);
+  const lastWeekEarnings = Math.round(paidBetween(twoWeeksAgo, weekAgo) * keep);
+  const earningsTrend =
+    weekEarnings > lastWeekEarnings ? 'up' : weekEarnings < lastWeekEarnings ? 'down' : 'neutral';
+
+  const outcomes = await outcomeStats(provider._id);
+  // A provider with no track record yet has not let anyone down.
+  const completionRate = outcomes.completionRate === null ? 100 : outcomes.completionRate;
 
   const recentActivity = all
     .slice()
@@ -315,6 +397,7 @@ const getDashboard = asyncHandler(async (req, res) => {
     .slice(0, 5)
     .map((b, i) => ({
       id: String(i + 1),
+      bookingId: String(b._id),
       type:
         b.payment.status === 'paid'
           ? 'payment'
@@ -323,10 +406,10 @@ const getDashboard = asyncHandler(async (req, res) => {
           : 'job',
       message:
         b.payment.status === 'paid'
-          ? `Received Rs. ${b.pricing.finalPrice || b.pricing.estimatedPrice} from ${b.customer.fullName}`
+          ? `Received Rs. ${billOf(b).toLocaleString('en-PK')} from ${b.customer.fullName}`
           : b.status === STATUS.PENDING
           ? `New booking request from ${b.customer.fullName}`
-          : `${b.serviceSubCategory || b.serviceCategory} — ${b.status.toLowerCase()} (${b.customer.fullName})`,
+          : `${b.serviceSubCategory || b.serviceCategory} — ${ACTIVITY_LABEL[b.status] || b.status.toLowerCase()} (${b.customer.fullName})`,
       time: b.updatedAt.toISOString(),
     }));
 
@@ -339,12 +422,14 @@ const getDashboard = asyncHandler(async (req, res) => {
     isRead: false,
   }).catch(() => 0);
 
+  const rating = provider.ratings ? Math.round((provider.ratings.average || 0) * 10) / 10 : 0;
+
   ok(res, {
     profile: {
       id: String(provider._id),
       name: provider.fullName,
       avatar: avatar(provider.fullName, provider.profilePhoto),
-      rating: provider.ratings ? provider.ratings.average || 0 : 0,
+      rating,
       isOnline: !!provider.isOnline,
       isPro: (provider.completedBookings || 0) >= 50,
       unreadNotifications,
@@ -354,20 +439,23 @@ const getDashboard = asyncHandler(async (req, res) => {
       weekJobs: weekCompleted.length,
       completionRate,
     },
+    // Trends are only claimed where there is something to compare: earnings
+    // against the week before. Rating and completion have no history to
+    // compare against, so they are reported flat instead of a permanent "up".
     insights: [
       {
         id: '1',
         title: 'This Week',
         value: `Rs. ${weekEarnings.toLocaleString('en-PK')}`,
-        trend: 'up',
+        trend: earningsTrend,
         color: '#10B981',
         bgColor: '#D1FAE5',
       },
       {
         id: '2',
         title: 'Rating',
-        value: String(provider.ratings ? provider.ratings.average || 0 : 0),
-        trend: 'up',
+        value: rating ? rating.toFixed(1) : 'New',
+        trend: 'neutral',
         color: '#3B82F6',
         bgColor: '#DBEAFE',
       },
@@ -375,7 +463,7 @@ const getDashboard = asyncHandler(async (req, res) => {
         id: '3',
         title: 'Completion',
         value: `${completionRate}%`,
-        trend: 'up',
+        trend: 'neutral',
         color: '#F59E0B',
         bgColor: '#FEF3C7',
       },
@@ -389,31 +477,86 @@ const getDashboard = asyncHandler(async (req, res) => {
   }, 'Dashboard data fetched');
 });
 
+/** Plain words for the activity feed instead of the raw lifecycle enum. */
+const ACTIVITY_LABEL = {
+  [STATUS.ACCEPTED]: 'accepted',
+  [STATUS.EN_ROUTE]: 'on the way',
+  [STATUS.ARRIVED]: 'arrived',
+  [STATUS.IN_PROGRESS]: 'in progress',
+  [STATUS.COMPLETED]: 'completed',
+  [STATUS.REJECTED]: 'declined',
+  [STATUS.CANCELLED]: 'cancelled',
+};
+
 // GET /api/provider/profile — own profile, ProviderDetails shape
 const getProviderProfile = asyncHandler(async (req, res) => {
   const p = await Provider.findById(req.user._id);
   ok(res, {
     ...toProviderCard(p),
-    servicesOffered: [],
-    availability: [],
+    servicesOffered: servicesFor(p),
+    availability: weeklyAvailability(p),
     gallery: [],
     reviewsList: [],
     serviceRadius: p.serviceRadius || 15,
   }, 'Profile fetched');
 });
 
-// PATCH /api/provider/profile
+const MAX_VISIT_CHARGE = 100000;
+const RADIUS_RANGE = [1, 50];
+
+// PATCH /api/provider/profile — { name?, bio?, price?, city?, experience?,
+// serviceRadius?, availability? }. Everything validated: this is what
+// customers are shown and what bookings are priced and scheduled from.
 const updateProviderProfile = asyncHandler(async (req, res) => {
   const p = await Provider.findById(req.user._id);
-  const { name, bio, price, city, experience, serviceRadius } = req.body;
-  if (name) p.fullName = name;
-  if (bio !== undefined) p.briefDescription = bio;
-  if (price !== undefined) p.basePrice = Number(price);
-  if (city) p.city = city;
-  if (experience) p.experience = experience;
-  if (serviceRadius !== undefined) p.serviceRadius = Number(serviceRadius);
+  const { name, bio, price, city, experience, serviceRadius, availability } = req.body || {};
+  const fail = (message) => {
+    res.status(400);
+    throw new Error(message);
+  };
+
+  if (name !== undefined) {
+    const n = String(name).trim();
+    if (n.length < 2 || n.length > 60) fail('Name must be between 2 and 60 characters');
+    p.fullName = n;
+  }
+  if (bio !== undefined) p.briefDescription = String(bio).trim().slice(0, 500);
+  if (price !== undefined) {
+    const n = Number(price);
+    if (!Number.isFinite(n) || n <= 0 || n > MAX_VISIT_CHARGE) {
+      fail(`Visit charge must be between Rs. 1 and Rs. ${MAX_VISIT_CHARGE.toLocaleString('en-PK')}`);
+    }
+    p.basePrice = Math.round(n);
+  }
+  if (city !== undefined && String(city).trim()) p.city = String(city).trim().slice(0, 60);
+  if (experience !== undefined && String(experience).trim()) {
+    p.experience = String(experience).trim().slice(0, 30);
+  }
+  if (serviceRadius !== undefined) {
+    const r = Number(serviceRadius);
+    if (!Number.isFinite(r) || r < RADIUS_RANGE[0] || r > RADIUS_RANGE[1]) {
+      fail(`Service radius must be between ${RADIUS_RANGE[0]} and ${RADIUS_RANGE[1]} km`);
+    }
+    p.serviceRadius = Math.round(r);
+  }
+  if (availability !== undefined) {
+    let hours;
+    try {
+      hours = parseAvailabilityPatch(availability);
+    } catch (e) {
+      fail(e.message);
+    }
+    for (const [day, value] of Object.entries(hours)) {
+      p.set(`availability.${day}`, value);
+    }
+  }
   await p.save();
-  ok(res, toProviderCard(p), 'Profile updated');
+  ok(res, {
+    ...toProviderCard(p),
+    serviceRadius: p.serviceRadius || 15,
+    availability: weeklyAvailability(p),
+    servicesOffered: servicesFor(p),
+  }, 'Profile updated');
 });
 
 // PATCH /api/provider/status  and  /api/provider/online-status — { isOnline }

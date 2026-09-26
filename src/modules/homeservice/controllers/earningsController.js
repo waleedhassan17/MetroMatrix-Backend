@@ -7,24 +7,63 @@ const WalletTransaction = require('../../../models/WalletTransaction');
 const { getHomeserviceSettings } = require('../services/settingsService');
 const { pendingCommission } = require('../services/paymentService');
 const { STATUS } = require('../services/statusMap');
+const { outcomeStats, onTimeRate, repeatCustomerRate } = require('../services/providerStats');
+const {
+  DAY_MS,
+  pktDateString,
+  pktDayBounds,
+  pktMonthStart,
+  pktYearStart,
+} = require('../services/time');
 
 const ok = (res, data, message) => res.json({ success: true, data, message });
 
 const MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+const WEEKDAY_SHORT = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
+const TZ = 'Asia/Karachi';
 
 /**
- * GET /api/provider/earnings?period=daily|weekly|monthly|all (also accepts the
- * frontend's week|month|year) → EarningsData. Aggregation pipelines, not
- * in-memory loops.
+ * The period the provider picked. Accepts the app's W/M/Y chips, the
+ * network layer's week/month/year and the older daily/weekly/monthly words.
+ */
+function normalizePeriod(raw) {
+  const p = String(raw || '').toLowerCase();
+  if (['w', 'week', 'weekly'].includes(p)) return 'week';
+  if (['y', 'year', 'yearly'].includes(p)) return 'year';
+  if (p === 'all') return 'all';
+  return 'month';
+}
+
+/**
+ * GET /api/provider/earnings?period=week|month|year|all → EarningsData.
+ *
+ * `period` used to be documented here and ignored, so the Earnings tab's
+ * period chips changed nothing. It now picks the headline figure
+ * (`periodEarnings`) and the chart (`series`): the last 7 days by day, or the
+ * last 6 / 12 months by month. Every calendar boundary is Pakistan time.
+ * All figures are what the provider keeps: paid jobs, net of commission.
  */
 const getEarnings = asyncHandler(async (req, res) => {
   const providerId = new mongoose.Types.ObjectId(String(req.user._id));
   const settings = await getHomeserviceSettings();
   const commissionFactor = 1 - settings.commissionPercent / 100;
+  const period = normalizePeriod(req.query.period);
 
   const now = new Date();
-  const startOfMonth = new Date(now.getFullYear(), now.getMonth(), 1);
-  const sixMonthsAgo = new Date(now.getFullYear(), now.getMonth() - 5, 1);
+  const startOfMonth = pktMonthStart(now);
+  const seriesMonths = period === 'year' ? 12 : 6;
+  const seriesStart =
+    period === 'week'
+      ? pktDayBounds(new Date(now.getTime() - 6 * DAY_MS)).start
+      : pktMonthStart(now, -(seriesMonths - 1));
+  const periodStart =
+    period === 'week'
+      ? seriesStart
+      : period === 'year'
+      ? pktYearStart(now)
+      : period === 'all'
+      ? new Date(0)
+      : startOfMonth;
 
   const paidMatch = {
     provider: providerId,
@@ -32,9 +71,14 @@ const getEarnings = asyncHandler(async (req, res) => {
     'payment.status': 'paid',
   };
 
-  const grossExpr = { $ifNull: ['$pricing.finalPrice', '$pricing.estimatedPrice'] };
+  // The bill: requested amount, else final price, else estimate — the same
+  // order services/money.js billOf() uses everywhere else.
+  const grossExpr = {
+    $ifNull: ['$payment.requestedAmount', { $ifNull: ['$pricing.finalPrice', '$pricing.estimatedPrice'] }],
+  };
+  const bucketFormat = period === 'week' ? '%Y-%m-%d' : '%Y-%m';
 
-  const [totals, monthly, perJob] = await Promise.all([
+  const [totals, buckets, sixMonthBuckets, perJob] = await Promise.all([
     Booking.aggregate([
       { $match: paidMatch },
       {
@@ -43,23 +87,38 @@ const getEarnings = asyncHandler(async (req, res) => {
           gross: { $sum: grossExpr },
           jobs: { $sum: 1 },
           grossThisMonth: {
-            $sum: {
-              $cond: [{ $gte: ['$payment.paidAt', startOfMonth] }, grossExpr, 0],
-            },
+            $sum: { $cond: [{ $gte: ['$payment.paidAt', startOfMonth] }, grossExpr, 0] },
+          },
+          grossPeriod: {
+            $sum: { $cond: [{ $gte: ['$payment.paidAt', periodStart] }, grossExpr, 0] },
+          },
+          jobsPeriod: {
+            $sum: { $cond: [{ $gte: ['$payment.paidAt', periodStart] }, 1, 0] },
           },
         },
       },
     ]),
     Booking.aggregate([
-      { $match: { ...paidMatch, 'payment.paidAt': { $gte: sixMonthsAgo } } },
+      { $match: { ...paidMatch, 'payment.paidAt': { $gte: seriesStart } } },
       {
         $group: {
-          _id: { y: { $year: '$payment.paidAt' }, m: { $month: '$payment.paidAt' } },
+          _id: { $dateToString: { format: bucketFormat, date: '$payment.paidAt', timezone: TZ } },
           amount: { $sum: grossExpr },
           jobs: { $sum: 1 },
         },
       },
-      { $sort: { '_id.y': 1, '_id.m': 1 } },
+    ]),
+    // The legacy six-month series, still sent as `monthlyData` for app builds
+    // that predate `series`.
+    Booking.aggregate([
+      { $match: { ...paidMatch, 'payment.paidAt': { $gte: pktMonthStart(now, -5) } } },
+      {
+        $group: {
+          _id: { $dateToString: { format: '%Y-%m', date: '$payment.paidAt', timezone: TZ } },
+          amount: { $sum: grossExpr },
+          jobs: { $sum: 1 },
+        },
+      },
     ]),
     Booking.aggregate([
       { $match: paidMatch },
@@ -77,6 +136,7 @@ const getEarnings = asyncHandler(async (req, res) => {
         $project: {
           amount: grossExpr,
           paidAt: '$payment.paidAt',
+          method: '$payment.method',
           service: { $ifNull: ['$serviceSubCategory', '$serviceCategory'] },
           customerName: { $arrayElemAt: ['$customerDoc.fullName', 0] },
         },
@@ -84,10 +144,10 @@ const getEarnings = asyncHandler(async (req, res) => {
     ]),
   ]);
 
-  const t = totals[0] || { gross: 0, jobs: 0, grossThisMonth: 0 };
+  const t = totals[0] || { gross: 0, jobs: 0, grossThisMonth: 0, grossPeriod: 0, jobsPeriod: 0 };
   const net = (v) => Math.round(v * commissionFactor);
 
-  const [payouts, pendingPayoutAgg, wallet, pendingComm] = await Promise.all([
+  const [payouts, pendingPayoutAgg, wallet, pendingComm, outcomes, onTime, repeat] = await Promise.all([
     PayoutRequest.find({ provider: providerId }).sort({ createdAt: -1 }).limit(5),
     PayoutRequest.aggregate([
       { $match: { provider: providerId, status: 'pending' } },
@@ -95,23 +155,54 @@ const getEarnings = asyncHandler(async (req, res) => {
     ]),
     WalletService.getOrCreateWallet(providerId, 'Provider'),
     pendingCommission(providerId),
+    outcomeStats(providerId),
+    onTimeRate(providerId),
+    repeatCustomerRate(providerId),
   ]);
   const pendingPayouts = (pendingPayoutAgg[0] && pendingPayoutAgg[0].total) || 0;
 
-  // Month-over-month growth from the two most recent monthly buckets
-  let monthlyGrowth = 0;
-  if (monthly.length >= 2) {
-    const last = monthly[monthly.length - 1].amount;
-    const prev = monthly[monthly.length - 2].amount;
-    if (prev > 0) monthlyGrowth = Math.round(((last - prev) / prev) * 100);
+  // Every bucket in the window, zero-filled, so the chart's axis is complete
+  // instead of skipping the weeks with no work.
+  const byKey = new Map(buckets.map((b) => [b._id, b]));
+  const series = [];
+  if (period === 'week') {
+    for (let i = 6; i >= 0; i -= 1) {
+      const day = new Date(now.getTime() - i * DAY_MS);
+      const key = pktDateString(day);
+      const hit = byKey.get(key);
+      const weekday = new Date(`${key}T12:00:00.000Z`).getUTCDay();
+      series.push({ key, label: WEEKDAY_SHORT[weekday], amount: net(hit ? hit.amount : 0), jobs: hit ? hit.jobs : 0 });
+    }
+  } else {
+    for (let i = seriesMonths - 1; i >= 0; i -= 1) {
+      const key = pktDateString(pktMonthStart(now, -i)).slice(0, 7);
+      const hit = byKey.get(key);
+      series.push({ key, label: MONTHS[Number(key.slice(5, 7)) - 1], amount: net(hit ? hit.amount : 0), jobs: hit ? hit.jobs : 0 });
+    }
   }
+  const sixByKey = new Map(sixMonthBuckets.map((b) => [b._id, b]));
+  const monthlyData = [];
+  for (let i = 5; i >= 0; i -= 1) {
+    const key = pktDateString(pktMonthStart(now, -i)).slice(0, 7);
+    const hit = sixByKey.get(key);
+    monthlyData.push({ month: MONTHS[Number(key.slice(5, 7)) - 1], amount: net(hit ? hit.amount : 0), jobs: hit ? hit.jobs : 0 });
+  }
+
+  // Month-over-month growth from the two most recent months.
+  let monthlyGrowth = 0;
+  const last = monthlyData[monthlyData.length - 1].amount;
+  const prev = monthlyData[monthlyData.length - 2].amount;
+  if (prev > 0) monthlyGrowth = Math.round(((last - prev) / prev) * 100);
 
   const recentPayments = [
     ...perJob.map((j) => ({
       id: String(j._id),
+      bookingId: String(j._id),
       type: 'earning',
       amount: net(j.amount),
-      date: j.paidAt ? j.paidAt.toISOString().slice(0, 10) : '',
+      grossAmount: Math.round(j.amount),
+      method: j.method || null,
+      date: j.paidAt ? j.paidAt.toISOString() : '',
       status: 'completed',
       description: `${j.service} - ${j.customerName || 'Customer'}`,
     })),
@@ -119,22 +210,21 @@ const getEarnings = asyncHandler(async (req, res) => {
       id: String(p._id),
       type: 'payout',
       amount: p.amount,
-      date: p.createdAt.toISOString().slice(0, 10),
+      date: p.createdAt.toISOString(),
       status: p.status === 'approved' ? 'completed' : p.status === 'rejected' ? 'failed' : 'pending',
       description: `Payout (${p.method})`,
     })),
   ].sort((a, b) => (a.date < b.date ? 1 : -1)).slice(0, 10);
 
-  const completed = await Booking.countDocuments({
-    provider: providerId,
-    status: STATUS.COMPLETED,
-  });
-  const decided = await Booking.countDocuments({
-    provider: providerId,
-    status: { $in: [STATUS.COMPLETED, STATUS.CANCELLED, STATUS.REJECTED] },
-  });
+  const completed = outcomes.completed;
+  const rating = req.user.ratings ? Math.round((req.user.ratings.average || 0) * 10) / 10 : 0;
 
   ok(res, {
+    period,
+    periodEarnings: net(t.grossPeriod),
+    periodJobs: t.jobsPeriod,
+    series,
+    seriesTitle: period === 'week' ? 'Last 7 days' : period === 'year' ? 'Last 12 months' : 'Last 6 months',
     stats: {
       totalEarnings: net(t.gross),
       thisMonthEarnings: net(t.grossThisMonth),
@@ -142,21 +232,23 @@ const getEarnings = asyncHandler(async (req, res) => {
       completedJobsCount: t.jobs,
       monthlyGrowth,
     },
-    monthlyData: monthly.map((m) => ({
-      month: MONTHS[m._id.m - 1],
-      amount: net(m.amount),
-      jobs: m.jobs,
-    })),
+    monthlyData,
     recentPayments,
     performance: {
-      avgRating: req.user.ratings ? req.user.ratings.average || 0 : 0,
-      onTimeRate: decided ? Math.round((completed / decided) * 100) : 100,
+      avgRating: rating,
+      // null means "no track record yet" — the app shows a dash, not a number
+      // nobody earned.
+      onTimeRate: onTime,
+      completionRate: outcomes.completionRate,
       statusTier: completed >= 100 ? 'Gold' : completed >= 25 ? 'Silver' : 'Bronze',
-      repeatCustomerRate: 0,
+      repeatCustomerRate: repeat,
     },
     // Same formula requestPayout() enforces — a provider must never see an
     // "available" figure here that a payout request would then reject.
     availableBalance: Math.max(0, wallet.balance - pendingComm - pendingPayouts),
+    walletBalance: wallet.balance,
+    pendingCommission: pendingComm,
+    minPayoutAmount: settings.minPayoutAmount,
     commissionPercent: settings.commissionPercent,
   }, 'Earnings data fetched');
 });

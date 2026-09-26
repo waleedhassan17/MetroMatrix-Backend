@@ -29,13 +29,94 @@ const CUSTOMER_CANCELLABLE_FROM = [
 ];
 
 /**
+ * Thrown when the booking moved on between being read and being written —
+ * a customer cancelling in the same second a provider accepts, or the same
+ * button tapped twice. The second writer loses cleanly instead of both
+ * "succeeding" and the booking ending up in whichever state landed last.
+ */
+const CONFLICT_MESSAGE =
+  'This booking was just updated by someone else. Refresh to see its latest status.';
+
+function isRealId(id) {
+  const mongoose = require('mongoose');
+  return !!id && mongoose.isValidObjectId(id);
+}
+
+/**
+ * Save `booking`, but only if it is still in `expectedStatus` in the database.
+ *
+ * Mongoose applies `doc.$where` to the save() update's filter, so the write is
+ * `updateOne({ _id, status: expectedStatus }, delta)`. When another request
+ * has moved the booking in the meantime nothing matches and Mongoose throws
+ * DocumentNotFoundError, which becomes a 409. A read-modify-write without the
+ * precondition let two conflicting transitions both succeed.
+ */
+async function saveIfStillIn(booking, expectedStatus) {
+  booking.$where = { ...(booking.$where || {}), status: expectedStatus };
+  try {
+    await booking.save();
+  } catch (e) {
+    if (e && e.name === 'DocumentNotFoundError') {
+      throw new StatusError(CONFLICT_MESSAGE, 409);
+    }
+    throw e;
+  } finally {
+    if (booking.$where) delete booking.$where.status;
+  }
+}
+
+/** What to tell someone trying to move a booking that has already ended, or null. */
+function endedMessage(booking) {
+  switch (booking.status) {
+    case STATUS.CANCELLED: {
+      const code = booking.cancellation && booking.cancellation.code;
+      if (code === 'expired_pending') return 'This request expired before it was accepted.';
+      if (code === 'expired_accepted') return 'This booking was closed because the job never started.';
+      if (code === 'released') return 'The customer has already booked another provider for this job.';
+      return 'This booking has been cancelled.';
+    }
+    case STATUS.REJECTED:
+      return 'This booking was declined.';
+    case STATUS.COMPLETED:
+      return 'This job is already completed.';
+    default:
+      return null;
+  }
+}
+
+/**
+ * For a repeated move: would this actor have been allowed to make it? Only
+ * identity is checked — the move itself already happened.
+ */
+function assertSameActor(booking, nextStatus, actor) {
+  const customerId = booking.customer && booking.customer._id ? booking.customer._id : booking.customer;
+  const providerId = booking.provider && booking.provider._id ? booking.provider._id : booking.provider;
+  if (actor.role === 'system') return;
+  if (nextStatus === STATUS.CANCELLED || (nextStatus === STATUS.COMPLETED && actor.role === 'customer')) {
+    if (actor.role !== 'customer' || String(customerId) !== String(actor.id)) {
+      if (nextStatus === STATUS.CANCELLED) {
+        throw new StatusError('Only the customer may cancel a booking', 403);
+      }
+      throw new StatusError('You are not the customer for this booking', 403);
+    }
+    return;
+  }
+  if (actor.role !== 'provider' || String(providerId) !== String(actor.id)) {
+    throw new StatusError('You are not the assigned provider for this booking', 403);
+  }
+}
+
+/**
  * @param {Object} booking - mongoose HSBooking doc (not saved here unless save=true)
  * @param {string} nextStatus - canonical status from statusMap.STATUS
  * @param {Object} actor - { id, role: 'customer'|'provider'|'admin'|'system' }
- * @param {Object} [opts] - { note, reason, save = true }
+ * @param {Object} [opts] - { note, reason, code, save = true }. `code` is a
+ *   machine-readable cancellation cause ('released', 'expired_pending',
+ *   'expired_accepted') so stats can tell a provider's no-show from a
+ *   customer changing their mind.
  */
 async function transition(booking, nextStatus, actor, opts = {}) {
-  const { note, reason, save = true } = opts;
+  const { note, reason, code, save = true } = opts;
   const current = booking.status;
 
   if (!ALLOWED_TRANSITIONS[current]) {
@@ -43,6 +124,15 @@ async function transition(booking, nextStatus, actor, opts = {}) {
   }
 
   const isAdminForce = actor.role === 'admin';
+
+  // Repeating the move that already happened — a double tap, a retry after a
+  // dropped response — is not an error. The right person gets the booking back
+  // unchanged, with nothing written and nobody notified twice. Anyone else
+  // still meets the ownership checks.
+  if (current === nextStatus && !isAdminForce) {
+    assertSameActor(booking, nextStatus, actor);
+    return booking;
+  }
 
   // A customer grant is checked against CUSTOMER_TRANSITIONS rather than the
   // main graph, so widening what a CUSTOMER may do never widens what a
@@ -53,6 +143,10 @@ async function transition(booking, nextStatus, actor, opts = {}) {
     actor.role === 'customer' && (CUSTOMER_TRANSITIONS[current] || []).includes(nextStatus);
 
   if (!isAdminForce && !customerGrant && !ALLOWED_TRANSITIONS[current].includes(nextStatus)) {
+    // A booking that has already ended gets a sentence a person can act on,
+    // not the state machine's internals.
+    const ended = endedMessage(booking);
+    if (ended) throw new StatusError(ended, 409);
     throw new StatusError(
       `Illegal transition ${current} → ${nextStatus}`
     );
@@ -122,6 +216,7 @@ async function transition(booking, nextStatus, actor, opts = {}) {
       by: actor.role,
       reason: reason || note || '',
       at: new Date(),
+      code: code || null,
     };
   }
   if (nextStatus === STATUS.IN_PROGRESS && !booking.work.startedAt) {
@@ -136,58 +231,178 @@ async function transition(booking, nextStatus, actor, opts = {}) {
     }
   }
 
-  if (save) {
-    await booking.save();
+  if (!save) {
+    // The caller saves. Carry the precondition onto that save, and leave the
+    // announcements to the caller too (announceTransition) — telling anyone
+    // about a change that has not been written yet is how a notification ends
+    // up describing a transition that then lost a race.
+    booking.$where = { ...(booking.$where || {}), status: current };
+    return booking;
+  }
+
+  await saveIfStillIn(booking, current);
+  await announceTransition(booking, nextStatus, actor, { reason, note, code });
+  return booking;
+}
+
+function idOf(ref) {
+  return ref && ref._id ? ref._id : ref;
+}
+
+/** "Sat 27 Sep, 02:00 PM" in Pakistan time, or '' when unscheduled. */
+function whenLabel(booking) {
+  if (!booking.scheduledFor) return '';
+  try {
+    const day = new Date(booking.scheduledFor).toLocaleDateString('en-GB', {
+      weekday: 'short',
+      day: 'numeric',
+      month: 'short',
+      timeZone: 'Asia/Karachi',
+    });
+    return booking.scheduledTime ? `${day}, ${booking.scheduledTime}` : day;
+  } catch (e) {
+    return '';
+  }
+}
+
+/**
+ * The push for a transition, addressed to whoever did NOT cause it — or null
+ * when a push would be noise (the two of them are standing together, or the
+ * platform tidied up a request nobody was waiting on).
+ *
+ * The in-app notification (notificationService) and the room event reach a
+ * person who has the app open. This is for everyone else: a customer who
+ * booked and put the phone away learns their provider accepted, set off and
+ * arrived without having to keep checking.
+ */
+function pushFor(booking, nextStatus, actor, ctx) {
+  const provider = ctx.providerName || 'Your provider';
+  const customer = ctx.customerName || 'The customer';
+  const service = (ctx.service || 'service').toLowerCase();
+  const when = whenLabel(booking);
+  const toCustomer = (title, body) => ({
+    userId: idOf(booking.customer),
+    role: 'user',
+    type: 'booking_update',
+    title,
+    body,
+  });
+  const toProvider = (type, title, body) => ({
+    userId: idOf(booking.provider),
+    role: 'provider',
+    type,
+    title,
+    body,
+  });
+
+  switch (nextStatus) {
+    case STATUS.ACCEPTED:
+      return toCustomer(
+        'Booking accepted',
+        `${provider} accepted your ${service} booking${when ? ` for ${when}` : ''}.`
+      );
+    case STATUS.REJECTED:
+      return toCustomer('Booking declined', `${provider} can't take this job. Pick another provider.`);
+    case STATUS.EN_ROUTE:
+      return toCustomer('On the way', `${provider} is on the way to you.`);
+    case STATUS.ARRIVED:
+      return toCustomer('Your provider has arrived', `${provider} is at your address.`);
+    case STATUS.COMPLETED:
+      return actor.role === 'customer'
+        ? toProvider('booking_update', 'Job confirmed', `${customer} confirmed the ${service} job is done.`)
+        : toCustomer('Job completed', `${provider} finished the job. Review the bill and pay when you're ready.`);
+    case STATUS.CANCELLED:
+      return actor.role === 'customer'
+        ? toProvider('booking_cancelled', 'Booking cancelled', `${customer} cancelled the ${service} booking${when ? ` for ${when}` : ''}.`)
+        : null;
+    default:
+      return null;
+  }
+}
+
+/**
+ * Everything that follows a saved transition: the completed-jobs counter, the
+ * live room event, the durable notification and the push. All best-effort —
+ * the booking is already written, so none of these may fail the request — and
+ * run side by side, so the slowest one bounds the wait instead of the sum of
+ * them (each publish can take up to 2s).
+ */
+async function announceTransition(booking, nextStatus, actor, { reason, note, code } = {}) {
+  const ctx = {
+    customerName: booking.customer?.fullName,
+    providerName: booking.provider?.fullName,
+    service: booking.serviceSubCategory || booking.serviceCategory,
+  };
+  const tasks = [];
+
+  // Once per completion, whoever completed it. This used to live in the two
+  // provider completion handlers only, so a job the CUSTOMER confirmed never
+  // counted towards the provider's completed jobs.
+  if (nextStatus === STATUS.COMPLETED && isRealId(idOf(booking.provider))) {
+    const Provider = require('../../../models/Provider');
+    tasks.push(
+      Provider.updateOne({ _id: idOf(booking.provider) }, { $inc: { completedBookings: 1 } })
+    );
   }
 
   // Real-time fan-out. Published to the realtime service, which owns the only
-  // socket; this process holds none. Capped at 2s inside the publisher, so a
-  // slow or sleeping realtime dyno can never stall or fail a transition — the
-  // booking is already saved above.
-  //
-  // The empty catch this replaces is why the customer's screen never advanced.
-  try {
-    const { emitToBooking } = require('../../../sockets');
-    await emitToBooking(booking._id, 'booking_status_changed', {
-      bookingId: String(booking._id),
-      roomId: String(booking._id),
-      status: nextStatus,
-      changedAt: new Date().toISOString(),
-    });
-  } catch (e) {
-    console.error(`[booking] status publish failed booking=${booking._id}: ${e.message}`);
-  }
-
-  // Durable notification, alongside the live socket event above. That frame
-  // only reaches whoever is connected at that instant; this is what the other
-  // party finds later in their notifications list, and what backs the unread
-  // badge. Hooked HERE because this function is the single choke point every
-  // status change passes through — one place to be right, rather than a dozen
-  // call sites to keep in sync.
-  //
-  // notifyBookingStatus swallows its own errors; the booking is already saved
-  // either way, so a notification can never undo completed work.
-  try {
-    const notify = require('./notificationService');
-    const ctx = {
-      customerName: booking.customer?.fullName,
-      providerName: booking.provider?.fullName,
-      service: booking.serviceSubCategory || booking.serviceCategory,
-    };
-    if (nextStatus === STATUS.CANCELLED) {
-      await notify.notifyBookingCancelled(booking, actor.id, {
-        ...ctx,
-        byRole: actor.role,
-        reason: reason || note || '',
+  // socket; this process holds none. Capped at 2s inside the publisher.
+  tasks.push(
+    (async () => {
+      const { emitToBooking } = require('../../../sockets');
+      await emitToBooking(booking._id, 'booking_status_changed', {
+        bookingId: String(booking._id),
+        roomId: String(booking._id),
+        status: nextStatus,
+        changedAt: new Date().toISOString(),
       });
-    } else {
-      await notify.notifyBookingStatus(booking, nextStatus, ctx);
-    }
-  } catch (e) {
-    console.error(`[booking] notify failed booking=${booking._id}: ${e.message}`);
+    })()
+  );
+
+  // Durable notification: what the other party finds in their list later, and
+  // what backs the unread badge. Swallows its own errors.
+  tasks.push(
+    (async () => {
+      const notify = require('./notificationService');
+      if (nextStatus === STATUS.CANCELLED) {
+        await notify.notifyBookingCancelled(booking, actor.id, {
+          ...ctx,
+          byRole: actor.role,
+          reason: reason || note || '',
+          code,
+        });
+      } else {
+        await notify.notifyBookingStatus(booking, nextStatus, ctx);
+      }
+    })()
+  );
+
+  const push = pushFor(booking, nextStatus, actor, ctx);
+  if (push && isRealId(push.userId)) {
+    tasks.push(
+      (async () => {
+        const { pushToUser } = require('../../../sockets');
+        await pushToUser(push.userId, push.role, {
+          type: push.type,
+          title: push.title,
+          body: push.body,
+          data: {
+            bookingId: String(booking._id),
+            roomType: 'homeservice',
+            status: nextStatus,
+            audience: push.role === 'provider' ? 'provider' : 'customer',
+          },
+        });
+      })()
+    );
   }
 
-  return booking;
+  const results = await Promise.allSettled(tasks);
+  results.forEach((r) => {
+    if (r.status === 'rejected') {
+      console.error(`[booking] post-transition task failed booking=${booking._id}: ${r.reason && r.reason.message}`);
+    }
+  });
 }
 
 /**
@@ -244,7 +459,7 @@ async function releaseCompetingRequests(acceptedBooking, opts = {}) {
   const released = [];
   for (const rival of rivals) {
     try {
-      await transition(rival, STATUS.CANCELLED, { id: null, role: 'system' }, { reason });
+      await transition(rival, STATUS.CANCELLED, { id: null, role: 'system' }, { reason, code: 'released' });
       released.push(String(rival._id));
     } catch (e) {
       console.error(
@@ -257,7 +472,10 @@ async function releaseCompetingRequests(acceptedBooking, opts = {}) {
 
 module.exports = {
   transition,
+  announceTransition,
+  saveIfStillIn,
   releaseCompetingRequests,
   StatusError,
+  CONFLICT_MESSAGE,
   CUSTOMER_CANCELLABLE_FROM,
 };

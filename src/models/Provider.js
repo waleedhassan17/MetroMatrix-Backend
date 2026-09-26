@@ -275,6 +275,12 @@ const providerSchema = new mongoose.Schema(
       type: Number, // km
       default: 15,
     },
+    // Test and QA accounts stay usable but never appear in customer search —
+    // see modules/homeservice/services/providerVisibility.js.
+    hideFromSearch: {
+      type: Boolean,
+      default: false,
+    },
     basePrice: {
       type: Number, // PKR starting price shown on provider cards
       default: 0,

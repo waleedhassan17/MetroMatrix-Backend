@@ -74,3 +74,48 @@ describe('bookedSlotTimes', () => {
     expect(query.scheduledFor.$lt.toISOString()).toBe('2026-03-05T19:00:00.000Z');
   });
 });
+
+describe('slot rules for a chosen date (provider hours, time, bookings)', () => {
+  const { slotBlocker } = require('../controllers/bookingController');
+  // Sunday 27 Sep 2026, 10:30 PKT
+  const now = new Date('2026-09-27T05:30:00.000Z');
+  const provider = {
+    availability: {
+      sunday: { isAvailable: true, start: '09:00', end: '17:00' },
+      monday: { isAvailable: false },
+    },
+  };
+
+  it('a time already gone today is "past"', () => {
+    const slots = buildTimeSlots(new Set(), { dateStr: '2026-09-27', provider, now });
+    expect(slots.find((s) => s.time === '09:00 AM')).toMatchObject({ available: false, reason: 'past', reasonLabel: 'Passed' });
+  });
+
+  it('a time less than an hour away is "too soon"', () => {
+    const slots = buildTimeSlots(new Set(), { dateStr: '2026-09-27', provider, now });
+    expect(slots.find((s) => s.time === '11:00 AM')).toMatchObject({ available: false, reason: 'too_soon' });
+    expect(slots.find((s) => s.time === '12:00 PM').available).toBe(true);
+  });
+
+  it('times outside the provider\'s hours are closed', () => {
+    const slots = buildTimeSlots(new Set(), { dateStr: '2026-09-27', provider, now });
+    expect(slots.find((s) => s.time === '05:00 PM')).toMatchObject({ available: false, reason: 'outside_hours' });
+    expect(slots.find((s) => s.time === '04:00 PM').available).toBe(true);
+  });
+
+  it('a day off closes every slot', () => {
+    const slots = buildTimeSlots(new Set(), { dateStr: '2026-09-28', provider, now });
+    expect(slots.every((s) => s.reason === 'day_off')).toBe(true);
+  });
+
+  it('a booked slot on an otherwise open day reads "Booked"', () => {
+    const slots = buildTimeSlots(new Set(['02:00 PM']), { dateStr: '2026-09-27', provider, now });
+    expect(slots.find((s) => s.time === '02:00 PM')).toMatchObject({ available: false, reason: 'booked', reasonLabel: 'Booked' });
+  });
+
+  it('slotBlocker agrees with the list (what createBooking re-checks)', () => {
+    expect(slotBlocker('02:00 PM', { dateStr: '2026-09-27', provider, now })).toBeNull();
+    expect(slotBlocker('09:00 AM', { dateStr: '2026-09-27', provider, now })).toBe('past');
+    expect(slotBlocker('02:00 PM', { dateStr: '2026-09-28', provider, now })).toBe('day_off');
+  });
+});

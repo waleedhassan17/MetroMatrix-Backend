@@ -18,6 +18,7 @@ const WalletService = require('../../../services/walletService');
 const WalletTransaction = require('../../../models/WalletTransaction');
 const { getHomeserviceSettings } = require('./settingsService');
 const { STATUS } = require('./statusMap');
+const { billOf } = require('./money');
 
 class PaymentError extends Error {
   constructor(message, statusCode = 400) {
@@ -40,11 +41,61 @@ function commissionOf(amount, commissionPercent) {
 }
 
 /**
+ * A settlement in flight holds this claim. Stale after a minute, so a request
+ * that died mid-way cannot lock a booking forever; the ledger calls below are
+ * idempotent per booking, so a retry after that cannot move money twice.
+ */
+const CLAIM_TTL_MS = 60 * 1000;
+
+/**
+ * Atomically take the right to settle this booking.
+ *
+ * Wallet payment (customer) and cash confirmation (provider) are two doors
+ * into the same room. Each checked "not paid yet" and then moved money, so a
+ * customer paying from the wallet in the same second the provider confirmed
+ * cash settled the job twice: the customer charged, and the provider debited
+ * a second commission. The claim is a conditional update — only one caller
+ * can flip it — taken BEFORE any money moves.
+ */
+async function claimSettlement(booking) {
+  const Booking = require('../models/Booking');
+  const now = new Date();
+  const claimed = await Booking.updateOne(
+    {
+      _id: booking._id,
+      'payment.status': { $ne: 'paid' },
+      $or: [
+        { 'payment.settlingSince': null },
+        { 'payment.settlingSince': { $lt: new Date(now.getTime() - CLAIM_TTL_MS) } },
+      ],
+    },
+    { $set: { 'payment.settlingSince': now } }
+  );
+  if (!claimed.matchedCount) {
+    const fresh = await Booking.findById(booking._id).select('payment.status').lean();
+    if (fresh && fresh.payment && fresh.payment.status === 'paid') {
+      throw new PaymentError('This booking has already been paid', 409);
+    }
+    throw new PaymentError('A payment for this booking is already being processed', 409);
+  }
+}
+
+async function releaseSettlement(booking) {
+  const Booking = require('../models/Booking');
+  try {
+    await Booking.updateOne({ _id: booking._id }, { $set: { 'payment.settlingSince': null } });
+  } catch (e) {
+    console.error(`[payment] releasing claim failed booking=${booking._id}: ${e.message}`);
+  }
+}
+
+/**
  * Customer pays from wallet. Returns the customer-side WalletTransaction.
  */
 async function payWithWallet(booking, customer, amount) {
   assertPayable(booking);
   const settings = await getHomeserviceSettings();
+  await claimSettlement(booking);
 
   let result;
   try {
@@ -61,6 +112,7 @@ async function payWithWallet(booking, customer, amount) {
       commissionRate: settings.commissionPercent,
     });
   } catch (e) {
+    await releaseSettlement(booking);
     if (/insufficient/i.test(e.message)) {
       throw new PaymentError('Insufficient wallet balance');
     }
@@ -71,6 +123,7 @@ async function payWithWallet(booking, customer, amount) {
   booking.payment.method = 'wallet';
   booking.payment.walletTransactionId = result.payerTransaction._id;
   booking.payment.paidAt = new Date();
+  booking.payment.settlingSince = null;
   if (!booking.pricing.finalPrice) booking.pricing.finalPrice = amount;
   await booking.save();
 
@@ -87,17 +140,27 @@ async function payWithWallet(booking, customer, amount) {
 async function confirmCash(booking, provider) {
   assertPayable(booking);
   const settings = await getHomeserviceSettings();
-  const amount =
-    booking.payment.requestedAmount ||
-    booking.pricing.finalPrice ||
-    booking.pricing.estimatedPrice;
+  const amount = billOf(booking);
   const commission = commissionOf(amount, settings.commissionPercent);
+  await claimSettlement(booking);
 
+  try {
+    return await settleCash(booking, provider, amount, commission);
+  } catch (e) {
+    await releaseSettlement(booking);
+    throw e;
+  }
+}
+
+async function settleCash(booking, provider, amount, commission) {
   const wallet = await WalletService.getOrCreateWallet(provider._id, 'Provider');
   const relatedTo = { kind: 'Booking', id: booking._id };
 
-  let tx;
-  if (wallet.balance >= commission) {
+  let tx = null;
+  if (commission <= 0) {
+    // A zero-commission configuration has nothing to move; the cash itself
+    // changed hands in person.
+  } else if (wallet.balance >= commission) {
     // Debit the provider AND credit the Platform ledger in one call — the
     // commission has a real destination instead of just vanishing off the
     // provider's balance (the bug this module was built to avoid). settle()
@@ -111,6 +174,8 @@ async function confirmCash(booking, provider) {
       source: 'commission',
       relatedTo,
       description: `Platform commission (cash) — booking ${booking._id}`,
+      // One commission per booking, however many times confirm is retried.
+      idempotencyKey: `hscash-${booking._id}`,
       commissionRate: 0,
     });
     tx = result.payerTransaction;
@@ -132,12 +197,13 @@ async function confirmCash(booking, provider) {
 
   booking.payment.status = 'paid';
   booking.payment.method = 'cash';
-  booking.payment.walletTransactionId = tx._id;
+  booking.payment.walletTransactionId = tx ? tx._id : null;
   booking.payment.paidAt = new Date();
+  booking.payment.settlingSince = null;
   if (!booking.pricing.finalPrice) booking.pricing.finalPrice = amount;
   await booking.save();
 
-  return { transaction: tx, commission };
+  return { transaction: tx || { _id: `CASH-${booking._id}` }, commission };
 }
 
 /**
@@ -167,4 +233,7 @@ module.exports = {
   payWithWallet,
   confirmCash,
   pendingCommission,
+  claimSettlement,
+  releaseSettlement,
+  CLAIM_TTL_MS,
 };

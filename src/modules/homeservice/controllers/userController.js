@@ -7,6 +7,9 @@ const User = require('../../../models/User');
 const { transition } = require('../services/bookingService');
 const { STATUS } = require('../services/statusMap');
 const { toUserBooking, avatar, CATEGORY_TO_SUBTYPE } = require('../services/serializers');
+const ProviderReview = require('../models/ProviderReview');
+const { expireStale } = require('../services/expiryService');
+const { searchableProviderFilter } = require('../services/providerVisibility');
 
 const ok = (res, data, message, pagination) =>
   res.json({ success: true, data, message, ...(pagination ? { pagination } : {}) });
@@ -48,18 +51,17 @@ const getHome = asyncHandler(async (req, res) => {
   }).sort({ sortOrder: 1 });
   const categories = await Promise.all(
     cats.map(async (c) => {
-      const providers = await Provider.find({
-        providerType: 'home_service',
-        providerSubType: c.providerSubType,
-        adminVerified: 'active',
-      })
-        .select('fullName profilePhoto')
-        .limit(3);
-      const count = await Provider.countDocuments({
-        providerType: 'home_service',
-        providerSubType: c.providerSubType,
-        adminVerified: 'active',
-      });
+      // Exactly the providers a customer can find by tapping this card — the
+      // same filter search applies — so "9+ Experts" never counts test or
+      // deactivated accounts the list will not show.
+      const visible = searchableProviderFilter(c.providerSubType);
+      const [providers, count] = await Promise.all([
+        Provider.find(visible)
+          .select('fullName profilePhoto')
+          .sort({ 'ratings.average': -1 })
+          .limit(3),
+        Provider.countDocuments(visible),
+      ]);
       return {
         id: c.slug,
         name: c.name,
@@ -77,20 +79,65 @@ const getHome = asyncHandler(async (req, res) => {
 });
 
 // GET /api/user/bookings?status= — customer bookings list (UserBooking[])
+//
+// Ordered the way a customer reads it: what is still going on first, soonest
+// first, then everything that has finished, most recent first. The status
+// filter runs BEFORE the page is cut — it used to take the newest 50 rows and
+// filter those, so older completed bookings silently fell off the list.
+const LIVE_RANK = { in_progress: 0, confirmed: 1, pending: 2 };
 const getUserBookings = asyncHandler(async (req, res) => {
-  const { status, page = 1, limit = 50 } = req.query;
-  const query = { customer: req.user._id };
-  const bookings = await Booking.find(query)
-    .populate('provider', 'fullName profilePhoto')
-    .sort({ createdAt: -1 })
-    .skip((page - 1) * limit)
-    .limit(Number(limit));
+  const { status } = req.query;
+  const limit = Math.min(parseInt(req.query.limit, 10) || 100, 200);
 
-  let items = bookings.map(toUserBooking);
+  await expireStale({ customer: req.user._id });
+
+  const bookings = await Booking.find({ customer: req.user._id })
+    .populate('provider', 'fullName profilePhoto')
+    .sort({ scheduledFor: -1 })
+    .limit(500);
+
+  // The review each booking already has, so the list can show the rating and
+  // stop offering "Rate" twice. These fields were read off the booking, where
+  // nothing ever wrote them.
+  const reviews = await ProviderReview.find({ booking: { $in: bookings.map((b) => b._id) } })
+    .select('booking rating comment')
+    .lean();
+  const reviewByBooking = new Map(reviews.map((r) => [String(r.booking), r]));
+
+  let items = bookings.map((b) => {
+    const item = toUserBooking(b);
+    const review = reviewByBooking.get(String(b._id));
+    if (review) {
+      item.rating = review.rating;
+      item.review = review.comment || '';
+    }
+    item.scheduledAt = b.scheduledFor ? b.scheduledFor.toISOString() : null;
+    if (b.cancellation && b.cancellation.by) {
+      item.cancellation = {
+        by: b.cancellation.by,
+        reason: b.cancellation.reason || '',
+        code: b.cancellation.code || null,
+      };
+    }
+    return item;
+  });
   if (status && status !== 'all') {
     items = items.filter((b) => b.status === status);
   }
-  ok(res, items, 'Bookings fetched');
+
+  items.sort((a, b) => {
+    const la = LIVE_RANK[a.status];
+    const lb = LIVE_RANK[b.status];
+    const liveA = la !== undefined;
+    const liveB = lb !== undefined;
+    if (liveA !== liveB) return liveA ? -1 : 1;
+    const ta = a.scheduledAt ? Date.parse(a.scheduledAt) : 0;
+    const tb = b.scheduledAt ? Date.parse(b.scheduledAt) : 0;
+    if (liveA) return la !== lb ? la - lb : ta - tb;
+    return tb - ta;
+  });
+
+  ok(res, items.slice(0, limit), 'Bookings fetched');
 });
 
 // POST /api/user/bookings/:bookingId/cancel

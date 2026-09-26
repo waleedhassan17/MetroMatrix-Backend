@@ -1,4 +1,5 @@
 const asyncHandler = require('express-async-handler');
+const mongoose = require('mongoose');
 const Booking = require('../models/Booking');
 const SavedAddress = require('../models/SavedAddress');
 const Provider = require('../../../models/Provider');
@@ -15,6 +16,16 @@ const {
   avatar,
   SUBTYPE_TO_CATEGORY,
 } = require('../services/serializers');
+const { expireStale } = require('../services/expiryService');
+const { billOf } = require('../services/money');
+const { hoursFor, to12h } = require('../services/catalogue');
+const {
+  pktDateString,
+  pktDayBoundsFromString,
+  pktInstant,
+  weekdayOf,
+  minutesOfDay,
+} = require('../services/time');
 
 const ok = (res, data, message, pagination) =>
   res.json({ success: true, data, message, ...(pagination ? { pagination } : {}) });
@@ -60,29 +71,72 @@ async function findActiveBooking(customerId, providerId) {
   return Booking.findOne(activeBookingQuery(customerId, providerId)).sort({ createdAt: -1 });
 }
 
-// Booking screen time slots — generated, marking already-booked slots
-// unavailable for the requested date.
-function buildTimeSlots(bookedTimes = new Set()) {
-  const defs = [
-    ['09:00 AM', 'morning'], ['10:00 AM', 'morning'], ['11:00 AM', 'morning'],
-    ['12:00 PM', 'afternoon'], ['02:00 PM', 'afternoon'], ['04:00 PM', 'afternoon'],
-    ['05:00 PM', 'evening'], ['06:00 PM', 'evening'], ['07:00 PM', 'evening'],
-  ];
-  return defs.map(([time, period], i) => ({
-    id: String(i + 1),
-    time,
-    available: !bookedTimes.has(time),
-    period,
-  }));
+// The bookable visit times, one hour each.
+const SLOT_DEFS = [
+  ['09:00 AM', 'morning'], ['10:00 AM', 'morning'], ['11:00 AM', 'morning'],
+  ['12:00 PM', 'afternoon'], ['02:00 PM', 'afternoon'], ['04:00 PM', 'afternoon'],
+  ['05:00 PM', 'evening'], ['06:00 PM', 'evening'], ['07:00 PM', 'evening'],
+];
+const SLOT_TIMES = SLOT_DEFS.map(([time]) => time);
+
+/** A visit must be booked at least this far ahead, so a provider can get there. */
+const MIN_LEAD_MINUTES = 60;
+
+const SLOT_REASON_LABEL = {
+  day_off: 'Day off',
+  outside_hours: 'Off hours',
+  past: 'Passed',
+  too_soon: 'Too soon',
+  booked: 'Booked',
+};
+
+/**
+ * Why a slot cannot be booked, or null when it can. Checked in order of what
+ * the customer can do about it: nothing on a day off, nothing outside the
+ * provider's hours, nothing once the time has passed, and a different time
+ * when this one is taken.
+ */
+function slotBlocker(time, { dateStr, provider, now = new Date(), booked = new Set() } = {}) {
+  if (dateStr && provider) {
+    const day = weekdayOf(dateStr);
+    const hours = day ? hoursFor(provider, day) : null;
+    if (hours && !hours.working) return 'day_off';
+    if (hours) {
+      const at = minutesOfDay(time);
+      if (at < minutesOfDay(hours.start) || at >= minutesOfDay(hours.end)) return 'outside_hours';
+    }
+  }
+  if (dateStr) {
+    const at = pktInstant(dateStr, time);
+    if (at && at.getTime() <= now.getTime()) return 'past';
+    if (at && at.getTime() < now.getTime() + MIN_LEAD_MINUTES * 60 * 1000) return 'too_soon';
+  }
+  if (booked.has(time)) return 'booked';
+  return null;
+}
+
+// Booking screen time slots for one provider on one date. Without a date
+// (before the customer has picked one) every slot is offered, as before; with
+// one, slots are closed for the provider's day off and hours, for times that
+// have passed or are too close to reach, and for times already booked.
+function buildTimeSlots(bookedTimes = new Set(), opts = {}) {
+  return SLOT_DEFS.map(([time, period], i) => {
+    const reason = slotBlocker(time, { ...opts, booked: bookedTimes });
+    return {
+      id: String(i + 1),
+      time,
+      available: !reason,
+      period,
+      ...(reason ? { reason, reasonLabel: SLOT_REASON_LABEL[reason] } : {}),
+    };
+  });
 }
 
 // PKT-midnight day bounds for a 'YYYY-MM-DD' string — same convention as
-// parseScheduledFor below, so a slot query and the booking it is checking
-// against always agree on which calendar day a scheduledFor instant falls on.
+// the scheduledFor instants bookings are stored with, so a slot query and the
+// booking it is checking against always agree on the calendar day.
 function dayBoundsPKT(dateStr) {
-  const start = new Date(`${dateStr}T00:00:00.000+05:00`);
-  if (Number.isNaN(start.getTime())) return null;
-  return { start, end: new Date(start.getTime() + 24 * 60 * 60 * 1000) };
+  return pktDayBoundsFromString(dateStr);
 }
 
 // The display slot labels ('02:00 PM') this provider already has a live
@@ -121,16 +175,32 @@ const initBooking = asyncHandler(async (req, res) => {
     isDefault: -1,
     createdAt: -1,
   });
+  // A request the provider never answered in time must not keep this form
+  // closed: close it first, then ask whether anything is still live.
+  await expireStale({ customer: req.user._id, provider: provider._id });
+
   // A live request with this provider means the form is the wrong screen —
   // the app sends the customer to the existing booking instead of letting them
   // fill in a duplicate and meet a 409 at the end of it.
   const active = await findActiveBooking(req.user._id, provider._id);
-  const booked = await bookedSlotTimes(provider._id, req.query.date);
+  const date = pktDayBoundsFromString(req.query.date) ? req.query.date : null;
+  const booked = await bookedSlotTimes(provider._id, date);
+  const timeSlots = buildTimeSlots(booked, { dateStr: date, provider });
+  const hours = date ? hoursFor(provider, weekdayOf(date)) : null;
 
   ok(res, {
     provider: toBookingProvider(provider),
     addresses: addresses.map(toSavedAddress),
-    timeSlots: buildTimeSlots(booked),
+    timeSlots,
+    // What the form says above the slots for the chosen day.
+    day: date
+      ? {
+          date,
+          working: hours.working,
+          hours: hours.working ? `${to12h(hours.start)} - ${to12h(hours.end)}` : null,
+          anyAvailable: timeSlots.some((t) => t.available),
+        }
+      : null,
     activeBooking: active ? toActiveBooking(active) : null,
   }, 'Booking data fetched');
 });
@@ -141,6 +211,7 @@ const initBooking = asyncHandler(async (req, res) => {
 // provider the customer has already requested offers "View request" rather
 // than starting a booking that cannot be created.
 const getActiveBookings = asyncHandler(async (req, res) => {
+  await expireStale({ customer: req.user._id });
   const bookings = await Booking.find({
     customer: req.user._id,
     status: { $in: ACTIVE_STATUSES },
@@ -149,43 +220,55 @@ const getActiveBookings = asyncHandler(async (req, res) => {
   ok(res, { bookings: bookings.map(toActiveBooking) }, 'Active bookings fetched');
 });
 
-function parseScheduledFor(selectedDate, selectedTime) {
-  // selectedDate: 'YYYY-MM-DD', selectedTime: 'hh:mm AM/PM'
-  const m = /(\d{1,2}):(\d{2})\s*(AM|PM)/i.exec(selectedTime || '');
-  let hours = 12;
-  let minutes = 0;
-  if (m) {
-    hours = parseInt(m[1], 10) % 12;
-    if (/pm/i.test(m[3])) hours += 12;
-    minutes = parseInt(m[2], 10);
+/** Furthest ahead a visit can be booked. */
+const MAX_DAYS_AHEAD = 60;
+
+const capitalise = (w) => (w ? w[0].toUpperCase() + w.slice(1) : w);
+
+/** The sentence a customer sees when the slot they picked cannot be booked. */
+function slotRefusal(reason, { provider, dateStr, time }) {
+  const name = provider.fullName || 'This provider';
+  const day = capitalise(weekdayOf(dateStr));
+  switch (reason) {
+    case 'day_off':
+      return `${name} doesn't work on ${day}s. Pick another day.`;
+    case 'outside_hours': {
+      const h = hoursFor(provider, weekdayOf(dateStr));
+      return `${name} works ${to12h(h.start)} - ${to12h(h.end)} on ${day}s. Pick a time in those hours.`;
+    }
+    case 'past':
+      return 'That time has already passed. Pick a later time.';
+    case 'too_soon':
+      return `Bookings need at least an hour's notice. Pick a later time.`;
+    case 'booked':
+      return `${name} is already booked at ${time} that day. Pick another time.`;
+    default:
+      return 'That time is not available. Pick another time.';
   }
-  const dateMatch = /^(\d{4})-(\d{2})-(\d{2})$/.exec(selectedDate || '');
-  if (!dateMatch) return new Date();
-  // Built straight from the PKT calendar date's own y/m/d, offset by PKT's
-  // fixed +05:00 — NOT by parsing local midnight into a Date and then
-  // overwriting its UTC hour. That round trip silently landed on the WRONG
-  // calendar day for every slot from 5 AM PKT onward (i.e. all of them:
-  // buildTimeSlots only offers 9 AM–7 PM): 'T00:00:00.000+05:00' for a given
-  // date is itself 19:00 UTC the day BEFORE, and setUTCHours(hour - 5, ...)
-  // sets that hour on THAT UTC day rather than advancing to the intended one
-  // — so "17 Sep, 2:00 PM" was stored as 16 Sep 09:00 UTC (16 Sep, 2 PM PKT),
-  // a booking scheduled a full day earlier than the customer picked, and
-  // invisible to anything scoping by the date the customer actually chose
-  // (the per-date slot lock included).
-  const [, year, month, day] = dateMatch;
-  return new Date(Date.UTC(Number(year), Number(month) - 1, Number(day), hours - 5, minutes));
 }
 
 // POST /api/bookings — create → PENDING
 const createBooking = asyncHandler(async (req, res) => {
   const { providerId, selectedDate, selectedTime, addressId, instructions, description } =
-    req.body;
+    req.body || {};
 
+  if (!mongoose.isValidObjectId(providerId)) {
+    res.status(404);
+    throw new Error('Provider not found');
+  }
   const provider = await Provider.findById(providerId);
   if (!provider || provider.providerType !== 'home_service') {
     res.status(404);
     throw new Error('Provider not found');
   }
+  if (provider.adminVerified !== 'active' || provider.isActive === false) {
+    res.status(400);
+    throw new Error(`${provider.fullName || 'This provider'} is not taking bookings right now`);
+  }
+
+  // A request the provider never answered before its time must not count as
+  // "already requested" — close it before the duplicate check below.
+  await expireStale({ customer: req.user._id, provider: provider._id });
 
   // The duplicate guard, server-side. The app checks before it opens the form,
   // but that check and this create are two round trips apart — long enough for
@@ -204,13 +287,38 @@ const createBooking = asyncHandler(async (req, res) => {
     });
   }
 
+  // The date and time, checked here rather than trusted: the form greys out
+  // closed slots, but a form opened an hour ago still shows the slots as they
+  // were an hour ago.
+  const time = SLOT_TIMES.find((t) => minutesOfDay(t) === minutesOfDay(selectedTime));
+  const bounds = pktDayBoundsFromString(selectedDate);
+  if (!bounds || !time) {
+    res.status(400);
+    throw new Error('Pick a date and one of the available times');
+  }
+  const scheduledFor = pktInstant(selectedDate, time);
+  if (scheduledFor.getTime() > Date.now() + MAX_DAYS_AHEAD * 86400000) {
+    res.status(400);
+    throw new Error(`Bookings can be made up to ${MAX_DAYS_AHEAD} days ahead`);
+  }
+  const blocker = slotBlocker(time, {
+    dateStr: selectedDate,
+    provider,
+    now: new Date(),
+    booked: await bookedSlotTimes(provider._id, selectedDate),
+  });
+  if (blocker) {
+    res.status(400);
+    throw new Error(slotRefusal(blocker, { provider, dateStr: selectedDate, time }));
+  }
+
   let address = null;
-  if (addressId) {
+  if (mongoose.isValidObjectId(addressId)) {
     address = await SavedAddress.findOne({ _id: addressId, user: req.user._id });
   }
   if (!address) {
     res.status(400);
-    throw new Error('A saved address is required to create a booking');
+    throw new Error('Choose one of your saved addresses for this booking');
   }
 
   const booking = await Booking.create({
@@ -218,9 +326,9 @@ const createBooking = asyncHandler(async (req, res) => {
     provider: provider._id,
     serviceCategory: SUBTYPE_TO_CATEGORY[provider.providerSubType] || 'electricians',
     serviceSubCategory: provider.profession || provider.specialty || '',
-    description: description || '',
-    scheduledFor: parseScheduledFor(selectedDate, selectedTime),
-    scheduledTime: selectedTime,
+    description: String(description || '').slice(0, 2000),
+    scheduledFor,
+    scheduledTime: time,
     address: {
       label: address.label,
       line1: address.line1,
@@ -228,7 +336,7 @@ const createBooking = asyncHandler(async (req, res) => {
       icon: address.icon,
       coordinates: address.coordinates,
     },
-    instructions: instructions || '',
+    instructions: String(instructions || '').slice(0, 1000),
     pricing: { estimatedPrice: provider.basePrice || 0, currency: 'PKR' },
     statusHistory: [
       {
@@ -240,61 +348,44 @@ const createBooking = asyncHandler(async (req, res) => {
     ],
   });
 
-  await Provider.updateOne({ _id: provider._id }, { $inc: { totalBookings: 1 } });
-
-  // Tell the provider a job is waiting.
-  //
-  // Creation is the one lifecycle event that does NOT go through transition()
-  // — there is no previous status to move from — so it missed the notification
-  // hook every other status change gets for free. BOOKING_EVENTS[PENDING] has
-  // been sitting there addressed `to: 'provider'` with nothing calling it,
-  // which is why cancellations notified and new bookings did not.
-  //
-  // Both are best-effort by contract, and wrapped anyway: a provider not
-  // hearing about a job must never mean the customer failed to book one.
-  try {
-    const notify = require('../services/notificationService');
-    await notify.notifyBookingStatus(booking, STATUS.PENDING, {
+  // Tell the provider a job is waiting — three ways, side by side, all
+  // best-effort: a provider not hearing about a job must never mean the
+  // customer failed to book one.
+  //   - the durable notification is what the bell shows on next fetch;
+  //   - the user-room event updates an open app without a fetch (the provider
+  //     is not in the booking's room yet, so it is addressed to them);
+  //   - the push reaches a provider whose app is closed, which is most of them
+  //     most of the time.
+  // Creation is the one lifecycle event that does not go through transition()
+  // — there is no previous status to move from — so it announces itself.
+  const service = booking.serviceSubCategory || booking.serviceCategory;
+  const results = await Promise.allSettled([
+    Provider.updateOne({ _id: provider._id }, { $inc: { totalBookings: 1 } }),
+    require('../services/notificationService').notifyBookingStatus(booking, STATUS.PENDING, {
       customerName: req.user.fullName,
       providerName: provider.fullName,
-      service: booking.serviceSubCategory || booking.serviceCategory,
-    });
-  } catch (e) {
-    console.error(`[booking] create notify failed booking=${booking._id}: ${e.message}`);
-  }
-
-  // The durable notification above is what the bell shows on next fetch; this
-  // is what updates it without one. Addressed to the provider directly, since
-  // they are not in the booking's room yet.
-  try {
-    const { emitToUser } = require('../../../sockets');
-    await emitToUser(provider._id, 'booking_created', {
+      service,
+    }),
+    require('../../../sockets').emitToUser(provider._id, 'booking_created', {
       bookingId: String(booking._id),
       status: booking.status,
-      service: booking.serviceSubCategory || booking.serviceCategory,
+      service,
       customerName: req.user.fullName,
       scheduledFor: booking.scheduledFor,
       createdAt: new Date().toISOString(),
-    });
-  } catch (e) {
-    console.error(`[booking] create publish failed booking=${booking._id}: ${e.message}`);
-  }
-
-  // And a push, for the case the emit above cannot cover: a provider whose app
-  // is closed, which is most of them most of the time. A job request that waits
-  // for the provider to next open the app is a job request they lose.
-  try {
-    const { pushToUser } = require('../../../sockets');
-    const service = booking.serviceSubCategory || booking.serviceCategory;
-    await pushToUser(provider._id, 'provider', {
+    }),
+    require('../../../sockets').pushToUser(provider._id, 'provider', {
       type: 'booking_created',
       title: 'New booking request',
-      body: `${req.user.fullName || 'A customer'} requested ${service || 'a service'}`,
-      data: { bookingId: String(booking._id), roomType: 'homeservice' },
-    });
-  } catch (e) {
-    console.error(`[booking] create push failed booking=${booking._id}: ${e.message}`);
-  }
+      body: `${req.user.fullName || 'A customer'} requested ${String(service || 'a service').toLowerCase()} for ${time}, ${new Date(scheduledFor).toLocaleDateString('en-GB', { weekday: 'short', day: 'numeric', month: 'short', timeZone: 'Asia/Karachi' })}`,
+      data: { bookingId: String(booking._id), roomType: 'homeservice', audience: 'provider' },
+    }),
+  ]);
+  results.forEach((r) => {
+    if (r.status === 'rejected') {
+      console.error(`[booking] create side effect failed booking=${booking._id}: ${r.reason && r.reason.message}`);
+    }
+  });
 
   ok(res, {
     bookingId: String(booking._id),
@@ -305,9 +396,9 @@ const createBooking = asyncHandler(async (req, res) => {
       providerName: provider.fullName,
       service: provider.profession || provider.specialty || '',
       selectedDate,
-      selectedTime,
+      selectedTime: time,
       selectedAddress: toSavedAddress(address),
-      instructions: instructions || '',
+      instructions: booking.instructions,
       estimatedPrice: provider.basePrice || 0,
       estimatedDuration: '1-2 hours',
     },
@@ -334,7 +425,7 @@ const getBooking = asyncHandler(async (req, res) => {
       providerId: String(b.provider._id),
       providerName: b.provider.fullName,
       service: b.serviceSubCategory || b.serviceCategory,
-      selectedDate: b.scheduledFor ? b.scheduledFor.toISOString().slice(0, 10) : '',
+      selectedDate: b.scheduledFor ? pktDateString(b.scheduledFor) : '',
       selectedTime: b.scheduledTime || '',
       selectedAddress: {
         id: 'addr',
@@ -360,7 +451,7 @@ const getBooking = asyncHandler(async (req, res) => {
     payment: {
       status: b.payment.status,
       method: b.payment.method,
-      amount: b.pricing.finalPrice || b.pricing.estimatedPrice,
+      amount: billOf(b),
       paidAt: b.payment.paidAt ? b.payment.paidAt.toISOString() : null,
     },
     cancellation: b.cancellation && b.cancellation.by ? b.cancellation : null,
@@ -412,8 +503,7 @@ const getServiceStatus = asyncHandler(async (req, res) => {
       description: b.description || b.instructions || '',
       startedAt: b.work.startedAt ? b.work.startedAt.toISOString() : '',
       estimatedDuration: '1-2 hours',
-      suggestedAmount:
-        b.payment.requestedAmount || b.pricing.finalPrice || b.pricing.estimatedPrice,
+      suggestedAmount: billOf(b),
     },
     progressSteps: steps.map((s, i) => ({
       id: i + 1,
@@ -445,7 +535,7 @@ const getServiceStatus = asyncHandler(async (req, res) => {
     payment: {
       status: b.payment.status,
       method: b.payment.method,
-      amount: b.pricing.finalPrice || b.pricing.estimatedPrice,
+      amount: billOf(b),
       paidAt: b.payment.paidAt,
     },
   }, 'Service status fetched');
@@ -517,4 +607,7 @@ module.exports = {
   cancelBooking,
   buildTimeSlots,
   bookedSlotTimes,
+  slotBlocker,
+  SLOT_TIMES,
+  MIN_LEAD_MINUTES,
 };
