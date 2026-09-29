@@ -17,7 +17,7 @@ const {
   SUBTYPE_TO_CATEGORY,
 } = require('../services/serializers');
 const { expireStale } = require('../services/expiryService');
-const { billOf } = require('../services/money');
+const { quotedBill } = require('../services/money');
 const { hoursFor, to12h } = require('../services/catalogue');
 const {
   pktDateString,
@@ -451,7 +451,9 @@ const getBooking = asyncHandler(async (req, res) => {
     payment: {
       status: b.payment.status,
       method: b.payment.method,
-      amount: billOf(b),
+      // What the CUSTOMER owes, so zero until the provider quotes. The
+      // estimate is still available above as `serviceDetails.estimatedPrice`.
+      amount: quotedBill(b),
       paidAt: b.payment.paidAt ? b.payment.paidAt.toISOString() : null,
     },
     cancellation: b.cancellation && b.cancellation.by ? b.cancellation : null,
@@ -503,7 +505,7 @@ const getServiceStatus = asyncHandler(async (req, res) => {
       description: b.description || b.instructions || '',
       startedAt: b.work.startedAt ? b.work.startedAt.toISOString() : '',
       estimatedDuration: '1-2 hours',
-      suggestedAmount: billOf(b),
+      suggestedAmount: quotedBill(b),
     },
     progressSteps: steps.map((s, i) => ({
       id: i + 1,
@@ -535,7 +537,7 @@ const getServiceStatus = asyncHandler(async (req, res) => {
     payment: {
       status: b.payment.status,
       method: b.payment.method,
-      amount: billOf(b),
+      amount: quotedBill(b),
       paidAt: b.payment.paidAt,
     },
   }, 'Service status fetched');

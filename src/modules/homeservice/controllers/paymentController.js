@@ -8,7 +8,9 @@ const {
   assertPayable,
   PaymentError,
 } = require('../services/paymentService');
-const { billOf, parseProviderAmount, AmountError } = require('../services/money');
+// `billOf` for the PROVIDER's side of this file (it seeds their visit charge
+// from the estimate); `quotedBill` for the customer's, which must not.
+const { billOf, quotedBill, parseProviderAmount, AmountError } = require('../services/money');
 const { avatar } = require('../services/serializers');
 
 const ok = (res, data, message) => res.json({ success: true, data, message });
@@ -49,7 +51,9 @@ function rethrowAsHttp(res, e) {
 const initCustomerPayment = asyncHandler(async (req, res) => {
   const b = req.booking;
   const wallet = await WalletService.getOrCreateWallet(req.user._id, 'User');
-  const amount = billOf(b);
+  // Zero until the provider has quoted. The screen reads `paymentStatus` below
+  // to say so in words rather than offering to charge nothing.
+  const amount = quotedBill(b);
   ok(res, {
     paymentId: `pay_${b._id}`,
     recipient: {
@@ -121,10 +125,17 @@ const processPayment = asyncHandler(async (req, res) => {
     throw new Error('Choose how to pay: wallet or cash');
   }
 
-  const bill = billOf(b);
+  // `quotedBill`: the estimate is the provider's visit charge, not a bill. This
+  // guard now actually fires on an unpriced job — under `billOf` it could not,
+  // because every booking is stamped with an estimate at creation, so a
+  // customer could settle a job at 500 before the provider had named a figure.
+  //
+  // 409 rather than 400, matching the stale-amount check just below: the
+  // request is well formed, the booking is simply not ready to be paid.
+  const bill = quotedBill(b);
   if (!(bill > 0)) {
-    res.status(400);
-    throw new Error('This job has no amount to pay yet');
+    res.status(409);
+    throw new Error("This job hasn't been priced yet. Ask the provider to confirm the final amount.");
   }
   if (amount !== undefined && amount !== null && amount !== '') {
     if (Math.round(Number(amount)) !== Math.round(bill)) {

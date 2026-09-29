@@ -5,6 +5,7 @@
  */
 const {
   billOf,
+  quotedBill,
   parseProviderAmount,
   assertPriceEditable,
   maxAmountFor,
@@ -36,6 +37,42 @@ describe('billOf — one answer to "how much is owed"', () => {
   });
   it('then the estimate', () => {
     expect(billOf({ payment: { requestedAmount: null }, pricing: { finalPrice: null, estimatedPrice: 500 } })).toBe(500);
+  });
+});
+
+describe('quotedBill — what the CUSTOMER owes', () => {
+  it('prefers what the provider requested', () => {
+    expect(quotedBill({ payment: { requestedAmount: 1800 }, pricing: { finalPrice: 1500, estimatedPrice: 500 } })).toBe(1800);
+  });
+  it('then the final price entered at completion', () => {
+    expect(quotedBill({ payment: {}, pricing: { finalPrice: 1500, estimatedPrice: 500 } })).toBe(1500);
+  });
+
+  // The behaviour that separates it from billOf. Every booking is stamped with
+  // `estimatedPrice = provider.basePrice` at creation, so billOf reports a
+  // payable figure from day one — which let a customer settle a job at the
+  // seeded 500 before the provider had named a price.
+  it('does NOT fall back to the estimate — zero until someone quotes', () => {
+    const unpriced = { payment: { requestedAmount: null }, pricing: { finalPrice: null, estimatedPrice: 500 } };
+    expect(quotedBill(unpriced)).toBe(0);
+    expect(billOf(unpriced)).toBe(500);
+  });
+
+  it('agrees with billOf whenever there is anything to pay', () => {
+    // Load-bearing: paymentService computes the charge with billOf, while
+    // processPayment gates on quotedBill. They must not disagree about a
+    // priced job, or the guard would pass and a different amount be debited.
+    for (const b of [
+      { payment: { requestedAmount: 1800 }, pricing: { finalPrice: 1500, estimatedPrice: 500 } },
+      { payment: {}, pricing: { finalPrice: 1500, estimatedPrice: 500 } },
+      { payment: { requestedAmount: 900 }, pricing: {} },
+    ]) {
+      expect(quotedBill(b)).toBe(billOf(b));
+    }
+  });
+
+  it('survives a booking with no pricing or payment subdocument', () => {
+    expect(quotedBill({})).toBe(0);
   });
 });
 

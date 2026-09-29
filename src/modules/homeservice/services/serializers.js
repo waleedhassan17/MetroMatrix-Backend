@@ -22,7 +22,7 @@ const CATEGORY_TO_SUBTYPE = {
 };
 
 const { pktDateString } = require('./time');
-const { billOf } = require('./money');
+const { billOf, quotedBill } = require('./money');
 
 const DEFAULT_AVATAR = 'https://ui-avatars.com/api/?background=4F46E5&color=fff&name=';
 
@@ -143,7 +143,11 @@ function toUserBooking(b) {
     address: [b.address && b.address.line1, b.address && b.address.city]
       .filter(Boolean)
       .join(', '),
-    price: billOf(b),
+    // `quotedBill`, not `billOf`: the estimate is the provider's visit charge,
+    // and rendering it here printed a confident "PKR 500" on a job nobody had
+    // priced yet. Zero until the provider quotes, which the client shows as
+    // "Priced on completion".
+    price: quotedBill(b),
     // The list needs to know a completed booking is still unpaid, so the
     // bookings tab can offer "Pay now" — otherwise a customer who left the
     // service screen before paying has no route back to payment. Only the

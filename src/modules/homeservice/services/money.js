@@ -23,13 +23,39 @@ const ABSOLUTE_MAX_AMOUNT = 500000;
 const MIN_JOB_CEILING = 100000;
 
 /**
- * The amount the customer owes for this booking: what the provider asked for,
- * else the final price they entered at completion, else the estimate.
+ * The amount this booking is WORTH: what the provider asked for, else the final
+ * price they entered at completion, else the estimate.
+ *
+ * The estimate fallback is what makes this the provider's number. Their screens
+ * seed a visit charge from it before anyone has quoted anything, earnings
+ * aggregate over it, and `maxAmountFor` derives a per-job ceiling from it.
+ * For what the CUSTOMER can be charged, use `quotedBill` — see why there.
  */
 function billOf(booking) {
   const payment = booking.payment || {};
   const pricing = booking.pricing || {};
   return payment.requestedAmount || pricing.finalPrice || pricing.estimatedPrice || 0;
+}
+
+/**
+ * What the CUSTOMER owes. Deliberately does NOT fall back to the estimate.
+ *
+ * A booking is stamped with `estimatedPrice = provider.basePrice` the moment it
+ * is created, so `billOf` reports a payable amount from day one. That is the
+ * provider's visit charge, not a bill: it made the customer's bookings tab show
+ * a flat "PKR 500" under a booking screen that said "quoted after the visit",
+ * and — worse — let the customer pay that 500 the moment the job was marked
+ * complete, before the provider had entered the real figure. Whatever the
+ * provider billed afterwards, the job was already settled at the estimate.
+ *
+ * A home-service job is priced on completion, so until the provider requests
+ * payment (or enters a final price) there is nothing to pay, and zero is the
+ * honest answer. The client already renders it as "Priced on completion".
+ */
+function quotedBill(booking) {
+  const payment = booking.payment || {};
+  const pricing = booking.pricing || {};
+  return payment.requestedAmount || pricing.finalPrice || 0;
 }
 
 /** The most a provider may bill for this booking. */
@@ -74,6 +100,7 @@ module.exports = {
   AmountError,
   ABSOLUTE_MAX_AMOUNT,
   billOf,
+  quotedBill,
   maxAmountFor,
   parseProviderAmount,
   assertPriceEditable,
