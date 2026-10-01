@@ -2,13 +2,14 @@ const asyncHandler = require('express-async-handler');
 const Doctor = require('../modules/healthcare/models/Doctor');
 const Provider = require('../models/Provider');
 const Notification = require('../models/Notification');
+const logger = require('../utils/logger');
 
 // Best-effort notification (never breaks the request).
 const notifyAdmin = async (type, title, message, data = {}) => {
   try {
     await Notification.create({ type, title, message, data });
   } catch (err) {
-    console.error('notifyAdmin failed:', err.message);
+    logger.error('notifyAdmin failed:', err.message);
   }
 };
 

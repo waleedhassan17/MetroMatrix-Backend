@@ -4,6 +4,7 @@ const User = require('../models/User');
 const Provider = require('../models/Provider');
 const Admin = require('../models/Admin');
 const named = require('../utils/named');
+const logger = require('../utils/logger');
 
 // Which collection to look in first, keyed by the token's `userType`.
 //
@@ -74,7 +75,9 @@ const protect = named('protect', asyncHandler(async (req, res, next) => {
       req.user = user;
       next();
     } catch (error) {
-      console.error(error);
+      // Expired/forged tokens are routine (the client refreshes on 401);
+      // logging each one at error level only buried real faults.
+      (req.log || logger).debug({ err: error }, 'token rejected');
       res.status(401);
       throw new Error('Not authorized, token failed');
     }
@@ -169,7 +172,7 @@ const optionalAuth = named('optionalAuth', asyncHandler(async (req, res, next) =
       }
     } catch (error) {
       // Don't throw error, just continue without user
-      console.log('Optional auth: Invalid token');
+      logger.debug('Optional auth: Invalid token');
     }
   }
 

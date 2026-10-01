@@ -1,12 +1,9 @@
+const logger = require('../utils/logger');
+
 // Error handler middleware
 const errorHandler = (err, req, res, next) => {
   let error = { ...err };
   error.message = err.message;
-
-  // Log to console for dev
-  if (process.env.NODE_ENV === 'development') {
-    console.error(err.stack.red);
-  }
 
   // Mongoose bad ObjectId
   if (err.name === 'CastError') {
@@ -57,7 +54,16 @@ const errorHandler = (err, req, res, next) => {
   }
 
   const resStatus = res.statusCode && res.statusCode !== 200 ? res.statusCode : null;
-  res.status(error.statusCode || err.statusCode || resStatus || 500).json({
+  const status = error.statusCode || err.statusCode || resStatus || 500;
+
+  // Server faults are errors; client faults are routine and only worth a
+  // debug line. Either way the request id ties the log to the response.
+  const log = req.log || logger;
+  const context = { err, status, method: req.method, path: req.originalUrl?.split('?')[0] };
+  if (status >= 500) log.error(context, 'request failed');
+  else log.debug(context, 'request rejected');
+
+  res.status(status).json({
     success: false,
     error: error.message || 'Server Error',
     ...(process.env.NODE_ENV === 'development' && { stack: err.stack }),

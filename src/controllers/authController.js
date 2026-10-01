@@ -21,6 +21,7 @@ const { buildVerificationUrl, buildPublicUrl } = require('../utils/publicUrl');
 const GENERIC_RESET_MESSAGE = 'If an account exists, a reset code has been sent.';
 
 const { verifiedEmailFlag } = require('../utils/verificationFlags');
+const logger = require('../utils/logger');
 
 // @desc    Register user
 // @route   POST /api/auth/register
@@ -67,11 +68,11 @@ const registerUser = asyncHandler(async (req, res) => {
     // Create verification URL (backend's own public origin — see utils/publicUrl.js)
     const verificationUrl = buildVerificationUrl(token, 'user');
 
-    console.log('📧 Sending user signup verification email to:', email);
+    logger.debug('📧 Sending user signup verification email to:', email);
     // Contains the raw verification token — anyone with log access could
     // verify the account. Non-production only.
     if (process.env.NODE_ENV !== 'production') {
-      console.log('🔗 Verification URL:', verificationUrl);
+      logger.debug('🔗 Verification URL:', verificationUrl);
     }
     
     // Send verification email
@@ -90,7 +91,7 @@ const registerUser = asyncHandler(async (req, res) => {
       instructions: 'Check your email and click the verification link to complete your signup.',
     });
   } catch (error) {
-    console.error('❌ Signup error:', error);
+    logger.error('❌ Signup error:', error);
     res.status(500);
     throw new Error(error.message || 'Failed to complete signup. Please try again.');
   }
@@ -159,7 +160,7 @@ const registerProvider = asyncHandler(async (req, res) => {
   
   // 1. Validate input first
   if (!fullName || !phoneNumber || !email || !password) {
-    console.log('❌ Registration failed - missing fields:', { fullName: !!fullName, phoneNumber: !!phoneNumber, email: !!email, password: !!password });
+    logger.debug('❌ Registration failed - missing fields:', { fullName: !!fullName, phoneNumber: !!phoneNumber, email: !!email, password: !!password });
     return res.status(400).json({
       success: false,
       message: 'All fields are required: fullName, email, phoneNumber, password',
@@ -168,12 +169,12 @@ const registerProvider = asyncHandler(async (req, res) => {
   }
 
   const normalizedEmail = email.toLowerCase().trim();
-  console.log('📝 Provider registration attempt for:', normalizedEmail);
+  logger.debug('📝 Provider registration attempt for:', normalizedEmail);
   
   // 2. Check if provider already exists
   const providerExists = await Provider.findOne({ email: normalizedEmail });
   if (providerExists) {
-    console.log('❌ Registration failed - email already exists:', normalizedEmail);
+    logger.debug('❌ Registration failed - email already exists:', normalizedEmail);
     return res.status(409).json({
       success: false,
       message: 'An account with this email already exists',
@@ -206,7 +207,7 @@ const registerProvider = asyncHandler(async (req, res) => {
     
     // 5. Verify provider was saved successfully
     if (!provider || !provider._id) {
-      console.error('❌ Provider save failed - no _id returned');
+      logger.error('❌ Provider save failed - no _id returned');
       return res.status(500).json({
         success: false,
         message: 'Failed to create provider account. Please try again.',
@@ -214,10 +215,10 @@ const registerProvider = asyncHandler(async (req, res) => {
       });
     }
     
-    console.log('✅ Provider created successfully:', provider._id, normalizedEmail);
+    logger.debug('✅ Provider created successfully:', provider._id, normalizedEmail);
     
   } catch (error) {
-    console.error('❌ Provider creation error:', error);
+    logger.error('❌ Provider creation error:', error);
     
     // Handle duplicate key error (race condition)
     if (error.code === 11000) {
@@ -249,9 +250,9 @@ const registerProvider = asyncHandler(async (req, res) => {
   try {
     const NotificationService = require('../services/notificationService');
     await NotificationService.notifyProviderRegistration(provider);
-    console.log('✅ Admin notification created');
+    logger.debug('✅ Admin notification created');
   } catch (notifyError) {
-    console.error('⚠️ Failed to create admin notification:', notifyError.message);
+    logger.error('⚠️ Failed to create admin notification:', notifyError.message);
     // Don't fail registration for notification errors
   }
   
@@ -260,11 +261,11 @@ const registerProvider = asyncHandler(async (req, res) => {
   try {
     const verificationUrl = buildVerificationUrl(token, 'provider');
 
-    console.log('📧 Sending provider signup verification email to:', normalizedEmail);
+    logger.debug('📧 Sending provider signup verification email to:', normalizedEmail);
     // Contains the raw verification token — anyone with log access could
     // verify the account. Non-production only.
     if (process.env.NODE_ENV !== 'production') {
-      console.log('🔗 Verification URL:', verificationUrl);
+      logger.debug('🔗 Verification URL:', verificationUrl);
     }
     
     await sendEmail({
@@ -274,9 +275,9 @@ const registerProvider = asyncHandler(async (req, res) => {
     });
     
     emailSent = true;
-    console.log('✅ Verification email sent successfully');
+    logger.debug('✅ Verification email sent successfully');
   } catch (emailError) {
-    console.error('⚠️ Failed to send verification email:', emailError.message);
+    logger.error('⚠️ Failed to send verification email:', emailError.message);
     // Don't fail registration - provider can request resend
   }
   
@@ -494,16 +495,16 @@ const facebookAuth = asyncHandler(async (req, res) => {
 const googleLogin = asyncHandler(async (req, res) => {
   // NB: never log req.body here — it carries the Firebase ID token verbatim,
   // which is replayable until it expires. Log only its shape.
-  console.log('============ GOOGLE LOGIN ============');
-  console.log('Request received at:', new Date().toISOString());
-  console.log('idToken present:', Boolean(req.body?.idToken), '| userType:', req.body?.userType || 'user');
-  console.log('======================================');
+  logger.debug('============ GOOGLE LOGIN ============');
+  logger.debug('Request received at:', new Date().toISOString());
+  logger.debug('idToken present:', Boolean(req.body?.idToken), '| userType:', req.body?.userType || 'user');
+  logger.debug('======================================');
 
   const { idToken, userType = 'user' } = req.body;
 
   // Validate input
   if (!idToken) {
-    console.error('❌ No idToken provided');
+    logger.error('❌ No idToken provided');
     return res.status(400).json({ 
       success: false, 
       message: 'Google ID token is required' 
@@ -511,7 +512,7 @@ const googleLogin = asyncHandler(async (req, res) => {
   }
 
   if (!['user', 'provider'].includes(userType)) {
-    console.error('❌ Invalid userType:', userType);
+    logger.error('❌ Invalid userType:', userType);
     return res.status(400).json({ 
       success: false, 
       message: 'Invalid userType. Must be "user" or "provider"' 
@@ -519,13 +520,13 @@ const googleLogin = asyncHandler(async (req, res) => {
   }
 
   try {
-    console.log('🔍 Verifying Firebase ID token...');
+    logger.debug('🔍 Verifying Firebase ID token...');
     
     // Verify the ID token with Firebase
     const decodedToken = await verifyGoogleIdToken(idToken);
     
     if (!decodedToken) {
-      console.error('❌ Token verification returned null');
+      logger.error('❌ Token verification returned null');
       return res.status(401).json({ 
         success: false, 
         message: 'Invalid ID token' 
@@ -535,14 +536,14 @@ const googleLogin = asyncHandler(async (req, res) => {
     const { uid, email, name, picture } = decodedToken;
 
     if (!email) {
-      console.error('❌ No email in decoded token');
+      logger.error('❌ No email in decoded token');
       return res.status(400).json({ 
         success: false, 
         message: 'Email not provided by Google' 
       });
     }
 
-    console.log(`✅ Token verified for ${userType}: ${email}`);
+    logger.debug(`✅ Token verified for ${userType}: ${email}`);
 
     // Determine model based on userType
     const Model = userType === 'provider' ? Provider : User;
@@ -566,7 +567,7 @@ const googleLogin = asyncHandler(async (req, res) => {
 
     if (!user) {
       // Create new user/provider
-      console.log(`📝 Creating new ${userType}: ${email}`);
+      logger.debug(`📝 Creating new ${userType}: ${email}`);
 
       const userData = {
         email: email.toLowerCase(),
@@ -596,7 +597,7 @@ const googleLogin = asyncHandler(async (req, res) => {
       try {
         user = await Model.create(userData);
         isNewUser = true;
-        console.log(`✅ New ${userType} created via Google: ${email}`);
+        logger.debug(`✅ New ${userType} created via Google: ${email}`);
       } catch (createError) {
         // DB safeguard against the race: two concurrent Google logins for
         // the same brand-new email both pass the findOne-not-found check,
@@ -605,7 +606,7 @@ const googleLogin = asyncHandler(async (req, res) => {
         // second account. Re-fetch and continue as a normal login rather
         // than surfacing a 500 for what is really just "you're logged in."
         if (createError.code === 11000) {
-          console.warn(`⚠️ Concurrent Google signup race for ${email} — refetching the winner instead of duplicating`);
+          logger.warn(`⚠️ Concurrent Google signup race for ${email} — refetching the winner instead of duplicating`);
           user = await Model.findOne({
             $or: [{ googleId: uid }, { email: email.toLowerCase() }]
           });
@@ -618,7 +619,7 @@ const googleLogin = asyncHandler(async (req, res) => {
       }
     } else {
       // Update existing user login info
-      console.log(`✅ Existing ${userType} found: ${email}`);
+      logger.debug(`✅ Existing ${userType} found: ${email}`);
       
       if (!user.googleId) {
         user.googleId = uid;
@@ -628,11 +629,11 @@ const googleLogin = asyncHandler(async (req, res) => {
       }
       user.lastLoginDate = new Date();
       await user.save();
-      console.log(`✅ Existing ${userType} logged in via Google: ${email}`);
+      logger.debug(`✅ Existing ${userType} logged in via Google: ${email}`);
     }
 
     // Generate tokens
-    console.log('🔑 Generating JWT tokens...');
+    logger.debug('🔑 Generating JWT tokens...');
     const tokens = generateTokens(user._id, {
       userType,
       email: user.email,
@@ -664,7 +665,7 @@ const googleLogin = asyncHandler(async (req, res) => {
       userResponse.adminVerified = user.adminVerified;
     }
 
-    console.log('✅ Google login successful!');
+    logger.debug('✅ Google login successful!');
     
     res.json({
       success: true,
@@ -680,8 +681,8 @@ const googleLogin = asyncHandler(async (req, res) => {
     });
 
   } catch (error) {
-    console.error('❌ Error in google-login:', error);
-    console.error('Error stack:', error.stack);
+    logger.error('❌ Error in google-login:', error);
+    logger.error('Error stack:', error.stack);
 
     // Not the caller's fault — env/config is broken (missing Firebase creds,
     // or FIREBASE_PRIVATE_KEY failed to parse on Vercel). Fail clean with
@@ -739,7 +740,7 @@ const googleSignup = asyncHandler(async (req, res) => {
       throw new Error('Email not provided by Google. Please ensure email permission is granted.');
     }
 
-    console.log(`📝 Google signup attempt for ${userType}: ${email}`);
+    logger.debug(`📝 Google signup attempt for ${userType}: ${email}`);
 
     // Determine model based on userType
     const Model = userType === 'provider' ? Provider : User;
@@ -791,13 +792,13 @@ const googleSignup = asyncHandler(async (req, res) => {
       user = await Model.create(userData);
     } catch (createError) {
       if (createError.code === 11000) {
-        console.warn(`⚠️ Concurrent Google signup race for ${email} — responding 409 instead of duplicating`);
+        logger.warn(`⚠️ Concurrent Google signup race for ${email} — responding 409 instead of duplicating`);
         res.status(409);
         throw new Error('An account with this email already exists. Please use login instead.');
       }
       throw createError;
     }
-    console.log(`✅ New ${userType} created via Google signup: ${email}`);
+    logger.debug(`✅ New ${userType} created via Google signup: ${email}`);
 
     // Generate tokens
     const tokens = generateTokens(user._id, {
@@ -840,7 +841,7 @@ const googleSignup = asyncHandler(async (req, res) => {
     });
 
   } catch (error) {
-    console.error('❌ Google signup error:', error.message);
+    logger.error('❌ Google signup error:', error.message);
 
     // Not the caller's fault — env/config is broken. 503, not a crash.
     if (error.code === 'FIREBASE_NOT_CONFIGURED') {
@@ -928,7 +929,7 @@ const facebookLogin = asyncHandler(async (req, res) => {
       throw new Error('Email permission is required. Please grant email access in Facebook settings and try again.');
     }
 
-    console.log(`🔐 Facebook login attempt for ${userType}: ${email}`);
+    logger.debug(`🔐 Facebook login attempt for ${userType}: ${email}`);
 
     // Determine model based on userType
     const Model = userType === 'provider' ? Provider : User;
@@ -975,7 +976,7 @@ const facebookLogin = asyncHandler(async (req, res) => {
 
       try {
         user = await Model.create(userData);
-        console.log(`✅ New ${userType} created via Facebook: ${email}`);
+        logger.debug(`✅ New ${userType} created via Facebook: ${email}`);
       } catch (createError) {
         // DB safeguard against the race: two concurrent Facebook logins for
         // the same brand-new identity both pass the findOne-not-found
@@ -983,7 +984,7 @@ const facebookLogin = asyncHandler(async (req, res) => {
         // one insert win; re-fetch and continue as a normal login instead
         // of surfacing a 500 for what is really "you're logged in."
         if (createError.code === 11000) {
-          console.warn(`⚠️ Concurrent Facebook signup race for ${email} — refetching the winner instead of duplicating`);
+          logger.warn(`⚠️ Concurrent Facebook signup race for ${email} — refetching the winner instead of duplicating`);
           user = await Model.findOne({
             $or: [{ facebookId }, { email: email.toLowerCase() }]
           });
@@ -1010,7 +1011,7 @@ const facebookLogin = asyncHandler(async (req, res) => {
         user.canLogin = true;
       }
       await user.save();
-      console.log(`✅ Existing ${userType} logged in via Facebook: ${email}`);
+      logger.debug(`✅ Existing ${userType} logged in via Facebook: ${email}`);
     }
 
     // Generate tokens
@@ -1054,7 +1055,7 @@ const facebookLogin = asyncHandler(async (req, res) => {
     });
 
   } catch (error) {
-    console.error('❌ Facebook login error:', error.message);
+    logger.error('❌ Facebook login error:', error.message);
 
     // Not the caller's fault — env/config broken (shouldn't reach here given
     // the guard above, but defense in depth if config changes mid-request).
@@ -1075,7 +1076,7 @@ const facebookLogin = asyncHandler(async (req, res) => {
     // Handle Facebook /me API errors (e.g. token expired between validate and fetch)
     if (error.response?.data?.error) {
       const fbError = error.response.data.error;
-      console.error('Facebook API Error:', fbError);
+      logger.error('Facebook API Error:', fbError);
 
       res.status(401);
       throw new Error(fbError.message || 'Invalid Facebook token. Please try signing in again.');
@@ -1144,7 +1145,7 @@ const facebookSignup = asyncHandler(async (req, res) => {
       throw new Error('Email permission is required. Please grant email access in Facebook settings and try again.');
     }
 
-    console.log(`📝 Facebook signup attempt for ${userType}: ${email}`);
+    logger.debug(`📝 Facebook signup attempt for ${userType}: ${email}`);
 
     // Determine model based on userType
     const Model = userType === 'provider' ? Provider : User;
@@ -1198,13 +1199,13 @@ const facebookSignup = asyncHandler(async (req, res) => {
       user = await Model.create(userData);
     } catch (createError) {
       if (createError.code === 11000) {
-        console.warn(`⚠️ Concurrent Facebook signup race for ${email} — responding 409 instead of duplicating`);
+        logger.warn(`⚠️ Concurrent Facebook signup race for ${email} — responding 409 instead of duplicating`);
         res.status(409);
         throw new Error('An account with this email already exists. Please use login instead.');
       }
       throw createError;
     }
-    console.log(`✅ New ${userType} created via Facebook signup: ${email}`);
+    logger.debug(`✅ New ${userType} created via Facebook signup: ${email}`);
 
     // Generate tokens
     const tokens = generateTokens(user._id, {
@@ -1247,7 +1248,7 @@ const facebookSignup = asyncHandler(async (req, res) => {
     });
 
   } catch (error) {
-    console.error('❌ Facebook signup error:', error.message);
+    logger.error('❌ Facebook signup error:', error.message);
 
     // Not the caller's fault — env/config broken (defense in depth; the
     // guard above should already have caught this before any Graph API call).
@@ -1268,7 +1269,7 @@ const facebookSignup = asyncHandler(async (req, res) => {
     // Handle Facebook /me API errors (e.g. token expired between validate and fetch)
     if (error.response?.data?.error) {
       const fbError = error.response.data.error;
-      console.error('Facebook API Error:', fbError);
+      logger.error('Facebook API Error:', fbError);
 
       res.status(401);
       throw new Error(fbError.message || 'Invalid Facebook token. Please try again.');
@@ -1364,7 +1365,7 @@ const forgotPassword = asyncHandler(async (req, res) => {
   // Same response shape and timing-insensitive wording whether or not the
   // account exists. Callers advance to the OTP screen either way.
   if (!user) {
-    console.log(`ℹ️ Password reset requested for unknown email: ${email} — responding generically, no mail sent`);
+    logger.debug(`ℹ️ Password reset requested for unknown email: ${email} — responding generically, no mail sent`);
     return res.json({
       success: true,
       message: GENERIC_RESET_MESSAGE,
@@ -1460,7 +1461,7 @@ const forgotPassword = asyncHandler(async (req, res) => {
       expiresIn: 600, // 10 minutes in seconds
     });
   } catch (error) {
-    console.error('Error sending OTP:', error);
+    logger.error('Error sending OTP:', error);
     res.status(500);
     throw new Error('Failed to send password reset code. Please try again.');
   }
@@ -1583,7 +1584,7 @@ const resendResetOTP = asyncHandler(async (req, res) => {
 
   // Anti-enumeration, same as forgot-password above.
   if (!user) {
-    console.log(`ℹ️ OTP resend requested for unknown email: ${email} — responding generically, no mail sent`);
+    logger.debug(`ℹ️ OTP resend requested for unknown email: ${email} — responding generically, no mail sent`);
     return res.json({
       success: true,
       message: GENERIC_RESET_MESSAGE,
@@ -1651,7 +1652,7 @@ const resendResetOTP = asyncHandler(async (req, res) => {
       expiresIn: 600,
     });
   } catch (error) {
-    console.error('Error sending new OTP:', error);
+    logger.error('Error sending new OTP:', error);
     res.status(500);
     throw new Error('Failed to send new password reset code. Please try again.');
   }
@@ -1718,7 +1719,7 @@ const resetPassword = asyncHandler(async (req, res) => {
   // Delete OTP record
   await PasswordResetOTP.deleteOne({ _id: otpRecord._id });
 
-  console.log(`✅ Password reset successful for ${otpRecord.userType}: ${user.email}`);
+  logger.debug(`✅ Password reset successful for ${otpRecord.userType}: ${user.email}`);
 
   res.json({
     success: true,
@@ -1977,7 +1978,7 @@ const verifyEmailToken = asyncHandler(async (req, res) => {
       });
     }
   } catch (error) {
-    console.error('❌ Verification error:', error);
+    logger.error('❌ Verification error:', error);
     res.status(400);
     throw new Error(error.message || 'Verification failed. Please try again.');
   }
@@ -2032,7 +2033,7 @@ const verifyUserEmail = asyncHandler(async (req, res) => {
     // Delete pending signup record
     await PendingSignup.deleteOne({ _id: pending._id });
 
-    console.log(`✅ User verified and created: ${user.email}`);
+    logger.debug(`✅ User verified and created: ${user.email}`);
 
     res.json({
       success: true,
@@ -2050,7 +2051,7 @@ const verifyUserEmail = asyncHandler(async (req, res) => {
       ...tokens,
     });
   } catch (error) {
-    console.error('❌ User verification error:', error);
+    logger.error('❌ User verification error:', error);
     res.status(400);
     throw new Error(error.message || 'User verification failed. Please try again.');
   }
@@ -2092,7 +2093,7 @@ const verifyProviderEmail = asyncHandler(async (req, res) => {
     provider.onboardingStatus = 'pending_documents';
     await provider.save();
 
-    console.log(`✅ Provider email verified: ${provider.email}`);
+    logger.debug(`✅ Provider email verified: ${provider.email}`);
 
     res.json({
       success: true,
@@ -2109,7 +2110,7 @@ const verifyProviderEmail = asyncHandler(async (req, res) => {
       // ⚠️ IMPORTANT: NO TOKENS - provider must submit profile and get admin approval before login
     });
   } catch (error) {
-    console.error('❌ Provider verification error:', error);
+    logger.error('❌ Provider verification error:', error);
     res.status(400);
     throw new Error(error.message || 'Provider verification failed. Please try again.');
   }
@@ -2288,11 +2289,11 @@ const resendProviderVerification = asyncHandler(async (req, res) => {
   const baseUrl = process.env.API_URL || process.env.CLIENT_URL || 'http://localhost:5000';
   const verificationUrl = `${baseUrl}/verify-email?token=${token}&type=provider`;
   
-  console.log('📧 Resending provider verification email to:', email);
+  logger.debug('📧 Resending provider verification email to:', email);
   // Contains the raw verification token — anyone with log access could
     // verify the account. Non-production only.
     if (process.env.NODE_ENV !== 'production') {
-      console.log('🔗 Verification URL:', verificationUrl);
+      logger.debug('🔗 Verification URL:', verificationUrl);
     }
   
   // Send verification email
@@ -2315,7 +2316,7 @@ const resendProviderVerification = asyncHandler(async (req, res) => {
       }
     });
   } catch (error) {
-    console.error('Failed to send verification email:', error);
+    logger.error('Failed to send verification email:', error);
     return res.status(500).json({
       success: false,
       message: 'Failed to send verification email. Please try again.',

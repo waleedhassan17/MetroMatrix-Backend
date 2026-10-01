@@ -46,6 +46,10 @@ const app = express();
 // Trust proxy
 app.set('trust proxy', 1);
 
+// Every request gets an id (req.id, X-Request-Id, req.log) before anything
+// else runs, so even a webhook failure can be traced.
+app.use(require('./middleware/requestId'));
+
 // Stripe webhook MUST receive the raw body for signature verification. It is
 // mounted here, ahead of express.json(), because the global JSON parser would
 // otherwise consume the request stream first — stripe.webhooks.constructEvent

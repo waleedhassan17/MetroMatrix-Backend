@@ -8,6 +8,7 @@ const Post = require('../models/Post');
 const { generateTokens } = require('../utils/generateToken');
 const { sendEmail } = require('../services/emailService');
 const { notifyProviderSubmitted } = require('../services/adminEmailService');
+const logger = require('../utils/logger');
 
 // @desc    Admin login
 // @route   POST /api/admin/login
@@ -288,7 +289,7 @@ const approveProvider = asyncHandler(async (req, res) => {
       `,
     });
   } catch (error) {
-    console.error('Error sending approval email:', error);
+    logger.error('Error sending approval email:', error);
   }
 
   res.json({
@@ -353,7 +354,7 @@ const rejectProvider = asyncHandler(async (req, res) => {
       `,
     });
   } catch (error) {
-    console.error('Error sending rejection email:', error);
+    logger.error('Error sending rejection email:', error);
   }
 
   res.json({
@@ -666,7 +667,7 @@ const submitProviderApplication = asyncHandler(async (req, res) => {
   try {
     await notifyProviderSubmitted(provider);
   } catch (error) {
-    console.error('Error sending admin notification:', error);
+    logger.error('Error sending admin notification:', error);
   }
 
   // 7. Return success
@@ -950,7 +951,7 @@ const approveProviderSubmission = asyncHandler(async (req, res) => {
       `,
     });
   } catch (error) {
-    console.error('Error sending approval email:', error);
+    logger.error('Error sending approval email:', error);
   }
 
   res.json({
@@ -1042,7 +1043,7 @@ const rejectProviderSubmission = asyncHandler(async (req, res) => {
       `,
     });
   } catch (error) {
-    console.error('Error sending rejection email:', error);
+    logger.error('Error sending rejection email:', error);
   }
 
   res.json({
@@ -1587,7 +1588,7 @@ const approveProviderEnhanced = asyncHandler(async (req, res) => {
       `,
     });
   } catch (error) {
-    console.error('Error sending approval email:', error);
+    logger.error('Error sending approval email:', error);
   }
   
   res.json({
@@ -1653,7 +1654,7 @@ const rejectProviderEnhanced = asyncHandler(async (req, res) => {
       `,
     });
   } catch (error) {
-    console.error('Error sending rejection email:', error);
+    logger.error('Error sending rejection email:', error);
   }
   
   res.json({

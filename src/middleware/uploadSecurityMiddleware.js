@@ -1,5 +1,6 @@
 const path = require('path');
 const fs = require('fs').promises;
+const logger = require('../utils/logger');
 
 /**
  * Security middleware for serving uploaded files
@@ -164,7 +165,7 @@ const serveUpload = async (req, res, next) => {
     res.sendFile(fullPath);
     
   } catch (error) {
-    console.error('Error serving upload:', error);
+    logger.error('Error serving upload:', error);
     res.status(500).json({
       success: false,
       error: 'Error serving file'
@@ -196,15 +197,15 @@ const cleanupTempFiles = async () => {
       if (now - stats.mtimeMs > maxAge) {
         await fs.unlink(filePath);
         deletedCount++;
-        console.log(`Deleted temp file: ${file}`);
+        logger.debug(`Deleted temp file: ${file}`);
       }
     }
     
-    console.log(`Cleanup complete. Deleted ${deletedCount} temporary files.`);
+    logger.debug(`Cleanup complete. Deleted ${deletedCount} temporary files.`);
     return deletedCount;
     
   } catch (error) {
-    console.error('Error cleaning up temp files:', error);
+    logger.error('Error cleaning up temp files:', error);
     throw error;
   }
 };
@@ -258,11 +259,11 @@ const deleteFileSafely = async (filePath) => {
     }
     
     await fs.unlink(filePath);
-    console.log(`File deleted: ${filePath}`);
+    logger.debug(`File deleted: ${filePath}`);
     return true;
     
   } catch (error) {
-    console.error('Error deleting file:', error);
+    logger.error('Error deleting file:', error);
     throw error;
   }
 };

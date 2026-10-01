@@ -9,6 +9,7 @@ const HealthcareAuditLog = require('../modules/healthcare/models/HealthcareAudit
 const Provider = require('../models/Provider');
 const User = require('../models/User');
 const paymentService = require('../modules/healthcare/services/paymentService');
+const logger = require('../utils/logger');
 const {
   getHealthcareSettings,
   updateHealthcareSettings,
@@ -19,7 +20,7 @@ const audit = async (adminId, action, targetType, targetId, extra = {}) => {
   try {
     await HealthcareAuditLog.create({ admin: adminId, action, targetType, targetId, ...extra });
   } catch (e) {
-    console.error('[healthcare] audit write failed:', e.message);
+    logger.error('[healthcare] audit write failed:', e.message);
   }
 };
 
