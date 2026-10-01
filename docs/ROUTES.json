@@ -18,7 +18,57 @@
   },
   {
     "method": "POST",
+    "path": "/api/admin/auth/2fa/disable",
+    "middleware": [
+      "apiRateLimit",
+      "protect",
+      "adminOnly",
+      "selfScoped",
+      "middleware",
+      "validate",
+      "asyncHandler"
+    ]
+  },
+  {
+    "method": "POST",
+    "path": "/api/admin/auth/2fa/enrol",
+    "middleware": [
+      "apiRateLimit",
+      "protect",
+      "adminOnly",
+      "selfScoped",
+      "middleware",
+      "validate",
+      "asyncHandler"
+    ]
+  },
+  {
+    "method": "POST",
+    "path": "/api/admin/auth/2fa/verify",
+    "middleware": [
+      "apiRateLimit",
+      "protect",
+      "adminOnly",
+      "selfScoped",
+      "middleware",
+      "validate",
+      "asyncHandler"
+    ]
+  },
+  {
+    "method": "POST",
     "path": "/api/admin/auth/login",
+    "middleware": [
+      "apiRateLimit",
+      "middleware",
+      "middleware",
+      "validate",
+      "asyncHandler"
+    ]
+  },
+  {
+    "method": "POST",
+    "path": "/api/admin/auth/login/totp",
     "middleware": [
       "apiRateLimit",
       "middleware",
@@ -34,6 +84,18 @@
       "apiRateLimit",
       "protect",
       "adminOnly",
+      "selfScoped",
+      "asyncHandler"
+    ]
+  },
+  {
+    "method": "POST",
+    "path": "/api/admin/auth/logout-all",
+    "middleware": [
+      "apiRateLimit",
+      "protect",
+      "adminOnly",
+      "selfScoped",
       "asyncHandler"
     ]
   },
@@ -42,8 +104,8 @@
     "path": "/api/admin/auth/refresh-token",
     "middleware": [
       "apiRateLimit",
-      "protect",
-      "adminOnly",
+      "middleware",
+      "validate",
       "asyncHandler"
     ]
   },
@@ -94,6 +156,10 @@
       "apiRateLimit",
       "protect",
       "adminOnly",
+      "selfScoped",
+      "middleware",
+      "middleware",
+      "validate",
       "asyncHandler"
     ]
   },
@@ -245,7 +311,7 @@
       "apiRateLimit",
       "protect",
       "adminOnly",
-      "anonymous",
+      "requirePermission(canManageNotifications)",
       "asyncHandler"
     ]
   },
@@ -296,7 +362,7 @@
       "apiRateLimit",
       "protect",
       "adminOnly",
-      "anonymous",
+      "requirePermission(canManagePosts)",
       "asyncHandler"
     ]
   },
@@ -307,6 +373,7 @@
       "apiRateLimit",
       "protect",
       "adminOnly",
+      "selfScoped",
       "asyncHandler"
     ]
   },
@@ -317,6 +384,7 @@
       "apiRateLimit",
       "protect",
       "adminOnly",
+      "selfScoped",
       "asyncHandler"
     ]
   },
@@ -356,7 +424,7 @@
       "apiRateLimit",
       "protect",
       "adminOnly",
-      "anonymous",
+      "requirePermission(canApproveProviders)",
       "asyncHandler"
     ]
   },
@@ -367,7 +435,7 @@
       "apiRateLimit",
       "protect",
       "adminOnly",
-      "anonymous",
+      "requirePermission(canApproveProviders)",
       "middleware",
       "validate",
       "asyncHandler"
@@ -408,7 +476,7 @@
       "apiRateLimit",
       "protect",
       "adminOnly",
-      "anonymous",
+      "requirePermission(canApproveProviders)",
       "asyncHandler"
     ]
   },
@@ -419,7 +487,7 @@
       "apiRateLimit",
       "protect",
       "adminOnly",
-      "anonymous",
+      "requirePermission(canApproveProviders)",
       "asyncHandler"
     ]
   },
@@ -430,7 +498,7 @@
       "apiRateLimit",
       "protect",
       "adminOnly",
-      "anonymous",
+      "requirePermission(canApproveProviders)",
       "asyncHandler"
     ]
   },
@@ -441,7 +509,7 @@
       "apiRateLimit",
       "protect",
       "adminOnly",
-      "anonymous",
+      "requirePermission(canApproveProviders)",
       "asyncHandler"
     ]
   },
@@ -462,7 +530,7 @@
       "apiRateLimit",
       "protect",
       "adminOnly",
-      "anonymous",
+      "requirePermission(canApproveProviders)",
       "middleware",
       "validate",
       "asyncHandler"
@@ -530,17 +598,31 @@
   },
   {
     "method": "GET",
-    "path": "/api/admin/settings",
+    "path": "/api/admin/sessions",
     "middleware": [
       "apiRateLimit",
       "protect",
       "adminOnly",
+      "selfScoped",
       "asyncHandler"
     ]
   },
   {
-    "method": "PUT",
-    "path": "/api/admin/settings/appearance",
+    "method": "DELETE",
+    "path": "/api/admin/sessions/:sessionId",
+    "middleware": [
+      "apiRateLimit",
+      "protect",
+      "adminOnly",
+      "selfScoped",
+      "middleware",
+      "validate",
+      "asyncHandler"
+    ]
+  },
+  {
+    "method": "GET",
+    "path": "/api/admin/settings",
     "middleware": [
       "apiRateLimit",
       "protect",
@@ -555,16 +637,7 @@
       "apiRateLimit",
       "protect",
       "adminOnly",
-      "asyncHandler"
-    ]
-  },
-  {
-    "method": "GET",
-    "path": "/api/admin/settings/notifications",
-    "middleware": [
-      "apiRateLimit",
-      "protect",
-      "adminOnly",
+      "requirePermission(canManageSettings)",
       "asyncHandler"
     ]
   },
@@ -575,6 +648,7 @@
       "apiRateLimit",
       "protect",
       "adminOnly",
+      "requirePermission(canManageSettings)",
       "asyncHandler"
     ]
   },
@@ -585,6 +659,7 @@
       "apiRateLimit",
       "protect",
       "adminOnly",
+      "requireSuperAdmin",
       "asyncHandler"
     ]
   },
@@ -615,7 +690,7 @@
       "apiRateLimit",
       "protect",
       "adminOnly",
-      "anonymous",
+      "requirePermission(canManageUsers)",
       "asyncHandler"
     ]
   },
@@ -626,7 +701,7 @@
       "apiRateLimit",
       "protect",
       "adminOnly",
-      "anonymous",
+      "requirePermission(canManageUsers)",
       "asyncHandler"
     ]
   },
@@ -637,7 +712,7 @@
       "apiRateLimit",
       "protect",
       "adminOnly",
-      "anonymous",
+      "requirePermission(canManageUsers)",
       "asyncHandler"
     ]
   },
@@ -3064,7 +3139,7 @@
       "apiRateLimit",
       "protect",
       "adminOnly",
-      "anonymous",
+      "requirePermission(canViewAnalytics)",
       "asyncHandler"
     ]
   },
@@ -3075,7 +3150,7 @@
       "apiRateLimit",
       "protect",
       "adminOnly",
-      "anonymous",
+      "requirePermission(canViewAnalytics)",
       "asyncHandler"
     ]
   },
@@ -3086,7 +3161,7 @@
       "apiRateLimit",
       "protect",
       "adminOnly",
-      "anonymous",
+      "requirePermission(canViewAnalytics)",
       "asyncHandler"
     ]
   },
@@ -3117,7 +3192,7 @@
       "apiRateLimit",
       "protect",
       "adminOnly",
-      "anonymous",
+      "requirePermission(canManageHealthcare)",
       "asyncHandler"
     ]
   },
@@ -3128,7 +3203,7 @@
       "apiRateLimit",
       "protect",
       "adminOnly",
-      "anonymous",
+      "requirePermission(canManageHealthcare)",
       "asyncHandler"
     ]
   },
@@ -3159,7 +3234,7 @@
       "apiRateLimit",
       "protect",
       "adminOnly",
-      "anonymous",
+      "requirePermission(canManageHealthcare)",
       "asyncHandler"
     ]
   },
@@ -3190,7 +3265,7 @@
       "apiRateLimit",
       "protect",
       "adminOnly",
-      "anonymous",
+      "requirePermission(canManageHealthcare)",
       "asyncHandler"
     ]
   },
@@ -3201,7 +3276,7 @@
       "apiRateLimit",
       "protect",
       "adminOnly",
-      "anonymous",
+      "requirePermission(canManageHealthcare)",
       "asyncHandler"
     ]
   },
@@ -3222,7 +3297,7 @@
       "apiRateLimit",
       "protect",
       "adminOnly",
-      "anonymous",
+      "requirePermission(canManageHealthcare)",
       "asyncHandler"
     ]
   },
@@ -3233,7 +3308,7 @@
       "apiRateLimit",
       "protect",
       "adminOnly",
-      "anonymous",
+      "requirePermission(canManageHealthcare)",
       "asyncHandler"
     ]
   },
@@ -3274,7 +3349,7 @@
       "apiRateLimit",
       "protect",
       "adminOnly",
-      "anonymous",
+      "requirePermission(canManageHealthcare)",
       "asyncHandler"
     ]
   },
@@ -3295,7 +3370,7 @@
       "apiRateLimit",
       "protect",
       "adminOnly",
-      "anonymous",
+      "requirePermission(canManageHealthcare)",
       "asyncHandler"
     ]
   },
@@ -3316,7 +3391,7 @@
       "apiRateLimit",
       "protect",
       "adminOnly",
-      "anonymous",
+      "requirePermission(canManageHealthcare)",
       "asyncHandler"
     ]
   },
@@ -3327,7 +3402,7 @@
       "apiRateLimit",
       "protect",
       "adminOnly",
-      "anonymous",
+      "requirePermission(canManageHealthcare)",
       "asyncHandler"
     ]
   },
@@ -3338,7 +3413,7 @@
       "apiRateLimit",
       "protect",
       "adminOnly",
-      "anonymous",
+      "requirePermission(canManageHealthcare)",
       "asyncHandler"
     ]
   },

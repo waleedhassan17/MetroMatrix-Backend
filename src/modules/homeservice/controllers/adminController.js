@@ -639,7 +639,6 @@ const patchSettings = asyncHandler(async (req, res) => {
   const before = await getHomeserviceSettings();
   const allowed = [
     'commissionPercent',
-    'cancellationWindowHours',
     'defaultSearchRadiusKm',
     'matchingWeights',
     'minPayoutAmount',

@@ -170,6 +170,10 @@ const authLimiter = rateLimit({
 });
 app.use('/api/auth/', named('authRateLimit', authLimiter));
 
+// general.maintenanceMode — 503 for the user/provider API; admins, health
+// checks, cron and the Stripe webhook stay open.
+app.use(require('./middleware/maintenance'));
+
 // Initialize passport
 app.use(passport.initialize());
 require('./config/passport');

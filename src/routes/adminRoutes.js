@@ -1,11 +1,17 @@
 const express = require('express');
 const router = express.Router();
-const { body } = require('express-validator');
+const { body, param } = require('express-validator');
 const { validate } = require('../middleware/validate');
-const { protect, requirePermission } = require('../middleware/authMiddleware');
-const { uploadMultipleDocuments } = require('../middleware/uploadMiddleware');
 const {
-  adminLogin,
+  protect,
+  adminOnly,
+  requirePermission,
+  requireSuperAdmin,
+  selfScoped,
+} = require('../middleware/authMiddleware');
+const { uploadMultipleDocuments } = require('../middleware/uploadMiddleware');
+const auth = require('../controllers/admin/auth');
+const {
   getDashboardStats,
   getPendingProviders,
   getAllUsers,
@@ -20,10 +26,6 @@ const {
   approveProviderSubmission,
   rejectProviderSubmission,
   // New enhanced endpoints
-  adminLogout,
-  getAdminProfile,
-  updateAdminProfile,
-  changeAdminPassword,
   getDashboardStatsEnhanced,
   getQuickStats,
   getAllProvidersEnhanced,
@@ -42,7 +44,6 @@ const {
   getProvidersByType,
   getProviderDetailsWithRoute,
   getAnalytics,
-  refreshAdminToken,
 } = require('../controllers/adminController');
 
 const {
@@ -57,30 +58,30 @@ const {
 const {
   getSettings,
   updateGeneralSettings,
-  getNotificationSettings,
   updateNotificationSettings,
   updateSecuritySettings,
-  updateAppearanceSettings,
 } = require('../controllers/settingsController');
 
-// Create admin middleware
-const adminOnly = (req, res, next) => {
-  if (!req.user || req.user.constructor.modelName !== 'Admin') {
-    res.status(403);
-    throw new Error('Access denied. Admin only.');
-  }
-  next();
-};
-
-// Login validation
+// Sign-in validation. No normalizeEmail(): its Gmail rules strip dots, which
+// would turn a stored "first.last@gmail.com" into an address that matches no
+// admin. The controller lower-cases and trims instead.
 const loginRules = [
-  body('email').isEmail().normalizeEmail(),
-  body('password').notEmpty(),
+  body('email').isEmail().withMessage('Enter a valid email address'),
+  body('password').isString().notEmpty().withMessage('Enter your password'),
+];
+const challengeRules = [
+  body('challengeToken').isString().notEmpty(),
+  body().custom((b) => !!(b && (b.code || b.recoveryCode))).withMessage('Enter the code from your authenticator app or a recovery code'),
 ];
 
 // ===== PUBLIC ROUTES =====
-router.post('/auth/login', loginRules, validate, adminLogin);
-router.post('/login', loginRules, validate, adminLogin); // Legacy route
+// Sign-in and token refresh are public by nature (the access token may have
+// expired). Brute force is handled per account and per address in the
+// controller (MongoDB-backed lockout), not by the in-memory rate limiter.
+router.post('/auth/login', loginRules, validate, auth.login);
+router.post('/login', loginRules, validate, auth.login); // legacy alias, same chain
+router.post('/auth/login/totp', challengeRules, validate, auth.loginTotp);
+router.post('/auth/refresh-token', body('refreshToken').isString().notEmpty(), validate, auth.refresh);
 
 // ===== PUBLIC PROVIDER SUBMISSION (NO AUTH REQUIRED) =====
 router.post('/provider-submissions', uploadMultipleDocuments, submitProviderApplication);
@@ -90,14 +91,24 @@ router.get('/provider-submissions/check-status', checkSubmissionStatus);
 router.use(protect);
 router.use(adminOnly);
 
-// ===== AUTHENTICATION =====
-router.post('/auth/logout', adminLogout);
-router.post('/auth/refresh-token', refreshAdminToken);
-
-// ===== PROFILE MANAGEMENT =====
-router.get('/profile', getAdminProfile);
-router.put('/profile', updateAdminProfile);
-router.put('/change-password', changeAdminPassword);
+// ===== OWN ACCOUNT: sign-out, sessions, password, profile, two-factor =====
+router.post('/auth/logout', selfScoped, auth.logout);
+router.post('/auth/logout-all', selfScoped, auth.logoutAll);
+router.get('/sessions', selfScoped, auth.listSessions);
+router.delete('/sessions/:sessionId', selfScoped, param('sessionId').isMongoId(), validate, auth.revokeSession);
+router.get('/profile', selfScoped, auth.getProfile);
+router.put('/profile', selfScoped, auth.updateProfile);
+router.put(
+  '/change-password',
+  selfScoped,
+  body('currentPassword').isString().notEmpty().withMessage('Enter your current password'),
+  body('newPassword').isString().notEmpty().withMessage('Enter a new password'),
+  validate,
+  auth.changePassword
+);
+router.post('/auth/2fa/enrol', selfScoped, body('currentPassword').isString().notEmpty(), validate, auth.enrolTwoFactor);
+router.post('/auth/2fa/verify', selfScoped, body('code').isString().notEmpty(), validate, auth.verifyTwoFactor);
+router.post('/auth/2fa/disable', selfScoped, body('currentPassword').isString().notEmpty(), validate, auth.disableTwoFactor);
 
 // ===== DASHBOARD & STATISTICS =====
 router.get('/dashboard/stats', getDashboardStatsEnhanced);
@@ -163,12 +174,14 @@ router.put('/notifications/:notificationId/read', markAsRead);
 router.delete('/notifications/:notificationId', deleteNotification);
 
 // ===== SETTINGS =====
+// Reads are open to every admin (the app shows them read-only without the
+// permission); writes need canManageSettings, and security is super-admin only.
+// The appearance section and GET /settings/notifications are gone: appearance
+// was stored and read by nothing, and the notifications values are in GET /settings.
 router.get('/settings', getSettings);
-router.put('/settings/general', updateGeneralSettings);
-router.get('/settings/notifications', getNotificationSettings);
-router.put('/settings/notifications', updateNotificationSettings);
-router.put('/settings/security', updateSecuritySettings);
-router.put('/settings/appearance', updateAppearanceSettings);
+router.put('/settings/general', requirePermission('canManageSettings'), updateGeneralSettings);
+router.put('/settings/notifications', requirePermission('canManageSettings'), updateNotificationSettings);
+router.put('/settings/security', requireSuperAdmin, updateSecuritySettings);
 
 // ===== POST MANAGEMENT =====
 router.delete('/posts/:id', requirePermission('canManagePosts'), deletePost);
