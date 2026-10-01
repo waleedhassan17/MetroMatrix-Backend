@@ -28,6 +28,11 @@ const assertLocal = (uri) => {
 };
 assertLocal(process.env.MONGODB_URI);
 
+// Every supertest request comes from the same address; the per-IP API limiter
+// would turn long suites into 429s. Brute-force protection that matters (admin
+// sign-in lockout) is MongoDB-backed and stays on.
+process.env.DISABLE_RATE_LIMIT = 'true';
+
 // Deterministic, test-only secrets — never the real ones from .env.
 process.env.NODE_ENV = 'test';
 process.env.JWT_SECRET = 'test-access-secret-0123456789abcdef';

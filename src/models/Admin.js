@@ -113,7 +113,21 @@ const adminSchema = new mongoose.Schema(
       default: false,
     },
     passwordChangedAt: Date,
-    refreshToken: String,
+    // Sessions live in AdminSession (one per device, hashed rotating refresh
+    // token). The old single plaintext `refreshToken` field is gone; the
+    // cleanup migration unsets it from existing documents.
+
+    // TOTP two-factor sign-in. Secrets are AES-GCM encrypted
+    // (services/admin/totp.js) and never selected by default.
+    twoFactor: {
+      enabled: { type: Boolean, default: false },
+      secretEnc: { type: String, select: false },
+      pendingSecretEnc: { type: String, select: false },
+      recoveryCodeHashes: { type: [String], select: false, default: undefined },
+      // Last accepted time-step counter — a code can't be used twice.
+      lastUsedCounter: { type: Number, select: false, default: 0 },
+      enrolledAt: Date,
+    },
     resetPasswordToken: String,
     resetPasswordExpire: Date,
 
@@ -235,6 +249,19 @@ adminSchema.methods.hasPermission = function (permission) {
   return this.permissions[permission] === true;
 };
 
+// Every permission flag the schema defines (new flags are picked up
+// automatically).
+const PERMISSION_KEYS = Object.keys(adminSchema.paths)
+  .filter((p) => p.startsWith('permissions.'))
+  .map((p) => p.slice('permissions.'.length));
+adminSchema.statics.PERMISSION_KEYS = PERMISSION_KEYS;
+
+// Effective permissions: what this admin can actually do (a super admin has
+// every flag regardless of what is stored).
+adminSchema.methods.effectivePermissions = function () {
+  return Object.fromEntries(PERMISSION_KEYS.map((k) => [k, this.isSuperAdmin ? true : this.permissions?.[k] === true]));
+};
+
 // Sanitize admin data for response
 adminSchema.methods.toJSON = function () {
   const obj = this.toObject();
@@ -242,6 +269,12 @@ adminSchema.methods.toJSON = function () {
   delete obj.refreshToken;
   delete obj.resetPasswordToken;
   delete obj.resetPasswordExpire;
+  if (obj.twoFactor) {
+    delete obj.twoFactor.secretEnc;
+    delete obj.twoFactor.pendingSecretEnc;
+    delete obj.twoFactor.recoveryCodeHashes;
+    delete obj.twoFactor.lastUsedCounter;
+  }
   delete obj.__v;
   return obj;
 };

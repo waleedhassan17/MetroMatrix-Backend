@@ -1,78 +1,12 @@
 const asyncHandler = require('express-async-handler');
-const Admin = require('../models/Admin');
 const User = require('../models/User');
 const Provider = require('../models/Provider');
 const ProviderDocument = require('../models/ProviderDocument');
 const ProviderSubmission = require('../models/ProviderSubmission');
 const Post = require('../models/Post');
-const { generateTokens } = require('../utils/generateToken');
 const { sendEmail } = require('../services/emailService');
 const { notifyProviderSubmitted } = require('../services/adminEmailService');
 const logger = require('../utils/logger');
-
-// @desc    Admin login
-// @route   POST /api/admin/login
-// @access  Public
-const adminLogin = asyncHandler(async (req, res) => {
-  const { email, password } = req.body;
-
-  const admin = await Admin.findOne({ email }).select('+password');
-
-  if (!admin) {
-    return res.status(401).json({
-      success: false,
-      message: 'Invalid email or password',
-      error: 'INVALID_CREDENTIALS',
-    });
-  }
-
-  if (!admin.isActive) {
-    return res.status(403).json({
-      success: false,
-      message: 'Your admin account has been deactivated',
-      error: 'ACCOUNT_DEACTIVATED',
-    });
-  }
-
-  if (admin && (await admin.matchPassword(password))) {
-    const tokens = generateTokens(admin._id, {
-      userType: 'admin',
-      email: admin.email,
-      role: admin.role
-    });
-
-    admin.refreshToken = tokens.refreshToken;
-    admin.lastLoginDate = Date.now();
-    admin.logActivity('login', admin._id, 'Admin', 'Admin logged in');
-    await admin.save();
-
-    res.json({
-      success: true,
-      message: 'Login successful',
-      admin: {
-        id: admin._id,
-        _id: admin._id,
-        email: admin.email,
-        fullName: admin.fullName,
-        role: admin.role,
-        avatar: admin.avatar || admin.profilePhoto,
-        permissions: admin.permissions,
-        isActive: admin.isActive,
-        lastLoginDate: admin.lastLoginDate,
-        createdAt: admin.createdAt,
-      },
-      accessToken: tokens.accessToken,
-      refreshToken: tokens.refreshToken,
-      expiresIn: 86400, // 24 hours in seconds
-    });
-  } else {
-    return res.status(401).json({
-      success: false,
-      message: 'Invalid email or password',
-      error: 'INVALID_CREDENTIALS',
-    });
-  }
-});
 
 // @desc    Get dashboard statistics
 // @route   GET /api/admin/dashboard
@@ -1053,109 +987,6 @@ const rejectProviderSubmission = asyncHandler(async (req, res) => {
 });
 
 // ===== NEW ADMIN PANEL ENDPOINTS =====
-
-// @desc    Admin logout
-// @route   POST /api/admin/auth/logout
-// @access  Private/Admin
-const adminLogout = asyncHandler(async (req, res) => {
-  const admin = req.user;
-  
-  admin.refreshToken = undefined;
-  admin.logActivity('logout', admin._id, 'Admin', 'Admin logged out');
-  await admin.save();
-  
-  res.json({
-    success: true,
-    message: 'Logged out successfully',
-  });
-});
-
-// @desc    Get admin profile
-// @route   GET /api/admin/profile
-// @access  Private/Admin
-const getAdminProfile = asyncHandler(async (req, res) => {
-  const admin = await Admin.findById(req.user._id);
-  
-  res.json({
-    success: true,
-    data: {
-      id: admin._id,
-      _id: admin._id,
-      email: admin.email,
-      fullName: admin.fullName,
-      role: admin.role,
-      avatar: admin.avatar || admin.profilePhoto,
-      permissions: admin.permissions,
-      isActive: admin.isActive,
-      lastLoginDate: admin.lastLoginDate,
-      createdAt: admin.createdAt,
-    },
-  });
-});
-
-// @desc    Update admin profile
-// @route   PUT /api/admin/profile
-// @access  Private/Admin
-const updateAdminProfile = asyncHandler(async (req, res) => {
-  const admin = await Admin.findById(req.user._id);
-  const { fullName, email, avatar } = req.body;
-  
-  if (fullName) admin.fullName = fullName;
-  if (email) {
-    // Check if email already exists
-    const emailExists = await Admin.findOne({ email, _id: { $ne: admin._id } });
-    if (emailExists) {
-      res.status(409);
-      throw new Error('Email already in use');
-    }
-    admin.email = email;
-  }
-  if (avatar) {
-    admin.avatar = avatar;
-    admin.profilePhoto = avatar;
-  }
-  
-  await admin.save();
-  
-  res.json({
-    success: true,
-    message: 'Profile updated successfully',
-    data: {
-      id: admin._id,
-      email: admin.email,
-      fullName: admin.fullName,
-      avatar: admin.avatar,
-    },
-  });
-});
-
-// @desc    Change admin password
-// @route   PUT /api/admin/change-password
-// @access  Private/Admin
-const changeAdminPassword = asyncHandler(async (req, res) => {
-  const { currentPassword, newPassword } = req.body;
-  
-  if (!currentPassword || !newPassword) {
-    res.status(400);
-    throw new Error('Please provide current and new password');
-  }
-  
-  const admin = await Admin.findById(req.user._id).select('+password');
-  
-  const isMatch = await admin.matchPassword(currentPassword);
-  if (!isMatch) {
-    res.status(401);
-    throw new Error('Current password is incorrect');
-  }
-  
-  admin.password = newPassword;
-  await admin.save();
-  
-  res.json({
-    success: true,
-    message: 'Password changed successfully',
-  });
-});
 
 // @desc    Get dashboard statistics (Enhanced)
 // @route   GET /api/admin/dashboard/stats
@@ -2145,71 +1976,7 @@ const getAnalytics = asyncHandler(async (req, res) => {
   });
 });
 
-// @desc    Refresh admin token
-// @route   POST /api/admin/auth/refresh-token
-// @access  Public
-const refreshAdminToken = asyncHandler(async (req, res) => {
-  const { refreshToken } = req.body;
-  
-  if (!refreshToken) {
-    return res.status(400).json({
-      success: false,
-      message: 'Refresh token is required',
-      error: 'MISSING_REFRESH_TOKEN',
-    });
-  }
-  
-  try {
-    const jwt = require('jsonwebtoken');
-    const decoded = jwt.verify(refreshToken, process.env.JWT_SECRET);
-    
-    const admin = await Admin.findById(decoded.id);
-    
-    if (!admin || admin.refreshToken !== refreshToken) {
-      return res.status(401).json({
-        success: false,
-        message: 'Invalid refresh token',
-        error: 'INVALID_REFRESH_TOKEN',
-      });
-    }
-    
-    if (!admin.isActive) {
-      return res.status(403).json({
-        success: false,
-        message: 'Admin account is deactivated',
-        error: 'ACCOUNT_DEACTIVATED',
-      });
-    }
-    
-    // Generate new tokens
-    const { generateTokens } = require('../utils/generateToken');
-    const tokens = generateTokens(admin._id, {
-      userType: 'admin',
-      email: admin.email,
-      role: admin.role,
-    });
-    
-    // Update refresh token
-    admin.refreshToken = tokens.refreshToken;
-    await admin.save();
-    
-    res.json({
-      success: true,
-      accessToken: tokens.accessToken,
-      refreshToken: tokens.refreshToken,
-      expiresIn: 86400,
-    });
-  } catch (error) {
-    return res.status(401).json({
-      success: false,
-      message: 'Invalid or expired refresh token',
-      error: 'TOKEN_INVALID',
-    });
-  }
-});
-
 module.exports = {
-  adminLogin,
   getDashboardStats,
   getPendingProviders,
   getProviderForReview,
@@ -2227,10 +1994,6 @@ module.exports = {
   approveProviderSubmission,
   rejectProviderSubmission,
   // New enhanced endpoints
-  adminLogout,
-  getAdminProfile,
-  updateAdminProfile,
-  changeAdminPassword,
   getDashboardStatsEnhanced,
   getQuickStats,
   getAllProvidersEnhanced,
@@ -2249,5 +2012,4 @@ module.exports = {
   getProvidersByType,
   getProviderDetailsWithRoute,
   getAnalytics,
-  refreshAdminToken,
 };
