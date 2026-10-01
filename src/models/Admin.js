@@ -106,6 +106,13 @@ const adminSchema = new mongoose.Schema(
 
     // Authentication
     lastLoginDate: Date,
+    // Set for bootstrap/temporary passwords (seed-admin, admin-issued resets):
+    // the first sign-in gets a session that can only change the password.
+    mustChangePassword: {
+      type: Boolean,
+      default: false,
+    },
+    passwordChangedAt: Date,
     refreshToken: String,
     resetPasswordToken: String,
     resetPasswordExpire: Date,

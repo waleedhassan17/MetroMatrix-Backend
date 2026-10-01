@@ -24,9 +24,10 @@ const Order = require('../src/modules/shopping/models/Order');
 const Wallet = require('../src/models/Wallet');
 const User = require('../src/models/User');
 
-const ADMIN = { email: 'waleedhassansfd@gmail.com', password: 'Waleed@104' };
-const CUSTOMER = { email: 'shopper1.qa@metromatrix.pk', password: 'Shopper@123' };
-const VENDOR = { email: 'vendor.cougar@metromatrix.pk', password: 'Vendor@123' };
+const { demoPassword, qaAdminCredentials } = require('./lib/seedSafety');
+const ADMIN = qaAdminCredentials();
+const CUSTOMER = { email: 'shopper1.qa@metromatrix.pk', password: demoPassword() };
+const VENDOR = { email: 'vendor.cougar@metromatrix.pk', password: demoPassword() };
 
 let pass = 0, fail = 0;
 const step = (id, name, ok, detail = '') => {
@@ -39,6 +40,7 @@ const short = (d) => JSON.stringify(d).slice(0, 100);
 
 (async () => {
   console.log(`\n=== ADMIN PATH GATE against ${BASE} ===\n`);
+  require('./lib/seedSafety').assertSafeSeedTarget();
   await mongoose.connect(process.env.MONGODB_URI);
 
   const tA = (await api.post('/admin/auth/login', ADMIN)).data?.accessToken;

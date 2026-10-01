@@ -8,13 +8,15 @@ const adminSettingsSchema = new mongoose.Schema(
         type: String,
         default: 'MetroMatrix',
       },
+      // No defaults: an unset contact is shown as unset, not as a personal
+      // address or a placeholder number.
       contactEmail: {
         type: String,
-        default: 'waleedhassansfd@gmail.com',
+        default: '',
       },
       supportPhone: {
         type: String,
-        default: '+92 42 1234567',
+        default: '',
       },
       timezone: {
         type: String,

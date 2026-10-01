@@ -37,10 +37,11 @@ const Brand = require('../src/modules/shopping/models/Brand');
 const User = require('../src/models/User');
 const { PKR_PER_USD } = require('../src/config/currency');
 
-const CUSTOMER = { email: 'shopper1.qa@metromatrix.pk', password: 'Shopper@123' };
-const CUSTOMER2 = { email: 'shopper2.qa@metromatrix.pk', password: 'Shopper@123' };
-const VENDOR_COUGAR = { email: 'vendor.cougar@metromatrix.pk', password: 'Vendor@123' };
-const VENDOR_OUTFITTERS = { email: 'vendor.outfitters@metromatrix.pk', password: 'Vendor@123' };
+const { demoPassword } = require('./lib/seedSafety');
+const CUSTOMER = { email: 'shopper1.qa@metromatrix.pk', password: demoPassword() };
+const CUSTOMER2 = { email: 'shopper2.qa@metromatrix.pk', password: demoPassword() };
+const VENDOR_COUGAR = { email: 'vendor.cougar@metromatrix.pk', password: demoPassword() };
+const VENDOR_OUTFITTERS = { email: 'vendor.outfitters@metromatrix.pk', password: demoPassword() };
 
 const TOPUP_PKR = 50000;
 
@@ -143,6 +144,7 @@ const advanceToDelivered = async (vendorToken, orderId) => {
 
 (async () => {
   console.log(`\n=== WALLET GREEN-FLAG GATE against ${BASE} ===\n`);
+  require('./lib/seedSafety').assertSafeSeedTarget();
   await mongoose.connect(process.env.MONGODB_URI);
 
   const ledger = {}; // narrative numbers for WALLET_QA.md
@@ -544,8 +546,8 @@ const advanceToDelivered = async (vendorToken, orderId) => {
 
   // B8 — doctor + home-service provider wallets render without crashing
   const otherProviders = [
-    { label: 'doctor', email: 'doctor1.hc@metromatrix.pk', password: 'Doctor@123' },
-    { label: 'home-service provider', email: 'provider1.hs@metromatrix.pk', password: 'Provider@123' },
+    { label: 'doctor', email: 'doctor1.hc@metromatrix.pk', password: demoPassword() },
+    { label: 'home-service provider', email: 'provider1.hs@metromatrix.pk', password: demoPassword() },
   ];
   for (const p of otherProviders) {
     const res = await api.post('/auth/provider/login', { email: p.email, password: p.password });

@@ -15,16 +15,17 @@ const axios = require('axios');
 const BASE = process.env.API_URL || 'http://localhost:5000';
 const api = axios.create({ baseURL: `${BASE}/api`, validateStatus: () => true });
 
-// From brands.seed.js (CUSTOMERS / CUSTOMER_PASSWORD). The older
+// From brands.seed.js (CUSTOMERS; password = SEED_DEMO_PASSWORD). The older
 // customer.demo@metromatrix.pk account this used to log in as is no longer
 // created by any seed, so every run failed at step 1.
-const CUSTOMER = { email: 'shopper1.qa@metromatrix.pk', password: 'Shopper@123' };
+const { demoPassword } = require('./lib/seedSafety');
+const CUSTOMER = { email: 'shopper1.qa@metromatrix.pk', password: demoPassword() };
 const VENDORS = {
   // brand slug → vendor login (from seed-shopping.js). The seed now ships the
   // real scraped Cougar + Outfitters catalogue; the older synthetic brands
   // (khaadi / servis-steps / techmart) are no longer seeded.
-  cougar: { email: 'vendor.cougar@metromatrix.pk', password: 'Vendor@123' },
-  outfitters: { email: 'vendor.outfitters@metromatrix.pk', password: 'Vendor@123' },
+  cougar: { email: 'vendor.cougar@metromatrix.pk', password: demoPassword() },
+  outfitters: { email: 'vendor.outfitters@metromatrix.pk', password: demoPassword() },
 };
 
 let passed = 0;

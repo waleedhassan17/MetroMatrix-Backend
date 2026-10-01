@@ -38,10 +38,11 @@ const Product = require('../src/modules/shopping/models/Product');
 const Brand = require('../src/modules/shopping/models/Brand');
 const { getShoppingSettings } = require('../src/modules/shopping/services/settingsService');
 
-const CUSTOMER = { email: 'shopper1.qa@metromatrix.pk', password: 'Shopper@123' };
+const { demoPassword } = require('./lib/seedSafety');
+const CUSTOMER = { email: 'shopper1.qa@metromatrix.pk', password: demoPassword() };
 const VENDORS = [
-  { email: 'vendor.cougar@metromatrix.pk', password: 'Vendor@123', brand: 'Cougar' },
-  { email: 'vendor.outfitters@metromatrix.pk', password: 'Vendor@123', brand: 'Outfitters' },
+  { email: 'vendor.cougar@metromatrix.pk', password: demoPassword(), brand: 'Cougar' },
+  { email: 'vendor.outfitters@metromatrix.pk', password: demoPassword(), brand: 'Outfitters' },
 ];
 
 let passed = 0;

@@ -7,6 +7,7 @@ const ProviderSubmission = require('../models/ProviderSubmission');
 const Post = require('../models/Post');
 const { generateTokens } = require('../utils/generateToken');
 const { sendEmail } = require('../services/emailService');
+const { notifyProviderSubmitted } = require('../services/adminEmailService');
 
 // @desc    Admin login
 // @route   POST /api/admin/login
@@ -663,18 +664,7 @@ const submitProviderApplication = asyncHandler(async (req, res) => {
 
   // 6. Notify admin
   try {
-    await sendEmail({
-      email: process.env.ADMIN_EMAIL || 'waleedhassansfd@gmail.com',
-      subject: 'New Provider Profile Submitted - Review Required',
-      html: `
-        <h2>Provider Profile Submitted</h2>
-        <p><strong>Name:</strong> ${provider.fullName}</p>
-        <p><strong>Email:</strong> ${email}</p>
-        <p><strong>Type:</strong> ${providerType}</p>
-        <p><strong>City:</strong> ${city}</p>
-        <p>Please review this provider's profile in the admin dashboard.</p>
-      `,
-    });
+    await notifyProviderSubmitted(provider);
   } catch (error) {
     console.error('Error sending admin notification:', error);
   }

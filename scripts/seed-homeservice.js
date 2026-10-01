@@ -15,10 +15,11 @@
  *   - chat threads on active bookings, reviews on completed ones
  *   - 2 open disputes, 3 pending payout requests, matching wallet transactions
  *
- * Run: node scripts/seed-homeservice.js
+ * Run: SEED_DEMO_PASSWORD=… node scripts/seed-homeservice.js --confirm-db=<db name>
  */
 require('dotenv').config();
 const mongoose = require('mongoose');
+const { assertSafeSeedTarget, demoPassword } = require('./lib/seedSafety');
 
 const User = require('../src/models/User');
 const Provider = require('../src/models/Provider');
@@ -146,6 +147,8 @@ const BOOKING_PLAN = [
 ];
 
 async function main() {
+  assertSafeSeedTarget();
+  const password = demoPassword();
   await mongoose.connect(process.env.MONGODB_URI);
   console.log('✓ MongoDB connected\n=== Home Services seed ===');
 
@@ -202,7 +205,7 @@ async function main() {
     if (!provider) {
       provider = await Provider.create({
         email,
-        password: 'Provider@123',
+        password,
         fullName,
         phoneNumber: `030099900${String(i + 1).padStart(2, '0')}`,
         providerType: 'home_service',
@@ -243,7 +246,7 @@ async function main() {
     let user = await User.findOne({ email }).select('+password');
     if (!user) {
       user = new User({ email, fullName, phoneNumber, isActive: true, isEmailVerified: true });
-      user.password = '123456';
+      user.password = password;
       await user.save();
     }
     const wallet = await WalletService.getOrCreateWallet(user._id, 'User');
@@ -525,9 +528,9 @@ async function main() {
   log(`payout requests seeded: ${payoutsCreated} (status: pending)`);
 
   console.log('=== Done ===');
-  console.log('Logins:');
-  console.log('  providers: provider1..15.hs@metromatrix.pk / Provider@123');
-  console.log('  customers: customer1..8.hs@metromatrix.pk / 123456');
+  console.log('Logins (password: SEED_DEMO_PASSWORD):');
+  console.log('  providers: provider1..15.hs@metromatrix.pk');
+  console.log('  customers: customer1..8.hs@metromatrix.pk');
 
   // QA could not map a name shown in the app ("Usman Tariq") back to a login
   // ("provider3.hs@...") or to a document, because the only thing printed was

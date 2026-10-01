@@ -46,8 +46,9 @@ const OUT = (process.argv.find((a) => a.startsWith('--out=')) || '').replace('--
 
 const http = axios.create({ baseURL: `${API}/api`, validateStatus: () => true, timeout: 45000 });
 
-const CUSTOMER_PASSWORD = '123456';
-const PROVIDER_PASSWORD = 'Provider@123';
+const { demoPassword } = require('./lib/seedSafety');
+const CUSTOMER_PASSWORD = demoPassword();
+const PROVIDER_PASSWORD = demoPassword();
 const POOLS = {
   electricians: [1, 2, 3, 4, 5],
   plumbers: [6, 7, 8, 9, 10],
@@ -675,7 +676,10 @@ S.S12 = async () => {
   if (!process.env.MONGODB_URI) return check('expiry (skipped: no MONGODB_URI)', true);
   const mongoose = require('mongoose');
   const Booking = require('../src/modules/homeservice/models/Booking');
-  if (mongoose.connection.readyState !== 1) await mongoose.connect(process.env.MONGODB_URI);
+  if (mongoose.connection.readyState !== 1) {
+    require('./lib/seedSafety').assertSafeSeedTarget();
+    await mongoose.connect(process.env.MONGODB_URI);
+  }
   const { bookingId } = await book(c, p, 'S12 expiry');
   if (!bookingId) throw new Error('booking failed');
   await Booking.updateOne({ _id: bookingId }, { $set: { scheduledFor: new Date(Date.now() - 3 * 86400000) } });

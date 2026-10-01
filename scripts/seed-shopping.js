@@ -13,15 +13,20 @@
  *
  * Requires scripts/scraped/{cougar,outfitters}-catalog.json to exist —
  * run `python3 scripts/scrape-brands.py` first if they're missing.
+ *
+ * Run: SEED_DEMO_PASSWORD=… node scripts/seed-shopping.js --confirm-db=<db name>
  */
 require('dotenv').config();
 const mongoose = require('mongoose');
 const seedBrands = require('../src/modules/shopping/seed/brands.seed');
+const { assertSafeSeedTarget, demoPassword } = require('./lib/seedSafety');
 
 async function main() {
+  assertSafeSeedTarget();
+  const password = demoPassword();
   await mongoose.connect(process.env.MONGODB_URI);
   console.log('✓ MongoDB connected');
-  await seedBrands();
+  await seedBrands({ password });
   await mongoose.disconnect();
 }
 

@@ -72,4 +72,4 @@ npm run seed:healthcare    # idempotent demo dataset
 npm run smoke:healthcare   # 22-step TC-16/TC-17 path — 22/22 vs production
 ```
 
-Doctors: `doctor1..12.hc@metromatrix.pk` / `Doctor@123` · Patients: `patient1..5.hc@metromatrix.pk` / `123456` (wallet-funded) · Admin: `waleedhassansfd@gmail.com` / `Waleed@104`.
+Doctors: `doctor1..12.hc@metromatrix.pk` · Patients: `patient1..5.hc@metromatrix.pk` (wallet-funded). Password for every seeded demo account: the `SEED_DEMO_PASSWORD` you seeded with. Admins come from `npm run seed:admin` (credentials from env, never committed).

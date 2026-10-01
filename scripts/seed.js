@@ -3,6 +3,10 @@
  * sequence. Each script owns its own MongoDB connect/disconnect and exits
  * non-zero on failure, so this just chains them as child processes and
  * stops at the first failure.
+ *
+ * Flags (--confirm-db=<db name>, --i-know) are forwarded to every script;
+ * each one enforces scripts/lib/seedSafety.js itself.
+ * Run: SEED_DEMO_PASSWORD=… npm run seed -- --confirm-db=<db name>
  */
 const { spawnSync } = require('child_process');
 const path = require('path');
@@ -16,7 +20,9 @@ const SCRIPTS = [
 
 for (const script of SCRIPTS) {
   console.log(`\n=== Running ${script} ===`);
-  const result = spawnSync(process.execPath, [path.join(__dirname, script)], { stdio: 'inherit' });
+  const result = spawnSync(process.execPath, [path.join(__dirname, script), ...process.argv.slice(2)], {
+    stdio: 'inherit',
+  });
   if (result.status !== 0) {
     console.error(`\n${script} failed (exit ${result.status}) — stopping.`);
     process.exit(result.status || 1);

@@ -253,8 +253,11 @@ class PasswordResetService {
                 <strong>Didn't make this change?</strong>
               </p>
               <p style="color: #92400e; font-size: 13px; margin: 10px 0 0 0;">
-                If you didn't change your password, please contact our support team immediately at 
-                <a href="mailto:waleedhassansfd@gmail.com" style="color: #f59e0b; text-decoration: none;">waleedhassansfd@gmail.com</a>
+                If you didn't change your password, please contact our support team immediately${
+                  process.env.SUPPORT_EMAIL
+                    ? ` at <a href="mailto:${process.env.SUPPORT_EMAIL}" style="color: #f59e0b; text-decoration: none;">${process.env.SUPPORT_EMAIL}</a>`
+                    : '.'
+                }
               </p>
             </div>
             

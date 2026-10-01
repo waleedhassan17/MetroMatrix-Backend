@@ -97,10 +97,7 @@ const seedBanners = async () => {
 };
 
 const main = async () => {
-  if (!process.env.MONGODB_URI) {
-    console.error('MONGODB_URI is not set — refusing to run.');
-    process.exit(1);
-  }
+  require('./lib/seedSafety').assertSafeSeedTarget();
   await mongoose.connect(process.env.MONGODB_URI);
   console.log('✓ MongoDB connected');
   const summary = await seedBanners();

@@ -210,12 +210,12 @@ async function purgeAllShoppingData() {
 
 /* ── Upsert helpers ──────────────────────────────────────────────── */
 
-async function upsertVendor(spec) {
+async function upsertVendor(spec, password) {
   let provider = await Provider.findOne({ email: spec.email });
   if (!provider) {
     provider = await Provider.create({
       email: spec.email,
-      password: 'Vendor@123',
+      password,
       fullName: spec.fullName,
       phoneNumber: spec.phoneNumber,
       providerType: 'vendor',
@@ -227,12 +227,12 @@ async function upsertVendor(spec) {
     log(`vendor created: ${spec.email}`);
   } else {
     // Same email can already exist from an earlier seed script with a
-    // different password — reset it so Vendor@123 genuinely works.
+    // different password — reset it so the demo password genuinely works.
     provider.providerType = 'vendor';
     provider.emailVerified = 'active';
     provider.adminVerified = 'active';
     provider.isActive = true;
-    provider.password = 'Vendor@123';
+    provider.password = password;
     await provider.save();
   }
   return provider;
@@ -477,22 +477,21 @@ const CUSTOMERS = [
   { email: 'shopper2.qa@metromatrix.pk', fullName: 'Usman Tariq', phoneNumber: '03005550012' },
   { email: 'shopper3.qa@metromatrix.pk', fullName: 'Mahnoor Fatima', phoneNumber: '03005550013' },
 ];
-const CUSTOMER_PASSWORD = 'Shopper@123';
 
-async function upsertCustomers() {
+async function upsertCustomers(password) {
   const users = [];
   for (const spec of CUSTOMERS) {
     let user = await User.findOne({ email: spec.email });
     if (!user) {
       user = await User.create({
         email: spec.email,
-        password: CUSTOMER_PASSWORD,
+        password,
         fullName: spec.fullName,
         phoneNumber: spec.phoneNumber,
         isActive: true,
         isEmailVerified: true,
       });
-      log(`customer created: ${spec.email} / ${CUSTOMER_PASSWORD}`);
+      log(`customer created: ${spec.email}`);
     }
     const wallet = await WalletService.getOrCreateWallet(user._id, 'User');
     if (wallet.balance < 30000) {
@@ -789,7 +788,11 @@ function loadScrapedCatalog(brandSlug) {
   return data;
 }
 
-async function seedBrands() {
+// `password` is the demo password every seeded vendor/customer gets — the
+// caller reads it from SEED_DEMO_PASSWORD (scripts/lib/seedSafety.js). It is
+// never logged.
+async function seedBrands({ password } = {}) {
+  if (!password) throw new Error('seedBrands({ password }) is required — see scripts/seed-shopping.js');
   log('=== Cougar + Outfitters brand seed (REAL scraped data) ===');
 
   await purgeAllShoppingData();
@@ -797,12 +800,12 @@ async function seedBrands() {
   const cougarScraped = loadScrapedCatalog('cougar');
   const outfittersScraped = loadScrapedCatalog('outfitters');
 
-  const cougarVendor = await upsertVendor(COUGAR.vendor);
+  const cougarVendor = await upsertVendor(COUGAR.vendor, password);
   const cougarBrand = await upsertBrand(COUGAR, cougarVendor, ['Men', 'Women', 'Kids']);
   const cougarProducts = await upsertCougarCatalogue(cougarBrand, cougarScraped);
   await upsertOutlets(cougarBrand, COUGAR);
 
-  const outfittersVendor = await upsertVendor(OUTFITTERS.vendor);
+  const outfittersVendor = await upsertVendor(OUTFITTERS.vendor, password);
   const outfittersBrand = await upsertBrand(OUTFITTERS, outfittersVendor, ['Men', 'Women']);
   const outfittersProducts = await upsertOutfittersCatalogue(outfittersBrand, outfittersScraped);
   await upsertOutlets(outfittersBrand, OUTFITTERS);
@@ -816,7 +819,7 @@ async function seedBrands() {
   log(`✓ verified exactly 2 brands in the database`);
 
   await upsertCoupons(cougarBrand, outfittersBrand);
-  const customers = await upsertCustomers();
+  const customers = await upsertCustomers(password);
 
   const brands = { cougar: cougarBrand, outfitters: outfittersBrand };
   const productsBySlug = { cougar: cougarProducts, outfitters: outfittersProducts };
@@ -831,12 +834,10 @@ async function seedBrands() {
     coupons: 6,
     customers: CUSTOMERS.map((c) => c.email),
     orders: orderResult,
+    // Emails only; the password is SEED_DEMO_PASSWORD and is never printed.
     logins: {
-      vendors: [
-        `${COUGAR.vendor.email} / Vendor@123 (Cougar)`,
-        `${OUTFITTERS.vendor.email} / Vendor@123 (Outfitters)`,
-      ],
-      customers: CUSTOMERS.map((c) => `${c.email} / ${CUSTOMER_PASSWORD}`),
+      vendors: [`${COUGAR.vendor.email} (Cougar)`, `${OUTFITTERS.vendor.email} (Outfitters)`],
+      customers: CUSTOMERS.map((c) => c.email),
     },
   };
 
@@ -849,11 +850,14 @@ module.exports = seedBrands;
 
 if (require.main === module) {
   require('dotenv').config();
+  const { assertSafeSeedTarget, demoPassword } = require('../../../../scripts/lib/seedSafety');
+  assertSafeSeedTarget();
+  const password = demoPassword();
   mongoose
     .connect(process.env.MONGODB_URI)
     .then(async () => {
       console.log('✓ MongoDB connected');
-      await seedBrands();
+      await seedBrands({ password });
       await mongoose.disconnect();
     })
     .catch((err) => {

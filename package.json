@@ -11,6 +11,7 @@
     "lint": "eslint src/",
     "lint:fix": "eslint src/ --fix",
     "seed": "node scripts/seed.js",
+    "seed:admin": "node scripts/seed-admin.js",
     "smoke:wallet": "node scripts/smoke-wallet.js",
     "smoke:auth-email": "node scripts/smoke-auth-email.js",
     "smoke:auth": "node scripts/smoke-auth.js",
