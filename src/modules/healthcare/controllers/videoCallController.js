@@ -17,6 +17,9 @@ const CONSULT_LEAD_MS = CONSULT_LEAD_MINUTES * 60 * 1000;
 // Agora token generation
 const generateAgoraToken = (channelName, uid) => {
   try {
+    // Optional dependency: not installed, so this throws and the catch below
+    // falls back. Kept for deployments that add Agora.
+    // eslint-disable-next-line n/no-missing-require
     const { RtcTokenBuilder, RtcRole } = require('agora-access-token');
     const expireTime = Math.floor(Date.now() / 1000) + 3600;
     return RtcTokenBuilder.buildTokenWithUid(

@@ -1,0 +1,36 @@
+name: CI
+
+on:
+  push:
+  pull_request:
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+      - run: npm ci
+      - name: Lint
+        run: npm run lint
+      - name: Tests (in-memory MongoDB replica set)
+        run: npm test
+      - name: Route table is committed and current
+        run: node scripts/dump-routes.js --check
+      - name: Dependency audit (report only)
+        run: npm audit --omit=dev || true
+
+  secrets:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      # Scans the commits in each push / PR. Secrets already in history are
+      # tracked in docs/SECURITY_ROTATION.md and must be rotated, not hidden.
+      - uses: gitleaks/gitleaks-action@v2
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

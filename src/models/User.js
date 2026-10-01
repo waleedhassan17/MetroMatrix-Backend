@@ -118,8 +118,6 @@ emailVerificationAttempts: {
     refreshToken: String,
     resetPasswordToken: String,
     resetPasswordExpire: Date,
-    emailVerificationToken: String,
-    emailVerificationExpire: Date,
 
     // Preferences
     preferences: {

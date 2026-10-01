@@ -3,6 +3,7 @@ const asyncHandler = require('express-async-handler');
 const User = require('../models/User');
 const Provider = require('../models/Provider');
 const Admin = require('../models/Admin');
+const named = require('../utils/named');
 
 // Which collection to look in first, keyed by the token's `userType`.
 //
@@ -43,7 +44,7 @@ function applyAccountKind(req, kind) {
 }
 
 // Protect routes
-const protect = asyncHandler(async (req, res, next) => {
+const protect = named('protect', asyncHandler(async (req, res, next) => {
   let token;
 
   if (
@@ -83,7 +84,7 @@ const protect = asyncHandler(async (req, res, next) => {
     res.status(401);
     throw new Error('Not authorized, no token');
   }
-});
+}));
 
 // User only middleware. Name the account type the caller actually presented —
 // a bare "users only" gives the client no way to tell a wrong-token bug from a
@@ -149,7 +150,7 @@ const verifiedProvider = (req, res, next) => {
 };
 
 // Optional auth - doesn't fail if no token
-const optionalAuth = asyncHandler(async (req, res, next) => {
+const optionalAuth = named('optionalAuth', asyncHandler(async (req, res, next) => {
   let token;
 
   if (
@@ -171,9 +172,9 @@ const optionalAuth = asyncHandler(async (req, res, next) => {
       console.log('Optional auth: Invalid token');
     }
   }
-  
+
   next();
-});
+}));
 
 module.exports = {
   loadAccount,

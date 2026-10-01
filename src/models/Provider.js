@@ -251,10 +251,6 @@ const providerSchema = new mongoose.Schema(
       enum: ['pending', 'approved', 'rejected'],
       default: 'pending',
     },
-    isVerified: {
-      type: Boolean,
-      default: false,
-    },
     canLogin: {
       type: Boolean,
       default: false,
@@ -372,7 +368,6 @@ const providerSchema = new mongoose.Schema(
     refreshToken: String,
     resetPasswordToken: String,
     resetPasswordExpire: Date,
-    approvedAt: Date,
 
     // Stripe Connect (for wallet payouts to bank)
     stripeConnectAccountId: { type: String, sparse: true, index: true },

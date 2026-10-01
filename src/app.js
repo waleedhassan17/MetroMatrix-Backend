@@ -27,6 +27,7 @@ const PendingSignup = require('./models/PendingSignup');
 const EmailVerification = require('./models/EmailVerification');
 const { generateTokens } = require('./utils/generateToken');
 const { getPublicBaseUrl } = require('./utils/publicUrl');
+const named = require('./utils/named');
 const { verifiedEmailFlag } = require('./utils/verificationFlags');
 
 const healthcareDoctorRoutes = require('./routes/healthcareDoctorRoutes');
@@ -153,7 +154,7 @@ const limiter = rateLimit({
   message: 'Too many requests, please try again in a few minutes.',
   skip: () => rateLimitDisabled,
 });
-app.use('/api/', limiter);
+app.use('/api/', named('apiRateLimit', limiter));
 
 // Auth rate limiting (stricter)
 const authLimiter = rateLimit({
@@ -163,7 +164,7 @@ const authLimiter = rateLimit({
   message: 'Too many authentication attempts, please try again later.',
   skip: () => rateLimitDisabled,
 });
-app.use('/api/auth/', authLimiter);
+app.use('/api/auth/', named('authRateLimit', authLimiter));
 
 // Initialize passport
 app.use(passport.initialize());
