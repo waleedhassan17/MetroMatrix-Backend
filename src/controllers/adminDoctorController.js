@@ -1,17 +1,21 @@
 const asyncHandler = require('express-async-handler');
 const Doctor = require('../modules/healthcare/models/Doctor');
 const Provider = require('../models/Provider');
-const Notification = require('../models/Notification');
-const logger = require('../utils/logger');
+const auditService = require('../services/auditService');
 
-// Best-effort notification (never breaks the request).
-const notifyAdmin = async (type, title, message, data = {}) => {
-  try {
-    await Notification.create({ type, title, message, data });
-  } catch (err) {
-    logger.error('notifyAdmin failed:', err.message);
-  }
-};
+// Doctor decisions are recorded in the unified AdminAuditLog. (They used to
+// post a message addressed to the doctor — "Congratulations! Your doctor
+// account…" — into the ADMIN notification feed, where no doctor would see it.)
+const audit = (req, action, doctor, { before, after, reason } = {}) =>
+  auditService.audit(req, {
+    module: 'healthcare',
+    action: `healthcare.${action}`,
+    targetType: 'Doctor',
+    targetId: doctor._id,
+    before,
+    after,
+    reason,
+  });
 
 // @desc    Get all pending/under_review doctors
 // @route   GET /api/v1/admin/doctors/pending
@@ -48,6 +52,7 @@ const approveDoctor = asyncHandler(async (req, res) => {
   }
 
   const { notes } = req.body;
+  const before = { verificationStatus: doctor.verificationStatus, isActive: doctor.isActive };
 
   // Update Doctor
   doctor.verificationStatus = 'verified';
@@ -64,13 +69,11 @@ const approveDoctor = asyncHandler(async (req, res) => {
     await provider.save();
   }
 
-  // Notify doctor (best-effort)
-  await notifyAdmin(
-    'doctor_approved',
-    'Account Approved',
-    'Congratulations! Your doctor account has been approved. You can now start receiving appointments.',
-    { providerId: doctor.providerId }
-  );
+  await audit(req, 'doctor.approve', doctor, {
+    before,
+    after: { verificationStatus: 'verified', isActive: true },
+    reason: notes,
+  });
 
   const updatedDoctor = await Doctor.findById(doctor._id)
     .populate('providerId', 'fullName email phone')
@@ -99,6 +102,8 @@ const rejectDoctor = asyncHandler(async (req, res) => {
     throw new Error('Rejection reason is required');
   }
 
+  const before = { verificationStatus: doctor.verificationStatus, isActive: doctor.isActive };
+
   // Update Doctor
   doctor.verificationStatus = 'rejected';
   doctor.verificationNotes = reason;
@@ -116,13 +121,11 @@ const rejectDoctor = asyncHandler(async (req, res) => {
     }
   }
 
-  // Notify doctor (best-effort)
-  await notifyAdmin(
-    'doctor_rejected',
-    'Verification Rejected',
-    `Your account verification was rejected. Reason: ${reason}${canReapply === false ? ' You cannot reapply.' : ''}`,
-    { providerId: doctor.providerId }
-  );
+  await audit(req, 'doctor.reject', doctor, {
+    before,
+    after: { verificationStatus: 'rejected', isActive: doctor.isActive, canReapply: canReapply !== false },
+    reason,
+  });
 
   const updatedDoctor = await Doctor.findById(doctor._id)
     .populate('providerId', 'fullName email')

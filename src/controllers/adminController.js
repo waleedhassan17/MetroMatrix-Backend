@@ -2,11 +2,60 @@ const asyncHandler = require('express-async-handler');
 const User = require('../models/User');
 const Provider = require('../models/Provider');
 const ProviderDocument = require('../models/ProviderDocument');
-const ProviderSubmission = require('../models/ProviderSubmission');
 const Post = require('../models/Post');
 const { sendEmail } = require('../services/emailService');
-const { notifyProviderSubmitted } = require('../services/adminEmailService');
+const { notifyProviderSubmitted, escapeHtml } = require('../services/adminEmailService');
 const logger = require('../utils/logger');
+const auditService = require('../services/auditService');
+const { softDeleteAccount, restoreAccount } = require('../services/admin/accountDeletion');
+const AppError = require('../utils/AppError');
+const { ERROR_CODES } = require('../utils/errorCodes');
+const { ok } = require('../utils/apiResponse');
+
+// Core admin actions are recorded in the unified AdminAuditLog. (They used to
+// go to Admin.activityLog, whose fixed action enum made the save fail — AFTER
+// the delete/approval had already happened — for actions it didn't list.)
+const audit = (req, entry) => auditService.audit(req, { module: 'core', ...entry });
+
+// Reason for a deletion: body (DELETE with a JSON body) or ?reason=.
+const deletionReason = (req) => String(req.body?.reason || req.query?.reason || '').trim();
+
+// Soft-delete a user or provider (services/admin/accountDeletion.js): refused
+// with 409 + reasons while anything is still open; audited.
+const deleteAccount = (kind, param) =>
+  asyncHandler(async (req, res) => {
+    const reason = deletionReason(req);
+    if (!reason) throw new AppError(ERROR_CODES.VALIDATION_FAILED, 'A reason is required to delete an account');
+    const Model = kind === 'User' ? User : Provider;
+    const account = await Model.findById(req.params[param]);
+    if (!account) throw new AppError(ERROR_CODES.NOT_FOUND, `${kind} not found`);
+
+    const { deletedAt } = await softDeleteAccount(kind, account, { admin: req.user, reason });
+    await audit(req, {
+      action: `${kind.toLowerCase()}.delete`,
+      targetType: kind,
+      targetId: account._id,
+      before: { email: account.email, isActive: account.isActive },
+      after: { deletedAt },
+      reason,
+    });
+    ok(res, { id: String(account._id), deletedAt, restorable: true });
+  });
+
+// Undo a soft delete — super admin only (route guard).
+const restoreAccountHandler = (kind, param) =>
+  asyncHandler(async (req, res) => {
+    const restored = await restoreAccount(kind, req.params[param]);
+    await audit(req, {
+      action: `${kind.toLowerCase()}.restore`,
+      targetType: kind,
+      targetId: req.params[param],
+      before: { deletedAt: restored.deletedAt },
+      after: { deletedAt: null, email: restored.restoredEmail },
+      reason: String(req.body?.reason || ''),
+    });
+    ok(res, { id: String(req.params[param]), restored: true, email: restored.restoredEmail });
+  });
 
 // @desc    Get dashboard statistics
 // @route   GET /api/admin/dashboard
@@ -72,341 +121,31 @@ const getDashboardStats = asyncHandler(async (req, res) => {
   });
 });
 
-// @desc    Get pending providers for review
-// @route   GET /api/admin/providers/pending
-// @access  Private/Admin
-const getPendingProviders = asyncHandler(async (req, res) => {
-  const page = parseInt(req.query.page) || 1;
-  const limit = parseInt(req.query.limit) || 10;
-  const skip = (page - 1) * limit;
-
-  const total = await Provider.countDocuments({ verificationStatus: 'pending' });
-
-  const providers = await Provider.find({ verificationStatus: 'pending' })
-    .select('-password -refreshToken')
-    .sort('-createdAt')
-    .limit(limit)
-    .skip(skip);
-
-  // Fetch documents for each provider
-  const providersWithDocs = await Promise.all(
-    providers.map(async (provider) => {
-      const documents = await ProviderDocument.find({
-        providerId: provider._id,
-      }).select('-__v');
-
-      return {
-        ...provider.toObject(),
-        documents: documents.map((doc) => ({
-          id: doc._id,
-          documentType: doc.documentType,
-          fileName: doc.fileName,
-          fileUrl: doc.fileUrl,
-          fileSize: doc.fileSize,
-          uploadedAt: doc.uploadedAt,
-          verified: doc.verified,
-        })),
-      };
-    })
-  );
-
-  res.json({
-    success: true,
-    providers: providersWithDocs,
-    pagination: {
-      page,
-      limit,
-      total,
-      pages: Math.ceil(total / limit),
-    },
-  });
-});
-
-// @desc    Get provider details for review
-// @route   GET /api/admin/providers/:id
-// @access  Private/Admin
-const getProviderForReview = asyncHandler(async (req, res) => {
-  const provider = await Provider.findById(req.params.id);
-
-  if (!provider) {
-    res.status(404);
-    throw new Error('Provider not found');
-  }
-
-  // Fetch all documents for this provider
-  const documents = await ProviderDocument.find({
-    providerId: provider._id,
-  }).select('-__v');
-
-  const providerData = {
-    ...provider.toObject(),
-    documents: documents.map((doc) => ({
-      id: doc._id,
-      documentType: doc.documentType,
-      fileName: doc.fileName,
-      fileUrl: doc.fileUrl,
-      fileSize: doc.fileSize,
-      mimeType: doc.mimeType,
-      uploadedAt: doc.uploadedAt,
-      verified: doc.verified,
-      verifiedAt: doc.verifiedAt,
-      verifiedBy: doc.verifiedBy,
-      rejectionReason: doc.rejectionReason,
-    })),
-  };
-
-  res.json({
-    success: true,
-    provider: providerData,
-  });
-});
-
-// @desc    Approve provider
-// @route   POST /api/admin/providers/:id/approve
-// @access  Private/Admin
-// ✅ UPDATED: Issue FULL token when approving (two-phase auth)
-const approveProvider = asyncHandler(async (req, res) => {
-  const { generateTokens } = require('../utils/generateToken');
-  
-  const provider = await Provider.findById(req.params.id);
-
-  if (!provider) {
-    res.status(404);
-    throw new Error('Provider not found');
-  }
-
-  if (provider.verificationStatus === 'approved') {
-    res.status(400);
-    throw new Error('Provider is already approved');
-  }
-
-  // Update status to approved
-  provider.adminVerified = 'active'; // ✅ New flag: Set to 'active'
-  provider.verificationStatus = 'approved';
-  provider.onboardingStatus = 'approved';
-  provider.isVerified = true;
-  provider.canLogin = true;
-  provider.verifiedBy = req.user._id;
-  provider.approvedAt = new Date();
-  await provider.save();
-
-  // Generate FULL access token for immediate use
-  const tokens = generateTokens(provider._id, {
-    userType: 'provider',
-    email: provider.email,
-    tokenType: 'FULL',
-    onboardingStatus: provider.onboardingStatus
-  });
-
-  // Log admin activity
-  req.user.logActivity(
-    'approve_provider',
-    provider._id,
-    'Provider',
-    `Approved provider: ${provider.fullName}`
-  );
-  req.user.incrementStat('totalProvidersApproved');
-  await req.user.save();
-
-  // Send approval email
-  try {
-    await sendEmail({
-      email: provider.email,
-      subject: 'Your Provider Account Has Been Approved - MetroMatrix',
-      html: `
-        <h1>Congratulations!</h1>
-        <p>Dear ${provider.fullName},</p>
-        <p>Your provider account has been approved! You can now start offering your services on MetroMatrix.</p>
-        <p>You have been issued a FULL access token. You can use it immediately to access your dashboard and manage your services.</p>
-        <p>If you prefer to login, use your email and password on the login page.</p>
-        <p>Best regards,<br>MetroMatrix Team</p>
-      `,
-    });
-  } catch (error) {
-    logger.error('Error sending approval email:', error);
-  }
-
-  res.json({
-    success: true,
-    message: 'Provider approved successfully. FULL access token issued.',
-    provider: {
-      id: provider._id,
-      fullName: provider.fullName,
-      email: provider.email,
-      onboardingStatus: provider.onboardingStatus,
-      verificationStatus: provider.verificationStatus,
-    },
-    tokens: tokens, // Return FULL token for immediate use
-    tokenType: 'FULL', // Indicate this is full access
-  });
-});
-
-// @desc    Reject provider
-// @route   POST /api/admin/providers/:id/reject
-// @access  Private/Admin
-// ✅ UPDATED: Keep onboarding status as pending_approval so provider can resubmit (two-phase auth)
-const rejectProvider = asyncHandler(async (req, res) => {
-  const { reason } = req.body;
-  const provider = await Provider.findById(req.params.id);
-
-  if (!provider) {
-    res.status(404);
-    throw new Error('Provider not found');
-  }
-
-  provider.adminVerified = 'inactive'; // ✅ New flag: Set to 'inactive'
-  provider.verificationStatus = 'rejected';
-  provider.rejectionReason = reason;
-  provider.verifiedBy = req.user._id;
-  provider.rejectedAt = new Date();
-  // Keep onboardingStatus as pending_approval so provider can resubmit with corrections
-  await provider.save();
-
-  // Log admin activity
-  req.user.logActivity(
-    'reject_provider',
-    provider._id,
-    'Provider',
-    `Rejected provider: ${provider.fullName} - Reason: ${reason}`
-  );
-  req.user.incrementStat('totalProvidersRejected');
-  await req.user.save();
-
-  // Send rejection email
-  try {
-    await sendEmail({
-      email: provider.email,
-      subject: 'Provider Application Update - MetroMatrix',
-      html: `
-        <h1>Application Update</h1>
-        <p>Dear ${provider.fullName},</p>
-        <p>Thank you for submitting your provider application. Unfortunately, it could not be approved at this time.</p>
-        <p><strong>Reason:</strong> ${reason}</p>
-        <p>Good news! You can resubmit your application with corrections. Simply log in with your LIMITED token or use your credentials to update your information and documents.</p>
-        <p>We look forward to reviewing your updated application.</p>
-        <p>Best regards,<br>MetroMatrix Team</p>
-      `,
-    });
-  } catch (error) {
-    logger.error('Error sending rejection email:', error);
-  }
-
-  res.json({
-    success: true,
-    message: 'Provider rejected successfully',
-  });
-});
-
-// @desc    Get all users
-// @route   GET /api/admin/users
-// @access  Private/Admin
-const getAllUsers = asyncHandler(async (req, res) => {
-  const page = parseInt(req.query.page) || 1;
-  const limit = parseInt(req.query.limit) || 10;
-  const skip = (page - 1) * limit;
-
-  const query = {};
-
-  if (req.query.search) {
-    query.$or = [
-      { fullName: { $regex: req.query.search, $options: 'i' } },
-      { email: { $regex: req.query.search, $options: 'i' } },
-    ];
-  }
-
-  if (req.query.isActive !== undefined) {
-    query.isActive = req.query.isActive === 'true';
-  }
-
-  const total = await User.countDocuments(query);
-  const users = await User.find(query)
-    .select('-password -refreshToken')
-    .sort('-createdAt')
-    .limit(limit)
-    .skip(skip);
-
-  res.json({
-    success: true,
-    users,
-    pagination: {
-      page,
-      limit,
-      total,
-      pages: Math.ceil(total / limit),
-    },
-  });
-});
-
-// @desc    Get all providers
-// @route   GET /api/admin/providers
-// @access  Private/Admin
-const getAllProviders = asyncHandler(async (req, res) => {
-  const page = parseInt(req.query.page) || 1;
-  const limit = parseInt(req.query.limit) || 10;
-  const skip = (page - 1) * limit;
-
-  const query = {};
-
-  if (req.query.search) {
-    query.$or = [
-      { fullName: { $regex: req.query.search, $options: 'i' } },
-      { email: { $regex: req.query.search, $options: 'i' } },
-    ];
-  }
-
-  if (req.query.verificationStatus) {
-    query.verificationStatus = req.query.verificationStatus;
-  }
-
-  if (req.query.providerType) {
-    query.providerType = req.query.providerType;
-  }
-
-  if (req.query.isActive !== undefined) {
-    query.isActive = req.query.isActive === 'true';
-  }
-
-  const total = await Provider.countDocuments(query);
-  const providers = await Provider.find(query)
-    .select('-password -refreshToken')
-    .sort('-createdAt')
-    .limit(limit)
-    .skip(skip);
-
-  res.json({
-    success: true,
-    providers,
-    pagination: {
-      page,
-      limit,
-      total,
-      pages: Math.ceil(total / limit),
-    },
-  });
-});
-
 // @desc    Deactivate provider
 // @route   PUT /api/admin/providers/:id/deactivate
 // @access  Private/Admin
 const deactivateProvider = asyncHandler(async (req, res) => {
-  const provider = await Provider.findById(req.params.id);
+  // The route parameter is :providerId — reading req.params.id made this a
+  // permanent 404.
+  const provider = await Provider.findById(req.params.providerId);
 
   if (!provider) {
     res.status(404);
     throw new Error('Provider not found');
   }
 
+  const before = { isActive: provider.isActive };
   provider.isActive = false;
   await provider.save();
 
-  // Log admin activity
-  req.user.logActivity(
-    'deactivate_user',
-    provider._id,
-    'Provider',
-    `Deactivated provider: ${provider.fullName}`
-  );
-  await req.user.save();
+  await audit(req, {
+    action: 'provider.deactivate',
+    targetType: 'Provider',
+    targetId: provider._id,
+    before,
+    after: { isActive: false },
+    reason: req.body?.reason,
+  });
 
   res.json({
     success: true,
@@ -418,24 +157,25 @@ const deactivateProvider = asyncHandler(async (req, res) => {
 // @route   PUT /api/admin/providers/:id/activate
 // @access  Private/Admin
 const activateProvider = asyncHandler(async (req, res) => {
-  const provider = await Provider.findById(req.params.id);
+  const provider = await Provider.findById(req.params.providerId);
 
   if (!provider) {
     res.status(404);
     throw new Error('Provider not found');
   }
 
+  const before = { isActive: provider.isActive };
   provider.isActive = true;
   await provider.save();
 
-  // Log admin activity
-  req.user.logActivity(
-    'activate_user',
-    provider._id,
-    'Provider',
-    `Activated provider: ${provider.fullName}`
-  );
-  await req.user.save();
+  await audit(req, {
+    action: 'provider.activate',
+    targetType: 'Provider',
+    targetId: provider._id,
+    before,
+    after: { isActive: true },
+    reason: req.body?.reason,
+  });
 
   res.json({
     success: true,
@@ -456,10 +196,13 @@ const deletePost = asyncHandler(async (req, res) => {
 
   await post.deleteOne();
 
-  // Log admin activity
-  req.user.logActivity('delete_post', post._id, 'Post', `Deleted post by admin`);
-  req.user.incrementStat('totalPostsModerated');
-  await req.user.save();
+  await audit(req, {
+    action: 'post.delete',
+    targetType: 'Post',
+    targetId: post._id,
+    before: { author: post.author || post.user || null, content: String(post.content || '').slice(0, 200) },
+    reason: req.body?.reason,
+  });
 
   res.json({
     success: true,
@@ -678,313 +421,6 @@ function getStatusMessage(status) {
   };
   return messages[status] || 'Unknown status';
 }
-
-// Legacy compatibility
-const checkSubmissionStatusLegacy = asyncHandler(async (req, res) => {
-  const { email } = req.query;
-
-  if (!email) {
-    res.status(400);
-    throw new Error('Email is required');
-  }
-
-  // Find most recent submission for this email
-  const submission = await ProviderSubmission.findOne({ email })
-    .sort({ submittedAt: -1 })
-    .select('status submittedAt reviewedAt rejectionReason providerId');
-
-  if (!submission) {
-    res.status(404);
-    throw new Error('No submission found for this email');
-  }
-
-  const response = {
-    success: true,
-    status: submission.status,
-    submissionId: submission._id,
-    submittedAt: submission.submittedAt,
-  };
-
-  // If rejected, include rejection reason
-  if (submission.status === 'rejected') {
-    response.rejectionReason = submission.rejectionReason;
-    response.reviewedAt = submission.reviewedAt;
-  }
-
-  res.json(response);
-});
-
-// @desc    Get all provider submissions (for admin review)
-// @route   GET /api/admin/provider-submissions
-// @access  Private/Admin
-const getProviderSubmissions = asyncHandler(async (req, res) => {
-  const { status } = req.query;
-
-  const filter = status ? { status } : {};
-  
-  const submissions = await ProviderSubmission.find(filter)
-    .sort({ submittedAt: -1 })
-    .select('-documents.medicalLicense.publicId -documents.degreeCertificate.publicId');
-
-  res.json({
-    success: true,
-    count: submissions.length,
-    submissions,
-  });
-});
-
-// @desc    Get single provider submission details
-// @route   GET /api/admin/provider-submissions/:id
-// @access  Private/Admin
-const getProviderSubmissionById = asyncHandler(async (req, res) => {
-  const submission = await ProviderSubmission.findById(req.params.id);
-
-  if (!submission) {
-    res.status(404);
-    throw new Error('Submission not found');
-  }
-
-  res.json({
-    success: true,
-    submission,
-  });
-});
-
-// @desc    Approve provider submission (updates existing Provider)
-// @route   POST /api/admin/provider-submissions/:id/approve
-// @access  Private/Admin
-// ✅ UPDATED: Provider account already exists - just set isVerified=true
-const approveProviderSubmission = asyncHandler(async (req, res) => {
-  const submission = await ProviderSubmission.findById(req.params.id);
-
-  if (!submission) {
-    res.status(404);
-    throw new Error('Submission not found');
-  }
-
-  if (submission.status !== 'pending_review') {
-    res.status(400);
-    throw new Error(`Submission already ${submission.status}`);
-  }
-
-  // ✅ Get existing provider account (created during email verification)
-  const provider = await Provider.findOne({ email: submission.email });
-  
-  if (!provider) {
-    res.status(404);
-    throw new Error('Provider account not found. Please contact support.');
-  }
-
-  // ✅ Update provider with approval status
-  provider.isVerified = true; // ✅ CRITICAL: Enable login
-  provider.canLogin = true;
-  provider.onboardingStatus = 'approved';
-  provider.verificationStatus = 'approved';
-  provider.verifiedBy = req.user._id;
-  provider.approvedAt = new Date();
-  
-  // Update profile photo if provided
-  if (submission.documents.profilePhoto?.url) {
-    provider.profilePhoto = submission.documents.profilePhoto.url;
-    provider.profilePhotoId = submission.documents.profilePhoto.publicId;
-  }
-  
-  await provider.save();
-
-  // Create ProviderDocument records for uploaded documents
-  const documentPromises = [];
-  
-  if (submission.documents.medicalLicense) {
-    documentPromises.push(
-      ProviderDocument.create({
-        provider: provider._id,
-        documentType: 'medicalLicense',
-        documentUrl: submission.documents.medicalLicense.url,
-        publicId: submission.documents.medicalLicense.publicId,
-        status: 'approved',
-        verifiedBy: req.user._id,
-        verifiedAt: new Date(),
-      })
-    );
-  }
-  
-  if (submission.documents.degreeCertificate) {
-    documentPromises.push(
-      ProviderDocument.create({
-        provider: provider._id,
-        documentType: 'degreeCertificate',
-        documentUrl: submission.documents.degreeCertificate.url,
-        publicId: submission.documents.degreeCertificate.publicId,
-        status: 'approved',
-        verifiedBy: req.user._id,
-        verifiedAt: new Date(),
-      })
-    );
-  }
-  
-  if (submission.documents.nationalIdCard) {
-    documentPromises.push(
-      ProviderDocument.create({
-        provider: provider._id,
-        documentType: 'nationalIdCard',
-        documentUrl: submission.documents.nationalIdCard.url,
-        publicId: submission.documents.nationalIdCard.publicId,
-        status: 'approved',
-        verifiedBy: req.user._id,
-        verifiedAt: new Date(),
-      })
-    );
-  }
-
-  await Promise.all(documentPromises);
-
-  // Update submission status
-  submission.status = 'approved';
-  submission.providerId = provider._id;
-  submission.reviewedAt = new Date();
-  submission.reviewedBy = req.user._id;
-  await submission.save();
-
-  // Log admin activity
-  req.user.logActivity(
-    'approve_provider_submission',
-    provider._id,
-    'Provider',
-    `Approved provider submission: ${provider.fullName}`
-  );
-  req.user.incrementStat('totalProvidersApproved');
-  await req.user.save();
-
-  // Send approval email to provider
-  try {
-    await sendEmail({
-      email: provider.email,
-      subject: '✅ Your Provider Account Has Been Approved! - MetroMatrix',
-      html: `
-        <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto;">
-          <h1 style="color: #6366f1;">🎉 Congratulations!</h1>
-          <p>Dear ${provider.fullName},</p>
-          <p>Your provider application has been <strong>approved</strong>! You can now login and start offering your services on MetroMatrix.</p>
-          
-          <div style="background: #f0f9ff; padding: 20px; border-radius: 8px; margin: 20px 0;">
-            <h3 style="margin-top: 0;">Next Steps:</h3>
-            <ol>
-              <li>Login to your account using your email and password</li>
-              <li>Complete your profile information</li>
-              <li>Set your availability schedule</li>
-              <li>Start receiving service requests</li>
-            </ol>
-          </div>
-          
-          <p><strong>You can now login!</strong> Use your registered email and password to access your account.</p>
-          
-          <p>If you have any questions, feel free to contact our support team.</p>
-          
-          <p>Best regards,<br/>The MetroMatrix Team</p>
-        </div>
-      `,
-    });
-  } catch (error) {
-    logger.error('Error sending approval email:', error);
-  }
-
-  res.json({
-    success: true,
-    message: 'Provider application approved successfully. Provider can now login.',
-    provider: {
-      id: provider._id,
-      fullName: provider.fullName,
-      email: provider.email,
-      providerType: provider.providerType,
-      onboardingStatus: provider.onboardingStatus,
-      isVerified: provider.isVerified,
-      canLogin: provider.canLogin,
-    },
-  });
-});
-
-// @desc    Reject provider submission
-// @route   POST /api/admin/provider-submissions/:id/reject
-// @access  Private/Admin
-// ✅ UPDATED: Also update provider status so they can resubmit
-const rejectProviderSubmission = asyncHandler(async (req, res) => {
-  const { rejectionReason, adminNotes } = req.body;
-  
-  const submission = await ProviderSubmission.findById(req.params.id);
-
-  if (!submission) {
-    res.status(404);
-    throw new Error('Submission not found');
-  }
-
-  if (submission.status !== 'pending_review') {
-    res.status(400);
-    throw new Error(`Submission already ${submission.status}`);
-  }
-
-  // ✅ Update provider account status
-  const provider = await Provider.findOne({ email: submission.email });
-  if (provider) {
-    provider.onboardingStatus = 'rejected';
-    provider.verificationStatus = 'rejected';
-    provider.rejectionReason = rejectionReason;
-    provider.isVerified = false; // Still cannot login
-    provider.canLogin = false;
-    await provider.save();
-  }
-
-  // Update submission status
-  submission.status = 'rejected';
-  submission.rejectionReason = rejectionReason;
-  submission.adminNotes = adminNotes;
-  submission.reviewedAt = new Date();
-  submission.reviewedBy = req.user._id;
-  await submission.save();
-
-  // Log admin activity
-  req.user.logActivity(
-    'reject_provider_submission',
-    submission._id,
-    'ProviderSubmission',
-    `Rejected provider submission: ${submission.fullName}`
-  );
-  await req.user.save();
-
-  // Send rejection email
-  try {
-    await sendEmail({
-      email: submission.email,
-      subject: 'Provider Application Update - MetroMatrix',
-      html: `
-        <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto;">
-          <h1>Application Status Update</h1>
-          <p>Dear ${submission.fullName},</p>
-          <p>Thank you for your interest in becoming a provider on MetroMatrix.</p>
-          <p>After careful review, we regret to inform you that we cannot approve your application at this time.</p>
-          
-          ${rejectionReason ? `
-            <div style="background: #fef2f2; padding: 15px; border-left: 4px solid #ef4444; margin: 20px 0;">
-              <strong>Reason:</strong> ${rejectionReason}
-            </div>
-          ` : ''}
-          
-          <p>You may resubmit your application after addressing the issues mentioned above.</p>
-          
-          <p>If you have any questions, please contact our support team.</p>
-          
-          <p>Best regards,<br/>The MetroMatrix Team</p>
-        </div>
-      `,
-    });
-  } catch (error) {
-    logger.error('Error sending rejection email:', error);
-  }
-
-  res.json({
-    success: true,
-    message: 'Provider application rejected',
-  });
-});
 
 // ===== NEW ADMIN PANEL ENDPOINTS =====
 
@@ -1385,7 +821,8 @@ const approveProviderEnhanced = asyncHandler(async (req, res) => {
     res.status(404);
     throw new Error('Provider not found');
   }
-  
+
+  const before = { adminVerified: provider.adminVerified, status: provider.status };
   provider.adminVerified = 'active'; // ✅ Allow login
   provider.status = 'approved'; // ✅ New status field
   provider.verificationStatus = 'approved';
@@ -1394,14 +831,18 @@ const approveProviderEnhanced = asyncHandler(async (req, res) => {
   provider.approvedAt = new Date();
   provider.approvedBy = req.user._id;
   if (adminNotes) provider.adminNotes = adminNotes;
-  
+
   await provider.save();
-  
-  // Log activity
-  req.user.logActivity('approve_provider', provider._id, 'Provider', 
-    `Approved provider: ${provider.fullName}`);
-  await req.user.save();
-  
+
+  await audit(req, {
+    action: 'provider.approve',
+    targetType: 'Provider',
+    targetId: provider._id,
+    before,
+    after: { adminVerified: 'active', status: 'approved' },
+    reason: adminNotes,
+  });
+
   // Send approval email
   try {
     await sendEmail({
@@ -1410,7 +851,7 @@ const approveProviderEnhanced = asyncHandler(async (req, res) => {
       html: `
         <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto;">
           <h2 style="color: #10b981;">Congratulations! Your Application is Approved</h2>
-          <p>Dear ${provider.fullName},</p>
+          <p>Dear ${escapeHtml(provider.fullName)},</p>
           <p>We're excited to inform you that your application has been approved! You can now log in and start using MetroMatrix.</p>
           <p>You can now access all features and start offering your services to our users.</p>
           <p>If you have any questions, please don't hesitate to contact our support team.</p>
@@ -1451,7 +892,8 @@ const rejectProviderEnhanced = asyncHandler(async (req, res) => {
     res.status(404);
     throw new Error('Provider not found');
   }
-  
+
+  const before = { adminVerified: provider.adminVerified, status: provider.status };
   provider.adminVerified = 'inactive'; // ✅ Block login
   provider.status = 'rejected'; // ✅ New status field
   provider.verificationStatus = 'rejected';
@@ -1459,14 +901,18 @@ const rejectProviderEnhanced = asyncHandler(async (req, res) => {
   provider.rejectedAt = new Date();
   provider.rejectedBy = req.user._id;
   if (adminNotes) provider.adminNotes = adminNotes;
-  
+
   await provider.save();
-  
-  // Log activity
-  req.user.logActivity('reject_provider', provider._id, 'Provider', 
-    `Rejected provider: ${provider.fullName}. Reason: ${reason}`);
-  await req.user.save();
-  
+
+  await audit(req, {
+    action: 'provider.reject',
+    targetType: 'Provider',
+    targetId: provider._id,
+    before,
+    after: { adminVerified: 'inactive', status: 'rejected' },
+    reason,
+  });
+
   // Send rejection email
   try {
     await sendEmail({
@@ -1475,9 +921,9 @@ const rejectProviderEnhanced = asyncHandler(async (req, res) => {
       html: `
         <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto;">
           <h2 style="color: #ef4444;">Application Status Update</h2>
-          <p>Dear ${provider.fullName},</p>
+          <p>Dear ${escapeHtml(provider.fullName)},</p>
           <p>Thank you for your interest in joining MetroMatrix. After careful review, we are unable to approve your application at this time.</p>
-          <p><strong>Reason:</strong> ${reason}</p>
+          <p><strong>Reason:</strong> ${escapeHtml(reason)}</p>
           <p>You may resubmit your application after addressing the issues mentioned above.</p>
           <p>If you have any questions, please contact our support team.</p>
           <p>Best regards,<br/>The MetroMatrix Team</p>
@@ -1501,29 +947,10 @@ const rejectProviderEnhanced = asyncHandler(async (req, res) => {
   });
 });
 
-// @desc    Delete provider
-// @route   DELETE /api/admin/providers/:providerId
-// @access  Private/Admin
-const deleteProvider = asyncHandler(async (req, res) => {
-  const provider = await Provider.findById(req.params.providerId);
-  
-  if (!provider) {
-    res.status(404);
-    throw new Error('Provider not found');
-  }
-  
-  await Provider.deleteOne({ _id: provider._id });
-  
-  // Log activity
-  req.user.logActivity('delete_provider', provider._id, 'Provider', 
-    `Deleted provider: ${provider.fullName}`);
-  await req.user.save();
-  
-  res.json({
-    success: true,
-    message: 'Provider deleted successfully',
-  });
-});
+// @route   DELETE /api/admin/providers/:providerId   { reason }
+const deleteProvider = deleteAccount('Provider', 'providerId');
+// @route   POST /api/admin/providers/:providerId/restore
+const restoreProvider = restoreAccountHandler('Provider', 'providerId');
 
 // @desc    Get all users (Enhanced)
 // @route   GET /api/admin/users
@@ -1660,14 +1087,19 @@ const activateUserEnhanced = asyncHandler(async (req, res) => {
     throw new Error('User not found');
   }
   
+  const before = { isActive: user.isActive };
   user.isActive = true;
   await user.save();
-  
-  // Log activity
-  req.user.logActivity('activate_user', user._id, 'User', 
-    `Activated user: ${user.fullName}`);
-  await req.user.save();
-  
+
+  await audit(req, {
+    action: 'user.activate',
+    targetType: 'User',
+    targetId: user._id,
+    before,
+    after: { isActive: true },
+    reason: req.body?.reason,
+  });
+
   res.json({
     success: true,
     message: 'User activated successfully',
@@ -1690,14 +1122,22 @@ const deactivateUserEnhanced = asyncHandler(async (req, res) => {
     throw new Error('User not found');
   }
   
+  const before = { isActive: user.isActive };
   user.isActive = false;
+  // Also end their ability to renew a session (protect already refuses
+  // inactive accounts on every request).
+  user.refreshToken = undefined;
   await user.save();
-  
-  // Log activity
-  req.user.logActivity('deactivate_user', user._id, 'User', 
-    `Deactivated user: ${user.fullName}${reason ? '. Reason: ' + reason : ''}`);
-  await req.user.save();
-  
+
+  await audit(req, {
+    action: 'user.deactivate',
+    targetType: 'User',
+    targetId: user._id,
+    before,
+    after: { isActive: false },
+    reason,
+  });
+
   res.json({
     success: true,
     message: 'User deactivated successfully',
@@ -1708,29 +1148,10 @@ const deactivateUserEnhanced = asyncHandler(async (req, res) => {
   });
 });
 
-// @desc    Delete user
-// @route   DELETE /api/admin/users/:userId
-// @access  Private/Admin
-const deleteUser = asyncHandler(async (req, res) => {
-  const user = await User.findById(req.params.userId);
-  
-  if (!user) {
-    res.status(404);
-    throw new Error('User not found');
-  }
-  
-  await User.deleteOne({ _id: user._id });
-  
-  // Log activity
-  req.user.logActivity('delete_user', user._id, 'User', 
-    `Deleted user: ${user.fullName}`);
-  await req.user.save();
-  
-  res.json({
-    success: true,
-    message: 'User deleted successfully',
-  });
-});
+// @route   DELETE /api/admin/users/:userId      { reason }
+const deleteUser = deleteAccount('User', 'userId');
+// @route   POST /api/admin/users/:userId/restore
+const restoreUser = restoreAccountHandler('User', 'userId');
 
 // @desc    Get recent registrations
 // @route   GET /api/admin/dashboard/recent-registrations
@@ -1978,21 +1399,11 @@ const getAnalytics = asyncHandler(async (req, res) => {
 
 module.exports = {
   getDashboardStats,
-  getPendingProviders,
-  getProviderForReview,
-  approveProvider,
-  rejectProvider,
-  getAllUsers,
-  getAllProviders,
   deactivateProvider,
   activateProvider,
   deletePost,
   submitProviderApplication,
   checkSubmissionStatus,
-  getProviderSubmissions,
-  getProviderSubmissionById,
-  approveProviderSubmission,
-  rejectProviderSubmission,
   // New enhanced endpoints
   getDashboardStatsEnhanced,
   getQuickStats,
@@ -2007,6 +1418,8 @@ module.exports = {
   activateUserEnhanced,
   deactivateUserEnhanced,
   deleteUser,
+  restoreUser,
+  restoreProvider,
   // Frontend compatibility endpoints
   getRecentRegistrations,
   getProvidersByType,

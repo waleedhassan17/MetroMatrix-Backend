@@ -223,12 +223,14 @@ describe('lockout (security.maxLoginAttempts / lockoutMinutes)', () => {
     expect((await badLogin(target.email)).status).toBe(429);
   });
 
+  // 20 sign-ins, each paying for a real bcrypt comparison (deliberately — it
+  // equalises timing for unknown emails), need more than the 5 s default.
   it('also caps failures per address across different emails (20 by default)', async () => {
     for (let i = 0; i < 20; i += 1) await badLogin(`probe${i}@example.com`);
     const admin = await createAdmin();
     const res = await api().post('/api/admin/auth/login').send({ email: admin.email, password: DEFAULT_PASSWORD });
     expect(res.status).toBe(429);
-  });
+  }, 30000);
 });
 
 describe('idle timeout (security.sessionTimeout)', () => {

@@ -84,4 +84,5 @@ module.exports = {
   updateGeneralSettings: updateSection('general'),
   updateNotificationSettings: updateSection('notifications'),
   updateSecuritySettings: updateSection('security'),
+  updateFinanceSettings: updateSection('finance'),
 };

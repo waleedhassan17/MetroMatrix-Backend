@@ -103,7 +103,7 @@ const forceOrderStatus = asyncHandler(async (req, res) => {
     if (e.statusCode) return fail(res, e.statusCode, e.message);
     throw e;
   }
-  await audit(req.user._id, 'force_order_status', 'ShoppingOrder', order._id, {
+  await audit(req, 'force_order_status', 'ShoppingOrder', order._id, {
     before: { orderStatus: before },
     after: { orderStatus: status },
     reason,
@@ -123,7 +123,7 @@ const manualRefund = asyncHandler(async (req, res) => {
   await orderService.reverseVendorPayout(order);
   await order.save();
   await orderService.syncGroupPaymentStatus(order.orderGroup);
-  await audit(req.user._id, 'manual_refund', 'ShoppingOrder', order._id, {
+  await audit(req, 'manual_refund', 'ShoppingOrder', order._id, {
     after: { paymentStatus: 'refunded', amount: order.total },
     reason: req.body.reason,
   });
@@ -271,7 +271,7 @@ const getSettings = asyncHandler(async (req, res) => ok(res, await getShoppingSe
 const patchSettings = asyncHandler(async (req, res) => {
   const before = await getShoppingSettings();
   const after = await updateShoppingSettings(req.body, req.user._id);
-  await audit(req.user._id, 'update_settings', 'ShoppingSettings', null, { before, after });
+  await audit(req, 'update_settings', 'ShoppingSettings', null, { before, after });
   return ok(res, after);
 });
 

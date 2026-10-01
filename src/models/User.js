@@ -268,4 +268,8 @@ userSchema.methods.toJSON = function () {
   return obj;
 };
 
+// Admin deletion is a soft delete (deletedAt): deleted accounts disappear from
+// every query automatically — see models/plugins/softDelete.js.
+userSchema.plugin(require('./plugins/softDelete'));
+
 module.exports = mongoose.model('User', userSchema);

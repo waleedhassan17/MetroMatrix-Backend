@@ -43,6 +43,20 @@ const PLATFORM_SETTINGS = Object.freeze({
       passwordExpiry: { type: 'integer', min: 0, max: 365, unit: 'days', label: 'Password expiry (0 = never)', usedBy: 'services/admin/sessionRestrictions.js' },
     },
   },
+  finance: {
+    label: 'Finance',
+    superAdminOnly: true,
+    fields: {
+      adjustmentApprovalThreshold: {
+        type: 'integer',
+        min: 0,
+        max: 10000000,
+        unit: 'PKR',
+        label: 'Wallet adjustments above this need a second super admin',
+        usedBy: 'controllers/adminWalletController.js',
+      },
+    },
+  },
 });
 
 const EMAIL = /^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/;

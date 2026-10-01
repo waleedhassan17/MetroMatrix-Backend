@@ -5,24 +5,30 @@ const Appointment = require('../modules/healthcare/models/Appointment');
 const Clinic = require('../modules/healthcare/models/Clinic');
 const Review = require('../modules/healthcare/models/Review');
 const Specialty = require('../modules/healthcare/models/Specialty');
-const HealthcareAuditLog = require('../modules/healthcare/models/HealthcareAuditLog');
 const Provider = require('../models/Provider');
 const User = require('../models/User');
 const paymentService = require('../modules/healthcare/services/paymentService');
 const logger = require('../utils/logger');
+const auditService = require('../services/auditService');
 const {
   getHealthcareSettings,
   updateHealthcareSettings,
 } = require('../modules/healthcare/services/settingsService');
 
-/** Append to the healthcare audit trail. Never throws into the request path. */
-const audit = async (adminId, action, targetType, targetId, extra = {}) => {
-  try {
-    await HealthcareAuditLog.create({ admin: adminId, action, targetType, targetId, ...extra });
-  } catch (e) {
-    logger.error('[healthcare] audit write failed:', e.message);
-  }
-};
+/**
+ * Record a healthcare admin action in the unified AdminAuditLog (the old
+ * HealthcareAuditLog was written and never read). Never throws.
+ */
+const audit = (req, action, targetType, targetId, { before, after, reason } = {}) =>
+  auditService.audit(req, {
+    module: 'healthcare',
+    action: `healthcare.${action}`,
+    targetType,
+    targetId,
+    before,
+    after,
+    reason,
+  });
 
 const parsePage = (q) => {
   const page = Math.max(1, parseInt(q.page, 10) || 1);
@@ -82,7 +88,7 @@ const setDoctorStatus = asyncHandler(async (req, res) => {
   const before = { isActive: doctor.isActive };
   doctor.isActive = status === 'active';
   await doctor.save();
-  await audit(req.user._id, 'set_doctor_status', 'Doctor', doctor._id, {
+  await audit(req, 'set_doctor_status', 'Doctor', doctor._id, {
     before,
     after: { isActive: doctor.isActive },
     reason,
@@ -100,7 +106,7 @@ const updateDoctorProfile = asyncHandler(async (req, res) => {
     if (req.body[f] !== undefined) doctor[f] = req.body[f];
   });
   await doctor.save();
-  await audit(req.user._id, 'update_doctor', 'Doctor', doctor._id, { before, after: doctor.toObject() });
+  await audit(req, 'update_doctor', 'Doctor', doctor._id, { before, after: doctor.toObject() });
   return res.json({ success: true, data: doctor });
 });
 
@@ -211,7 +217,7 @@ const forceAppointmentStatus = asyncHandler(async (req, res) => {
   } else {
     await appointment.save();
   }
-  await audit(req.user._id, 'force_appointment_status', 'Appointment', appointment._id, {
+  await audit(req, 'force_appointment_status', 'Appointment', appointment._id, {
     before: { status: before },
     after: { status },
     reason,
@@ -237,7 +243,7 @@ const refundAppointment = asyncHandler(async (req, res) => {
     reason: `Manual refund by admin: ${req.body.reason}`,
     ratioOverride: 1,
   });
-  await audit(req.user._id, 'manual_refund', 'Appointment', appointment._id, {
+  await audit(req, 'manual_refund', 'Appointment', appointment._id, {
     after: { refunded },
     reason: req.body.reason,
   });
@@ -284,7 +290,7 @@ const setClinicStatus = asyncHandler(async (req, res) => {
   const before = { isActive: clinic.isActive };
   clinic.isActive = req.body.isActive !== undefined ? !!req.body.isActive : !clinic.isActive;
   await clinic.save();
-  await audit(req.user._id, 'set_clinic_status', 'Clinic', clinic._id, {
+  await audit(req, 'set_clinic_status', 'Clinic', clinic._id, {
     before,
     after: { isActive: clinic.isActive },
     reason: req.body.reason,
@@ -343,7 +349,7 @@ const deleteReview = asyncHandler(async (req, res) => {
       },
     }
   );
-  await audit(req.user._id, 'delete_review', 'Review', review._id, { before, reason: req.body.reason });
+  await audit(req, 'delete_review', 'Review', review._id, { before, reason: req.body.reason });
   return res.json({ success: true, message: 'Review removed and doctor rating recomputed' });
 });
 
@@ -408,7 +414,7 @@ const getSettings = asyncHandler(async (req, res) =>
 const patchSettings = asyncHandler(async (req, res) => {
   const before = await getHealthcareSettings();
   const after = await updateHealthcareSettings(req.body, req.user._id);
-  await audit(req.user._id, 'update_settings', 'HealthcareSettings', null, { before, after });
+  await audit(req, 'update_settings', 'HealthcareSettings', null, { before, after });
   return res.json({ success: true, data: after });
 });
 

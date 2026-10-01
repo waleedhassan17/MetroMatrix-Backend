@@ -4,7 +4,6 @@ const Booking = require('../models/Booking');
 const Dispute = require('../models/Dispute');
 const PayoutRequest = require('../models/PayoutRequest');
 const ServiceCategory = require('../models/ServiceCategory');
-const HSAuditLog = require('../models/HSAuditLog');
 const ProviderReview = require('../models/ProviderReview');
 const Provider = require('../../../models/Provider');
 const User = require('../../../models/User');
@@ -16,21 +15,25 @@ const {
   updateHomeserviceSettings,
 } = require('../services/settingsService');
 const { avatar } = require('../services/serializers');
+const auditService = require('../../../services/auditService');
+const AppError = require('../../../utils/AppError');
+const { ERROR_CODES } = require('../../../utils/errorCodes');
 
 const ok = (res, data, message, pagination) =>
   res.json({ success: true, data, message, ...(pagination ? { pagination } : {}) });
 
-async function audit(adminId, action, targetType, targetId, before, after, reason) {
-  await HSAuditLog.create({
-    admin: adminId,
-    action,
+// Every home-services admin mutation lands in the unified AdminAuditLog
+// (module 'homeservice'). The old HSAuditLog was written and never read.
+const audit = (req, action, targetType, targetId, before, after, reason) =>
+  auditService.audit(req, {
+    module: 'homeservice',
+    action: `homeservice.${action}`,
     targetType,
     targetId,
-    before,
-    after,
+    before: before ?? undefined,
+    after: after ?? undefined,
     reason,
   });
-}
 
 function paginationOf(page, limit, total) {
   const totalPages = Math.max(1, Math.ceil(total / limit));
@@ -165,7 +168,7 @@ const forceBookingStatus = asyncHandler(async (req, res) => {
   }
   const before = b.status;
   await transition(b, status, { id: req.user._id, role: 'admin' }, { reason });
-  await audit(req.user._id, 'booking.force-status', 'booking', b._id,
+  await audit(req, 'booking.force-status', 'booking', b._id,
     { status: before }, { status: b.status }, reason);
   ok(res, { bookingId: String(b._id), status: b.status }, 'Status forced');
 });
@@ -197,7 +200,7 @@ const refundBooking = asyncHandler(async (req, res) => {
     metadata: { bookingId: String(b._id), adminId: String(req.user._id) },
   });
 
-  await audit(req.user._id, 'booking.refund', 'booking', b._id,
+  await audit(req, 'booking.refund', 'booking', b._id,
     { paymentStatus: b.payment.status },
     { refundAmount, transactionId: String(tx._id) }, reason);
 
@@ -280,6 +283,15 @@ const listDisputes = asyncHandler(async (req, res) => {
 // PATCH /api/admin/disputes/:id — resolve with optional refund/penalty
 const resolveDispute = asyncHandler(async (req, res) => {
   const { status, resolution, refundAmount, penalizeProvider, reason } = req.body;
+  // Deciding a dispute needs canManageHomeServices (route guard); moving money
+  // as part of the decision — a refund or a provider penalty — also needs
+  // canManageFinance.
+  const movesMoney = (refundAmount && Number(refundAmount) > 0) || !!penalizeProvider;
+  if (movesMoney && !req.user.hasPermission('canManageFinance')) {
+    throw new AppError(ERROR_CODES.FORBIDDEN, "Refunds and penalties need the 'canManageFinance' permission", {
+      details: { permission: 'canManageFinance' },
+    });
+  }
   const d = await Dispute.findById(req.params.id).populate('booking');
   if (!d) {
     res.status(404);
@@ -322,7 +334,7 @@ const resolveDispute = asyncHandler(async (req, res) => {
   }
 
   await d.save();
-  await audit(req.user._id, 'dispute.resolve', 'dispute', d._id, before,
+  await audit(req, 'dispute.resolve', 'dispute', d._id, before,
     { status: d.status, resolution: d.resolution, refundAmount: d.refundAmount },
     reason || resolution || 'Dispute decision');
 
@@ -428,7 +440,7 @@ const decidePayoutRequest = asyncHandler(async (req, res) => {
   p.decidedAt = new Date();
   await p.save();
 
-  await audit(req.user._id, `payout.${action}`, 'payout', p._id,
+  await audit(req, `payout.${action}`, 'payout', p._id,
     { status: 'pending' }, { status: p.status }, reason || `Payout ${action}d`);
 
   ok(res, { payoutId: String(p._id), status: p.status }, `Payout ${p.status}`);
@@ -468,7 +480,7 @@ const createCategory = asyncHandler(async (req, res) => {
     name, slug, providerSubType, icon, badge, badgeColor, image, description,
     basePrice, isActive, sortOrder,
   });
-  await audit(req.user._id, 'category.create', 'category', c._id, null, catShape(c), 'Category created');
+  await audit(req, 'category.create', 'category', c._id, null, catShape(c), 'Category created');
   ok(res, catShape(c), 'Category created');
 });
 
@@ -484,7 +496,7 @@ const updateCategory = asyncHandler(async (req, res) => {
     if (req.body[k] !== undefined) c[k] = req.body[k];
   });
   await c.save();
-  await audit(req.user._id, 'category.update', 'category', c._id, before, catShape(c),
+  await audit(req, 'category.update', 'category', c._id, before, catShape(c),
     req.body.reason || 'Category updated');
   ok(res, catShape(c), 'Category updated');
 });
@@ -495,7 +507,7 @@ const deleteCategory = asyncHandler(async (req, res) => {
     res.status(404);
     throw new Error('Category not found');
   }
-  await audit(req.user._id, 'category.delete', 'category', c._id, catShape(c), null,
+  await audit(req, 'category.delete', 'category', c._id, catShape(c), null,
     req.body.reason || 'Category deleted');
   ok(res, { deleted: true }, 'Category deleted');
 });
@@ -649,8 +661,8 @@ const patchSettings = asyncHandler(async (req, res) => {
     if (req.body[k] !== undefined) patch[k] = req.body[k];
   });
   const after = await updateHomeserviceSettings(patch);
-  await audit(req.user._id, 'settings.update', 'settings',
-    new mongoose.Types.ObjectId('000000000000000000000000'),
+  await audit(req, 'settings.update', 'settings',
+    null,
     before, after, req.body.reason || 'Settings updated');
   ok(res, after, 'Settings updated');
 });

@@ -32,4 +32,39 @@ async function createAdmin({ role = 'admin', permissions, password = DEFAULT_PAS
 // A moderator as the old seeder created one: default permission flags only.
 const createModerator = (overrides) => createAdmin({ role: 'moderator', ...overrides });
 
-module.exports = { createAdmin, createModerator, DEFAULT_PASSWORD };
+const phone = (n) => `0300${String(1000000 + n).slice(-7)}`;
+
+async function createUser(overrides = {}) {
+  const User = require('../../src/models/User');
+  const n = next();
+  return User.create({
+    email: `user${n}@example.com`,
+    fullName: `Test User ${n}`,
+    phoneNumber: phone(n),
+    password: DEFAULT_PASSWORD,
+    isActive: true,
+    ...overrides,
+  });
+}
+
+async function createProvider(overrides = {}) {
+  const Provider = require('../../src/models/Provider');
+  const n = next();
+  return Provider.create({
+    email: `provider${n}@example.com`,
+    fullName: `Test Provider ${n}`,
+    phoneNumber: phone(n),
+    password: DEFAULT_PASSWORD,
+    providerType: 'home_service',
+    providerSubType: 'electrician',
+    isActive: true,
+    ...overrides,
+  });
+}
+
+async function createWallet(owner, ownerType, balance = 0) {
+  const Wallet = require('../../src/models/Wallet');
+  return Wallet.create({ owner: owner._id || owner, ownerType, balance });
+}
+
+module.exports = { createAdmin, createModerator, createUser, createProvider, createWallet, DEFAULT_PASSWORD };

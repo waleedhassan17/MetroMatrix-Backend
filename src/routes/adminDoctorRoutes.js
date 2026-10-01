@@ -8,12 +8,13 @@ const {
 } = require('../controllers/adminDoctorController');
 const { protect, adminOnly, requirePermission } = require('../middleware/authMiddleware');
 
-// Reads open to any admin; approve/reject requires canManageHealthcare
-// (previously only checked isAdmin — the permission was stored on Admin
-// but never enforced here, confirmed live during the Prompt 6 sweep).
-router.get('/doctors/pending', protect, adminOnly, getPendingDoctors);
-router.patch('/doctors/:doctorId/approve', protect, adminOnly, requirePermission('canManageHealthcare'), approveDoctor);
-router.patch('/doctors/:doctorId/reject', protect, adminOnly, requirePermission('canManageHealthcare'), rejectDoctor);
-router.get('/doctors', protect, adminOnly, getAllDoctors);
+// Doctor review is healthcare oversight: reads (doctor profiles, licences)
+// and decisions alike need canManageHealthcare.
+const healthcare = [protect, adminOnly, requirePermission('canManageHealthcare')];
+
+router.get('/doctors/pending', healthcare, getPendingDoctors);
+router.patch('/doctors/:doctorId/approve', healthcare, approveDoctor);
+router.patch('/doctors/:doctorId/reject', healthcare, rejectDoctor);
+router.get('/doctors', healthcare, getAllDoctors);
 
 module.exports = router;

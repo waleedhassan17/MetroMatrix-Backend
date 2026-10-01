@@ -8,11 +8,114 @@
   },
   {
     "method": "GET",
+    "path": "/api/admin/admins/",
+    "middleware": [
+      "apiRateLimit",
+      "protect",
+      "adminOnly",
+      "requirePermission(canManageAdmins)",
+      "asyncHandler"
+    ]
+  },
+  {
+    "method": "POST",
+    "path": "/api/admin/admins/",
+    "middleware": [
+      "apiRateLimit",
+      "protect",
+      "adminOnly",
+      "requireSuperAdmin",
+      "asyncHandler"
+    ]
+  },
+  {
+    "method": "GET",
+    "path": "/api/admin/admins/:adminId",
+    "middleware": [
+      "apiRateLimit",
+      "protect",
+      "adminOnly",
+      "requirePermission(canManageAdmins)",
+      "middleware",
+      "validate",
+      "asyncHandler"
+    ]
+  },
+  {
+    "method": "PATCH",
+    "path": "/api/admin/admins/:adminId",
+    "middleware": [
+      "apiRateLimit",
+      "protect",
+      "adminOnly",
+      "requirePermission(canManageAdmins)",
+      "middleware",
+      "validate",
+      "asyncHandler"
+    ]
+  },
+  {
+    "method": "POST",
+    "path": "/api/admin/admins/:adminId/reset-2fa",
+    "middleware": [
+      "apiRateLimit",
+      "protect",
+      "adminOnly",
+      "requireSuperAdmin",
+      "middleware",
+      "validate",
+      "asyncHandler"
+    ]
+  },
+  {
+    "method": "POST",
+    "path": "/api/admin/admins/:adminId/reset-password",
+    "middleware": [
+      "apiRateLimit",
+      "protect",
+      "adminOnly",
+      "requirePermission(canManageAdmins)",
+      "middleware",
+      "validate",
+      "asyncHandler"
+    ]
+  },
+  {
+    "method": "GET",
+    "path": "/api/admin/admins/:adminId/sessions",
+    "middleware": [
+      "apiRateLimit",
+      "protect",
+      "adminOnly",
+      "requirePermission(canManageAdmins)",
+      "middleware",
+      "validate",
+      "asyncHandler"
+    ]
+  },
+  {
+    "method": "DELETE",
+    "path": "/api/admin/admins/:adminId/sessions/:sessionId",
+    "middleware": [
+      "apiRateLimit",
+      "protect",
+      "adminOnly",
+      "requirePermission(canManageAdmins)",
+      "middleware",
+      "validate",
+      "middleware",
+      "validate",
+      "asyncHandler"
+    ]
+  },
+  {
+    "method": "GET",
     "path": "/api/admin/analytics",
     "middleware": [
       "apiRateLimit",
       "protect",
       "adminOnly",
+      "requirePermission(canViewAnalytics)",
       "asyncHandler"
     ]
   },
@@ -116,6 +219,7 @@
       "apiRateLimit",
       "protect",
       "adminOnly",
+      "requirePermission(canManageHomeServices)",
       "asyncHandler"
     ]
   },
@@ -126,6 +230,7 @@
       "apiRateLimit",
       "protect",
       "adminOnly",
+      "requirePermission(canManageHomeServices)",
       "asyncHandler"
     ]
   },
@@ -136,6 +241,7 @@
       "apiRateLimit",
       "protect",
       "adminOnly",
+      "requirePermission(canManageHomeServices+canManageFinance)",
       "asyncHandler"
     ]
   },
@@ -146,6 +252,7 @@
       "apiRateLimit",
       "protect",
       "adminOnly",
+      "requirePermission(canManageHomeServices)",
       "asyncHandler"
     ]
   },
@@ -190,6 +297,7 @@
       "apiRateLimit",
       "protect",
       "adminOnly",
+      "requirePermission(canApproveProviders)",
       "asyncHandler"
     ]
   },
@@ -210,6 +318,7 @@
       "apiRateLimit",
       "protect",
       "adminOnly",
+      "requirePermission(canManageHomeServices)",
       "asyncHandler"
     ]
   },
@@ -220,6 +329,7 @@
       "apiRateLimit",
       "protect",
       "adminOnly",
+      "requirePermission(canManageHomeServices)",
       "asyncHandler"
     ]
   },
@@ -230,6 +340,7 @@
       "apiRateLimit",
       "protect",
       "adminOnly",
+      "requirePermission(canManageHomeServices)",
       "asyncHandler"
     ]
   },
@@ -240,6 +351,7 @@
       "apiRateLimit",
       "protect",
       "adminOnly",
+      "requirePermission(canManageHomeServices)",
       "asyncHandler"
     ]
   },
@@ -250,6 +362,7 @@
       "apiRateLimit",
       "protect",
       "adminOnly",
+      "requirePermission(canManageHomeServices)",
       "asyncHandler"
     ]
   },
@@ -260,6 +373,7 @@
       "apiRateLimit",
       "protect",
       "adminOnly",
+      "requirePermission(canManageHomeServices)",
       "asyncHandler"
     ]
   },
@@ -281,6 +395,7 @@
       "apiRateLimit",
       "protect",
       "adminOnly",
+      "selfScoped",
       "asyncHandler"
     ]
   },
@@ -291,6 +406,7 @@
       "apiRateLimit",
       "protect",
       "adminOnly",
+      "requirePermission(canManageNotifications)",
       "asyncHandler"
     ]
   },
@@ -301,6 +417,7 @@
       "apiRateLimit",
       "protect",
       "adminOnly",
+      "selfScoped",
       "asyncHandler"
     ]
   },
@@ -322,6 +439,7 @@
       "apiRateLimit",
       "protect",
       "adminOnly",
+      "selfScoped",
       "asyncHandler"
     ]
   },
@@ -332,6 +450,7 @@
       "apiRateLimit",
       "protect",
       "adminOnly",
+      "selfScoped",
       "asyncHandler"
     ]
   },
@@ -342,6 +461,7 @@
       "apiRateLimit",
       "protect",
       "adminOnly",
+      "requirePermission(canManageFinance)",
       "asyncHandler"
     ]
   },
@@ -352,6 +472,7 @@
       "apiRateLimit",
       "protect",
       "adminOnly",
+      "requirePermission(canManageFinance)",
       "asyncHandler"
     ]
   },
@@ -389,55 +510,11 @@
     ]
   },
   {
-    "method": "GET",
-    "path": "/api/admin/provider-submissions",
-    "middleware": [
-      "apiRateLimit",
-      "protect",
-      "adminOnly",
-      "asyncHandler"
-    ]
-  },
-  {
     "method": "POST",
     "path": "/api/admin/provider-submissions",
     "middleware": [
       "apiRateLimit",
       "anonymous",
-      "asyncHandler"
-    ]
-  },
-  {
-    "method": "GET",
-    "path": "/api/admin/provider-submissions/:id",
-    "middleware": [
-      "apiRateLimit",
-      "protect",
-      "adminOnly",
-      "asyncHandler"
-    ]
-  },
-  {
-    "method": "POST",
-    "path": "/api/admin/provider-submissions/:id/approve",
-    "middleware": [
-      "apiRateLimit",
-      "protect",
-      "adminOnly",
-      "requirePermission(canApproveProviders)",
-      "asyncHandler"
-    ]
-  },
-  {
-    "method": "POST",
-    "path": "/api/admin/provider-submissions/:id/reject",
-    "middleware": [
-      "apiRateLimit",
-      "protect",
-      "adminOnly",
-      "requirePermission(canApproveProviders)",
-      "middleware",
-      "validate",
       "asyncHandler"
     ]
   },
@@ -456,6 +533,7 @@
       "apiRateLimit",
       "protect",
       "adminOnly",
+      "requirePermission(canApproveProviders)",
       "asyncHandler"
     ]
   },
@@ -466,6 +544,7 @@
       "apiRateLimit",
       "protect",
       "adminOnly",
+      "requirePermission(canApproveProviders)",
       "asyncHandler"
     ]
   },
@@ -520,6 +599,7 @@
       "apiRateLimit",
       "protect",
       "adminOnly",
+      "requirePermission(canApproveProviders)",
       "asyncHandler"
     ]
   },
@@ -537,12 +617,24 @@
     ]
   },
   {
+    "method": "POST",
+    "path": "/api/admin/providers/:providerId/restore",
+    "middleware": [
+      "apiRateLimit",
+      "protect",
+      "adminOnly",
+      "requireSuperAdmin",
+      "asyncHandler"
+    ]
+  },
+  {
     "method": "GET",
     "path": "/api/admin/providers/:providerType(doctor|home_service|vendor)",
     "middleware": [
       "apiRateLimit",
       "protect",
       "adminOnly",
+      "requirePermission(canApproveProviders)",
       "asyncHandler"
     ]
   },
@@ -553,6 +645,7 @@
       "apiRateLimit",
       "protect",
       "adminOnly",
+      "requirePermission(canApproveProviders)",
       "asyncHandler"
     ]
   },
@@ -563,6 +656,7 @@
       "apiRateLimit",
       "protect",
       "adminOnly",
+      "requirePermission(canManageHomeServices)",
       "asyncHandler"
     ]
   },
@@ -573,6 +667,7 @@
       "apiRateLimit",
       "protect",
       "adminOnly",
+      "requirePermission(canManageHomeServices)",
       "asyncHandler"
     ]
   },
@@ -583,6 +678,7 @@
       "apiRateLimit",
       "protect",
       "adminOnly",
+      "requirePermission(canManageHomeServices)",
       "asyncHandler"
     ]
   },
@@ -593,6 +689,7 @@
       "apiRateLimit",
       "protect",
       "adminOnly",
+      "requirePermission(canManageHomeServices)",
       "asyncHandler"
     ]
   },
@@ -627,6 +724,17 @@
       "apiRateLimit",
       "protect",
       "adminOnly",
+      "asyncHandler"
+    ]
+  },
+  {
+    "method": "PUT",
+    "path": "/api/admin/settings/finance",
+    "middleware": [
+      "apiRateLimit",
+      "protect",
+      "adminOnly",
+      "requireSuperAdmin",
       "asyncHandler"
     ]
   },
@@ -670,6 +778,7 @@
       "apiRateLimit",
       "protect",
       "adminOnly",
+      "requirePermission(canManageUsers)",
       "asyncHandler"
     ]
   },
@@ -680,6 +789,7 @@
       "apiRateLimit",
       "protect",
       "adminOnly",
+      "requirePermission(canManageUsers)",
       "asyncHandler"
     ]
   },
@@ -717,12 +827,24 @@
     ]
   },
   {
+    "method": "POST",
+    "path": "/api/admin/users/:userId/restore",
+    "middleware": [
+      "apiRateLimit",
+      "protect",
+      "adminOnly",
+      "requireSuperAdmin",
+      "asyncHandler"
+    ]
+  },
+  {
     "method": "GET",
     "path": "/api/admin/wallets/",
     "middleware": [
       "apiRateLimit",
       "protect",
       "adminOnly",
+      "requirePermission(canManageFinance)",
       "asyncHandler"
     ]
   },
@@ -733,6 +855,7 @@
       "apiRateLimit",
       "protect",
       "adminOnly",
+      "requirePermission(canManageFinance)",
       "asyncHandler"
     ]
   },
@@ -743,6 +866,42 @@
       "apiRateLimit",
       "protect",
       "adminOnly",
+      "requirePermission(canManageFinance)",
+      "asyncHandler"
+    ]
+  },
+  {
+    "method": "GET",
+    "path": "/api/admin/wallets/adjustments",
+    "middleware": [
+      "apiRateLimit",
+      "protect",
+      "adminOnly",
+      "requirePermission(canManageFinance)",
+      "asyncHandler"
+    ]
+  },
+  {
+    "method": "POST",
+    "path": "/api/admin/wallets/adjustments/:adjustmentId/approve",
+    "middleware": [
+      "apiRateLimit",
+      "protect",
+      "adminOnly",
+      "requirePermission(canManageFinance)",
+      "requireSuperAdmin",
+      "asyncHandler"
+    ]
+  },
+  {
+    "method": "POST",
+    "path": "/api/admin/wallets/adjustments/:adjustmentId/reject",
+    "middleware": [
+      "apiRateLimit",
+      "protect",
+      "adminOnly",
+      "requirePermission(canManageFinance)",
+      "requireSuperAdmin",
       "asyncHandler"
     ]
   },
@@ -753,6 +912,7 @@
       "apiRateLimit",
       "protect",
       "adminOnly",
+      "requirePermission(canManageFinance)",
       "asyncHandler"
     ]
   },
@@ -2004,7 +2164,7 @@
     "middleware": [
       "apiRateLimit",
       "protect",
-      "requireShoppingAdmin",
+      "requirePermission(canManageShopping)",
       "asyncHandler"
     ]
   },
@@ -2014,7 +2174,7 @@
     "middleware": [
       "apiRateLimit",
       "protect",
-      "requireShoppingAdmin",
+      "requirePermission(canManageShopping)",
       "asyncHandler"
     ]
   },
@@ -2024,7 +2184,7 @@
     "middleware": [
       "apiRateLimit",
       "protect",
-      "requireShoppingAdmin",
+      "requirePermission(canManageShopping)",
       "asyncHandler"
     ]
   },
@@ -2034,7 +2194,7 @@
     "middleware": [
       "apiRateLimit",
       "protect",
-      "requireShoppingAdmin",
+      "requirePermission(canManageShopping)",
       "asyncHandler"
     ]
   },
@@ -2044,7 +2204,7 @@
     "middleware": [
       "apiRateLimit",
       "protect",
-      "requireShoppingAdmin",
+      "requirePermission(canManageShopping)",
       "asyncHandler"
     ]
   },
@@ -2054,7 +2214,7 @@
     "middleware": [
       "apiRateLimit",
       "protect",
-      "requireShoppingAdmin",
+      "requirePermission(canManageShopping)",
       "asyncHandler"
     ]
   },
@@ -2064,7 +2224,7 @@
     "middleware": [
       "apiRateLimit",
       "protect",
-      "requireShoppingAdmin",
+      "requirePermission(canManageShopping)",
       "asyncHandler"
     ]
   },
@@ -2074,7 +2234,7 @@
     "middleware": [
       "apiRateLimit",
       "protect",
-      "requireShoppingAdmin",
+      "requirePermission(canManageShopping)",
       "asyncHandler"
     ]
   },
@@ -2084,7 +2244,7 @@
     "middleware": [
       "apiRateLimit",
       "protect",
-      "requireShoppingAdmin",
+      "requirePermission(canManageShopping)",
       "asyncHandler"
     ]
   },
@@ -2094,7 +2254,7 @@
     "middleware": [
       "apiRateLimit",
       "protect",
-      "requireShoppingAdmin",
+      "requirePermission(canManageShopping)",
       "asyncHandler"
     ]
   },
@@ -2104,7 +2264,7 @@
     "middleware": [
       "apiRateLimit",
       "protect",
-      "requireShoppingAdmin",
+      "requirePermission(canManageShopping)",
       "asyncHandler"
     ]
   },
@@ -2114,7 +2274,7 @@
     "middleware": [
       "apiRateLimit",
       "protect",
-      "requireShoppingAdmin",
+      "requirePermission(canManageShopping)",
       "asyncHandler"
     ]
   },
@@ -2124,7 +2284,7 @@
     "middleware": [
       "apiRateLimit",
       "protect",
-      "requireShoppingAdmin",
+      "requirePermission(canManageShopping)",
       "asyncHandler"
     ]
   },
@@ -2134,7 +2294,7 @@
     "middleware": [
       "apiRateLimit",
       "protect",
-      "requireShoppingAdmin",
+      "requirePermission(canManageShopping)",
       "asyncHandler"
     ]
   },
@@ -2144,7 +2304,7 @@
     "middleware": [
       "apiRateLimit",
       "protect",
-      "requireShoppingAdmin",
+      "requirePermission(canManageShopping)",
       "asyncHandler"
     ]
   },
@@ -2154,7 +2314,8 @@
     "middleware": [
       "apiRateLimit",
       "protect",
-      "requireShoppingAdmin",
+      "requirePermission(canManageShopping)",
+      "requirePermission(canManageFinance)",
       "asyncHandler"
     ]
   },
@@ -2164,7 +2325,7 @@
     "middleware": [
       "apiRateLimit",
       "protect",
-      "requireShoppingAdmin",
+      "requirePermission(canManageShopping)",
       "asyncHandler"
     ]
   },
@@ -2174,7 +2335,7 @@
     "middleware": [
       "apiRateLimit",
       "protect",
-      "requireShoppingAdmin",
+      "requirePermission(canManageShopping)",
       "asyncHandler"
     ]
   },
@@ -2184,7 +2345,7 @@
     "middleware": [
       "apiRateLimit",
       "protect",
-      "requireShoppingAdmin",
+      "requirePermission(canManageShopping)",
       "asyncHandler"
     ]
   },
@@ -2194,7 +2355,7 @@
     "middleware": [
       "apiRateLimit",
       "protect",
-      "requireShoppingAdmin",
+      "requirePermission(canManageShopping)",
       "asyncHandler"
     ]
   },
@@ -2204,7 +2365,7 @@
     "middleware": [
       "apiRateLimit",
       "protect",
-      "requireShoppingAdmin",
+      "requirePermission(canManageShopping)",
       "asyncHandler"
     ]
   },
@@ -2214,7 +2375,7 @@
     "middleware": [
       "apiRateLimit",
       "protect",
-      "requireShoppingAdmin",
+      "requirePermission(canManageShopping)",
       "asyncHandler"
     ]
   },
@@ -2224,7 +2385,7 @@
     "middleware": [
       "apiRateLimit",
       "protect",
-      "requireShoppingAdmin",
+      "requirePermission(canManageShopping)",
       "asyncHandler"
     ]
   },
@@ -2234,7 +2395,7 @@
     "middleware": [
       "apiRateLimit",
       "protect",
-      "requireShoppingAdmin",
+      "requirePermission(canManageShopping)",
       "asyncHandler"
     ]
   },
@@ -2244,7 +2405,7 @@
     "middleware": [
       "apiRateLimit",
       "protect",
-      "requireShoppingAdmin",
+      "requirePermission(canManageShopping)",
       "asyncHandler"
     ]
   },
@@ -2254,7 +2415,7 @@
     "middleware": [
       "apiRateLimit",
       "protect",
-      "requireShoppingAdmin",
+      "requirePermission(canManageShopping)",
       "asyncHandler"
     ]
   },
@@ -2264,7 +2425,7 @@
     "middleware": [
       "apiRateLimit",
       "protect",
-      "requireShoppingAdmin",
+      "requirePermission(canManageShopping)",
       "asyncHandler"
     ]
   },
@@ -3172,6 +3333,7 @@
       "apiRateLimit",
       "protect",
       "adminOnly",
+      "requirePermission(canManageHealthcare)",
       "asyncHandler"
     ]
   },
@@ -3182,6 +3344,7 @@
       "apiRateLimit",
       "protect",
       "adminOnly",
+      "requirePermission(canManageHealthcare)",
       "asyncHandler"
     ]
   },
@@ -3193,6 +3356,7 @@
       "protect",
       "adminOnly",
       "requirePermission(canManageHealthcare)",
+      "requirePermission(canManageFinance)",
       "asyncHandler"
     ]
   },
@@ -3214,6 +3378,7 @@
       "apiRateLimit",
       "protect",
       "adminOnly",
+      "requirePermission(canManageHealthcare)",
       "asyncHandler"
     ]
   },
@@ -3224,6 +3389,7 @@
       "apiRateLimit",
       "protect",
       "adminOnly",
+      "requirePermission(canManageHealthcare)",
       "asyncHandler"
     ]
   },
@@ -3245,6 +3411,7 @@
       "apiRateLimit",
       "protect",
       "adminOnly",
+      "requirePermission(canManageHealthcare)",
       "asyncHandler"
     ]
   },
@@ -3255,6 +3422,7 @@
       "apiRateLimit",
       "protect",
       "adminOnly",
+      "requirePermission(canManageHealthcare)",
       "asyncHandler"
     ]
   },
@@ -3287,6 +3455,7 @@
       "apiRateLimit",
       "protect",
       "adminOnly",
+      "requirePermission(canManageHealthcare)",
       "asyncHandler"
     ]
   },
@@ -3319,6 +3488,7 @@
       "apiRateLimit",
       "protect",
       "adminOnly",
+      "requirePermission(canManageHealthcare)",
       "asyncHandler"
     ]
   },
@@ -3329,6 +3499,7 @@
       "apiRateLimit",
       "protect",
       "adminOnly",
+      "requirePermission(canManageHealthcare)",
       "asyncHandler"
     ]
   },
@@ -3339,6 +3510,7 @@
       "apiRateLimit",
       "protect",
       "adminOnly",
+      "requirePermission(canManageHealthcare)",
       "asyncHandler"
     ]
   },
@@ -3360,6 +3532,7 @@
       "apiRateLimit",
       "protect",
       "adminOnly",
+      "requirePermission(canManageHealthcare)",
       "asyncHandler"
     ]
   },

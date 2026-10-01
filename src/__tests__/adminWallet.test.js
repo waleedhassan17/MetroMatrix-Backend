@@ -1,191 +1,203 @@
 /**
- * PART F — admin wallet oversight, against a REAL MongoDB connection: manual
- * adjustment requires a reason and writes an audit record, insufficient
- * balance is rejected, and reconciliation balances to zero on a
- * known-quantity dataset built entirely through the real settle()/top-up
- * paths (not fabricated numbers).
+ * Admin wallet oversight — manual adjustments (maker-checker) and
+ * reconciliation, through the real endpoints on the in-memory replica set.
+ *
+ *  - at or below finance.adjustmentApprovalThreshold: applied at once; the
+ *    balance change and the ledger row land together (one transaction) and
+ *    one audit row is written (QA Q19, below);
+ *  - above it: pending until a DIFFERENT super admin approves (Q19, above);
+ *  - an insufficient-balance debit fails cleanly and moves nothing;
+ *  - reconciliation stays balanced across a fresh top-up → settle cycle.
  */
-require('dotenv').config();
 const mongoose = require('mongoose');
+const { connect, clear, disconnect } = require('../../test/helpers/db');
+const { createAdmin, createWallet } = require('../../test/helpers/factories');
+const { api, signIn } = require('../../test/helpers/agent');
 const Wallet = require('../models/Wallet');
 const WalletTransaction = require('../models/WalletTransaction');
-const WalletAuditLog = require('../models/WalletAuditLog');
+const WalletAdjustment = require('../models/WalletAdjustment');
+const AdminAuditLog = require('../models/AdminAuditLog');
+const AdminSettings = require('../models/AdminSettings');
 const WalletService = require('../services/walletService');
-const {
-  adjustWallet,
-  reconciliation,
-} = require('../controllers/adminWalletController');
+const settingsCache = require('../services/settingsCache');
 
-const hasDb = !!process.env.MONGODB_URI;
-const d = hasDb ? describe : describe.skip;
-jest.setTimeout(30000);
+const finance = { canManageFinance: true };
+const adjust = (s, walletId, body) => api().post(`/api/admin/wallets/${walletId}/adjust`).set('Authorization', s.bearer()).send(body);
+const decide = (s, id, verb, body = {}) =>
+  api().post(`/api/admin/wallets/adjustments/${id}/${verb}`).set('Authorization', s.bearer()).send(body);
 
-function mockRes() {
-  const res = { statusCode: 200 };
-  res.status = jest.fn((c) => {
-    res.statusCode = c;
-    return res;
-  });
-  res.json = jest.fn(() => res);
-  return res;
-}
-const next = jest.fn();
-async function run(handler, req, res) {
-  next.mockClear();
-  await handler(req, res, next);
-  return next.mock.calls[0] ? next.mock.calls[0][0] : null;
-}
+let wallet;
+beforeAll(connect);
+beforeEach(async () => {
+  wallet = await createWallet(new mongoose.Types.ObjectId(), 'User', 500);
+});
+afterEach(async () => {
+  settingsCache.invalidate();
+  await clear();
+});
+afterAll(disconnect);
 
-d('Admin wallet oversight (real MongoDB)', () => {
-  let userId, adminId, wallet;
-
-  beforeAll(async () => {
-    await mongoose.connect(process.env.MONGODB_URI);
+describe('manual adjustment at or below the approval threshold', () => {
+  it('needs a reason', async () => {
+    const s = await signIn(await createAdmin({ permissions: finance }));
+    const res = await adjust(s, wallet._id, { type: 'credit', amount: 100 });
+    expect(res.status).toBe(400);
+    expect(res.body.error.details.fields.map((f) => f.field)).toContain('reason');
+    expect((await Wallet.findById(wallet._id)).balance).toBe(500);
   });
 
-  afterAll(async () => {
-    await mongoose.disconnect();
+  it('applies at once: balance, ledger row and audit row together', async () => {
+    const admin = await createAdmin({ permissions: finance });
+    const s = await signIn(admin);
+    const res = await adjust(s, wallet._id, { type: 'credit', amount: 200, reason: 'Goodwill credit — ticket #42' });
+    expect(res.status).toBe(200);
+    expect(res.body.data.requiresApproval).toBe(false);
+    expect(res.body.data.wallet.balance).toBe(700);
+    expect(res.body.data.adjustment.status).toBe('applied');
+
+    const txns = await WalletTransaction.find({ wallet: wallet._id, source: 'admin_adjustment' });
+    expect(txns).toHaveLength(1);
+    expect(txns[0].amount).toBe(200);
+    expect(txns[0].idempotencyKey).toBe(`admin_adjustment:${res.body.data.adjustment.id}`);
+
+    const rows = await AdminAuditLog.find({ action: 'wallet.adjust.applied' }).lean();
+    expect(rows).toHaveLength(1);
+    expect(String(rows[0].actor)).toBe(String(admin._id));
+    expect(rows[0].before).toEqual({ balance: 500 });
+    expect(rows[0].after).toEqual({ balance: 700 });
+    expect(rows[0].reason).toMatch(/goodwill/i);
   });
 
+  it('refuses a debit the balance cannot cover and moves nothing', async () => {
+    const s = await signIn(await createAdmin({ permissions: finance }));
+    const res = await adjust(s, wallet._id, { type: 'debit', amount: 900, reason: 'test' });
+    expect(res.status).toBe(409);
+    expect(res.body.error.code).toBe('INSUFFICIENT_BALANCE');
+    expect((await Wallet.findById(wallet._id)).balance).toBe(500);
+    expect(await WalletTransaction.countDocuments({ wallet: wallet._id })).toBe(0);
+    expect((await WalletAdjustment.findOne()).status).toBe('failed');
+  });
+
+  it('an adjustment is applied at most once, whatever happens', async () => {
+    const admin = await createAdmin({ permissions: finance });
+    const adj = await WalletAdjustment.create({
+      wallet: wallet._id,
+      direction: 'credit',
+      amount: 50,
+      reason: 'x',
+      requestedBy: admin._id,
+      status: 'applying',
+    });
+    await WalletService.applyAdminAdjustment(adj);
+    await expect(WalletService.applyAdminAdjustment(adj)).rejects.toThrow();
+    expect((await Wallet.findById(wallet._id)).balance).toBe(550);
+    expect(await WalletTransaction.countDocuments({ wallet: wallet._id })).toBe(1);
+  });
+});
+
+describe('above the approval threshold (maker-checker)', () => {
   beforeEach(async () => {
-    userId = new mongoose.Types.ObjectId();
-    adminId = new mongoose.Types.ObjectId();
-    wallet = await Wallet.create({ owner: userId, ownerType: 'User', balance: 500 });
+    await AdminSettings.updateSettings('finance', { adjustmentApprovalThreshold: 1000 });
+    settingsCache.invalidate();
   });
 
-  afterEach(async () => {
-    await WalletTransaction.deleteMany({ wallet: wallet._id });
-    await WalletAuditLog.deleteMany({ targetId: wallet._id });
-    await Wallet.deleteOne({ _id: wallet._id });
+  it('waits for a different super admin, then applies', async () => {
+    const maker = await createAdmin({ role: 'super_admin' });
+    const checker = await createAdmin({ role: 'super_admin' });
+    const sm = await signIn(maker);
+    const req = await adjust(sm, wallet._id, { type: 'credit', amount: 5000, reason: 'Disputed top-up' });
+    expect(req.status).toBe(202);
+    expect(req.body.data.requiresApproval).toBe(true);
+    expect((await Wallet.findById(wallet._id)).balance).toBe(500);
+
+    // The requester can't approve their own.
+    const own = await decide(sm, req.body.data.adjustment.id, 'approve');
+    expect(own.status).toBe(403);
+    expect(own.body.error.code).toBe('SECOND_APPROVER_REQUIRED');
+
+    const sc = await signIn(checker);
+    const ok = await decide(sc, req.body.data.adjustment.id, 'approve', { note: 'Checked the Stripe dashboard' });
+    expect(ok.status).toBe(200);
+    expect(ok.body.data.wallet.balance).toBe(5500);
+    expect((await WalletAdjustment.findById(req.body.data.adjustment.id)).decidedBy.toString()).toBe(String(checker._id));
+
+    // Already decided: a second approval is refused.
+    expect((await decide(sc, req.body.data.adjustment.id, 'approve')).status).toBe(409);
+    expect(await AdminAuditLog.countDocuments({ action: 'wallet.adjust.requested' })).toBe(1);
+    expect(await AdminAuditLog.countDocuments({ action: 'wallet.adjust.applied' })).toBe(1);
   });
 
-  describe('adjustWallet', () => {
-    it('rejects a credit/debit with no reason', async () => {
-      const res = mockRes();
-      const err = await run(
-        adjustWallet,
-        { params: { id: String(wallet._id) }, body: { type: 'credit', amount: 100 }, user: { _id: adminId } },
-        res
-      );
-      expect(res.statusCode).toBe(400);
-      expect(String(err.message)).toMatch(/reason is required/i);
-    });
-
-    it('credits the wallet, records the transaction, and writes an audit entry', async () => {
-      const res = mockRes();
-      await run(
-        adjustWallet,
-        {
-          params: { id: String(wallet._id) },
-          body: { type: 'credit', amount: 200, reason: 'Goodwill credit — support ticket #42' },
-          user: { _id: adminId },
-        },
-        res
-      );
-      expect(res.json).toHaveBeenCalledWith(
-        expect.objectContaining({
-          success: true,
-          data: expect.objectContaining({ wallet: expect.objectContaining({ balance: 700 }) }),
-        })
-      );
-
-      const txn = await WalletTransaction.findOne({ wallet: wallet._id, source: 'admin_adjustment' });
-      expect(txn).toBeTruthy();
-      expect(txn.amount).toBe(200);
-
-      const auditEntry = await WalletAuditLog.findOne({ targetId: wallet._id });
-      expect(auditEntry).toBeTruthy();
-      expect(auditEntry.admin.toString()).toBe(String(adminId));
-      expect(auditEntry.reason).toMatch(/goodwill/i);
-      expect(auditEntry.before.balance).toBe(500);
-      expect(auditEntry.after.balance).toBe(700);
-    });
-
-    it('rejects a debit exceeding the balance', async () => {
-      const res = mockRes();
-      const err = await run(
-        adjustWallet,
-        {
-          params: { id: String(wallet._id) },
-          body: { type: 'debit', amount: 999999, reason: 'test' },
-          user: { _id: adminId },
-        },
-        res
-      );
-      expect(res.statusCode).toBe(400);
-      expect(String(err.message)).toMatch(/insufficient/i);
-
-      const unchanged = await Wallet.findById(wallet._id);
-      expect(unchanged.balance).toBe(500); // untouched
-    });
+  it('a finance admin who is not a super admin can request but not approve', async () => {
+    const maker = await createAdmin({ permissions: finance });
+    const otherFinance = await createAdmin({ permissions: finance });
+    const req = await adjust(await signIn(maker), wallet._id, { type: 'credit', amount: 5000, reason: 'x' });
+    expect(req.status).toBe(202);
+    const res = await decide(await signIn(otherFinance), req.body.data.adjustment.id, 'approve');
+    expect(res.status).toBe(403);
+    expect(res.body.error.code).toBe('SUPER_ADMIN_REQUIRED');
   });
 
-  describe('reconciliation', () => {
-    // NOTE: this repo's shared dev/demo database carries genuine historical
-    // drift from BEFORE this PR's fix — old 'service_payment' transactions
-    // (healthcare/shopping seed data, pre-refactor code) debited customers
-    // without ever crediting the commission anywhere, which is exactly the
-    // vanishing-commission bug WALLET_DESIGN.md documents. Reconciliation
-    // correctly surfaces that as non-zero drift; it is not a bug in this
-    // endpoint. So this test proves the MARGINAL property instead: a
-    // brand-new top-up→settle() cycle, built entirely on the fixed code
-    // path, adds ZERO additional drift — i.e. going forward, activity
-    // reconciles cleanly, even though the historical ledger does not yet.
-    it('a fresh top-up + settle() cycle adds no NEW drift (marginal correctness)', async () => {
-      const before = mockRes();
-      await run(reconciliation, {}, before);
-      const driftBefore = before.json.mock.calls[0][0].data.drift;
+  it('rejecting leaves the balance untouched', async () => {
+    const maker = await createAdmin({ role: 'super_admin' });
+    const checker = await createAdmin({ role: 'super_admin' });
+    const req = await adjust(await signIn(maker), wallet._id, { type: 'debit', amount: 400, reason: 'x' });
+    // 400 ≤ 1000 → applied immediately; use a bigger one for the rejection path.
+    expect(req.status).toBe(200);
+    const big = await adjust(await signIn(maker), wallet._id, { type: 'credit', amount: 2000, reason: 'x' });
+    const res = await decide(await signIn(checker), big.body.data.adjustment.id, 'reject', { note: 'No evidence' });
+    expect(res.status).toBe(200);
+    expect(res.body.data.adjustment.status).toBe('rejected');
+    expect((await Wallet.findById(wallet._id)).balance).toBe(100);
+  });
 
-      // A clean top-up→settle→payout cycle that nets to a KNOWN non-zero
-      // change in sumOfAllWallets, exactly matched by the same change in
-      // (toppedUp - paidOut + adjustments) — proving the formula holds.
-      const payerId = new mongoose.Types.ObjectId();
-      const payeeId = new mongoose.Types.ObjectId();
-      const payerWallet = await Wallet.create({ owner: payerId, ownerType: 'User', balance: 0 });
+  it('lists pending adjustments for the finance team', async () => {
+    const maker = await createAdmin({ role: 'super_admin' });
+    const s = await signIn(maker);
+    await adjust(s, wallet._id, { type: 'credit', amount: 2000, reason: 'x' });
+    const res = await api().get('/api/admin/wallets/adjustments?status=pending').set('Authorization', s.bearer());
+    expect(res.status).toBe(200);
+    expect(res.body.data).toHaveLength(1);
+    expect(res.body.meta.total).toBe(1);
+  });
+});
 
-      // top-up
-      await Wallet.creditAtomic(payerWallet._id, 1000);
-      await WalletTransaction.create({
-        wallet: payerWallet._id,
-        type: 'credit',
-        amount: 1000,
-        description: 'test topup',
-        source: 'stripe_topup',
-        status: 'completed',
-      });
-
-      // settle 400 of it to a provider at 10% commission
-      await WalletService.settle({
-        payerType: 'User',
-        payerId,
-        payeeType: 'Provider',
-        payeeId,
-        amount: 400,
-        source: 'homeservice_payment',
-        relatedTo: { kind: 'Booking', id: new mongoose.Types.ObjectId() },
-        commissionRate: 10,
-      });
-
-      const after = mockRes();
-      await run(reconciliation, {}, after);
-      const driftAfter = after.json.mock.calls[0][0].data.drift;
-
-      // The cycle above only moves money between wallets it created itself
-      // (1000 in via topup, 360 out via settle to a NEW provider wallet, 40
-      // commission to Platform) — it should not change the PRE-EXISTING
-      // drift at all, proving the fixed settle()/topup paths reconcile.
-      expect(driftAfter).toBeCloseTo(driftBefore, 2);
-
-      // cleanup
-      await WalletTransaction.deleteMany({
-        $or: [{ wallet: payerWallet._id }, { 'relatedTo.id': { $exists: true } }],
-      });
-      const payeeWallet = await Wallet.findOne({ owner: payeeId, ownerType: 'Provider' });
-      if (payeeWallet) {
-        await WalletTransaction.deleteMany({ wallet: payeeWallet._id });
-        await Wallet.deleteOne({ _id: payeeWallet._id });
-      }
-      await Wallet.deleteOne({ _id: payerWallet._id });
+describe('reconciliation', () => {
+  it('a fresh top-up + settle() cycle reconciles (no drift)', async () => {
+    const s = await signIn(await createAdmin({ permissions: finance }));
+    const payerId = new mongoose.Types.ObjectId();
+    const payerWallet = await Wallet.create({ owner: payerId, ownerType: 'User', balance: 0 });
+    await Wallet.creditAtomic(payerWallet._id, 1000);
+    await WalletTransaction.create({
+      wallet: payerWallet._id,
+      type: 'credit',
+      amount: 1000,
+      description: 'test topup',
+      source: 'stripe_topup',
+      status: 'completed',
     });
+    // The 500 seeded into `wallet` has no top-up behind it; record it as an
+    // admin adjustment so the ledger explains it.
+    await WalletTransaction.create({
+      wallet: wallet._id,
+      type: 'credit',
+      amount: 500,
+      description: 'seed',
+      source: 'admin_adjustment',
+      status: 'completed',
+    });
+    await WalletService.settle({
+      payerType: 'User',
+      payerId,
+      payeeType: 'Provider',
+      payeeId: new mongoose.Types.ObjectId(),
+      amount: 400,
+      source: 'homeservice_payment',
+      relatedTo: { kind: 'Booking', id: new mongoose.Types.ObjectId() },
+      commissionRate: 10,
+    });
+    const res = await api().get('/api/admin/wallets/reconciliation').set('Authorization', s.bearer());
+    expect(res.status).toBe(200);
+    expect(res.body.data.drift).toBeCloseTo(0, 2);
+    expect(res.body.data.balanced).toBe(true);
   });
 });

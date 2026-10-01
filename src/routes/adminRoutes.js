@@ -13,18 +13,11 @@ const { uploadMultipleDocuments } = require('../middleware/uploadMiddleware');
 const auth = require('../controllers/admin/auth');
 const {
   getDashboardStats,
-  getPendingProviders,
-  getAllUsers,
-  getAllProviders,
   deactivateProvider,
   activateProvider,
   deletePost,
   submitProviderApplication,
   checkSubmissionStatus,
-  getProviderSubmissions,
-  getProviderSubmissionById,
-  approveProviderSubmission,
-  rejectProviderSubmission,
   // New enhanced endpoints
   getDashboardStatsEnhanced,
   getQuickStats,
@@ -39,6 +32,8 @@ const {
   activateUserEnhanced,
   deactivateUserEnhanced,
   deleteUser,
+  restoreUser,
+  restoreProvider,
   // Frontend compatibility endpoints
   getRecentRegistrations,
   getProvidersByType,
@@ -60,6 +55,7 @@ const {
   updateGeneralSettings,
   updateNotificationSettings,
   updateSecuritySettings,
+  updateFinanceSettings,
 } = require('../controllers/settingsController');
 
 // Sign-in validation. No normalizeEmail(): its Gmail rules strip dots, which
@@ -110,92 +106,79 @@ router.post('/auth/2fa/enrol', selfScoped, body('currentPassword').isString().no
 router.post('/auth/2fa/verify', selfScoped, body('code').isString().notEmpty(), validate, auth.verifyTwoFactor);
 router.post('/auth/2fa/disable', selfScoped, body('currentPassword').isString().notEmpty(), validate, auth.disableTwoFactor);
 
+
 // ===== DASHBOARD & STATISTICS =====
+// Home-screen aggregates every admin sees (replaced by GET /overview in B3,
+// which filters by permission).
 router.get('/dashboard/stats', getDashboardStatsEnhanced);
 router.get('/dashboard/quick-stats', getQuickStats);
-router.get('/dashboard/recent-registrations', getRecentRegistrations);
+router.get('/dashboard/recent-registrations', requirePermission('canApproveProviders'), getRecentRegistrations);
 router.get('/dashboard', getDashboardStats); // Legacy route
 
 // ===== ANALYTICS =====
-router.get('/analytics', getAnalytics);
+router.get('/analytics', requirePermission('canViewAnalytics'), getAnalytics);
 
 // ===== PROVIDER MANAGEMENT =====
-// List & Filter
-router.get('/providers/pending', getPendingProvidersEnhanced);
-router.get('/providers/:providerType(doctor|home_service|vendor)', getProvidersByType);
-router.get('/providers', getAllProvidersEnhanced);
-
-// Provider Details & Actions — reads are open to any admin; approval/
-// activation decisions require the canApproveProviders permission
-// (previously only checked isAdmin, so any admin regardless of their
-// stored permissions could approve/reject/activate/deactivate/delete a
-// provider — confirmed live during the Prompt 6 access-control sweep).
-router.get('/providers/:providerId/details', getProviderDetailsWithRoute);
-router.get('/providers/:providerId', getProviderDetails);
-router.put('/providers/:providerId/approve', requirePermission('canApproveProviders'), approveProviderEnhanced);
+// Provider records carry identity documents, phone numbers and addresses:
+// reads and decisions alike need canApproveProviders. Restoring a deleted
+// provider is super-admin only.
+const providers = requirePermission('canApproveProviders');
+router.get('/providers/pending', providers, getPendingProvidersEnhanced);
+router.get('/providers/:providerType(doctor|home_service|vendor)', providers, getProvidersByType);
+router.get('/providers', providers, getAllProvidersEnhanced);
+router.get('/providers/:providerId/details', providers, getProviderDetailsWithRoute);
+router.get('/providers/:providerId', providers, getProviderDetails);
+router.put('/providers/:providerId/approve', providers, approveProviderEnhanced);
 router.put(
   '/providers/:providerId/reject',
-  requirePermission('canApproveProviders'),
+  providers,
   body('reason').notEmpty().withMessage('Rejection reason is required'),
   validate,
   rejectProviderEnhanced
 );
-router.put('/providers/:providerId/activate', requirePermission('canApproveProviders'), activateProvider);
-router.put('/providers/:providerId/deactivate', requirePermission('canApproveProviders'), deactivateProvider);
-router.delete('/providers/:providerId', requirePermission('canApproveProviders'), deleteProvider);
+router.put('/providers/:providerId/activate', providers, activateProvider);
+router.put('/providers/:providerId/deactivate', providers, deactivateProvider);
+router.delete('/providers/:providerId', providers, deleteProvider);
+router.post('/providers/:providerId/restore', requireSuperAdmin, restoreProvider);
 
-// HS5: the legacy '/providers/:id' registrations that used to sit here were
-// UNREACHABLE — Express matched the '/providers/:providerId' routes above
-// first, so getProviderForReview/approveProvider (POST) were dead code with
-// different semantics from the Enhanced handlers the admin app actually calls
-// (GET /providers/:providerId + PUT .../approve|reject|activate|deactivate).
-// One canonical handler per operation now; the dead registrations are gone.
+// ===== USER MANAGEMENT =====
+// Customer accounts are personal data: reads and changes need canManageUsers.
+const users = requirePermission('canManageUsers');
+router.get('/users', users, getAllUsersEnhanced);
+router.get('/users/:userId', users, getUserDetails);
+router.put('/users/:userId/activate', users, activateUserEnhanced);
+router.put('/users/:userId/deactivate', users, deactivateUserEnhanced);
+router.delete('/users/:userId', users, deleteUser);
+router.post('/users/:userId/restore', requireSuperAdmin, restoreUser);
 
-// ===== USER MANAGEMENT ===== (mutations require canManageUsers — see note above)
-router.get('/users', getAllUsersEnhanced);
-router.get('/users/:userId', getUserDetails);
-router.put('/users/:userId/activate', requirePermission('canManageUsers'), activateUserEnhanced);
-router.put('/users/:userId/deactivate', requirePermission('canManageUsers'), deactivateUserEnhanced);
-router.delete('/users/:userId', requirePermission('canManageUsers'), deleteUser);
-
-// The legacy `/users/:id/activate` and `/users/:id/deactivate` registrations
-// that used to sit here were DEAD CODE: Express matches the first registration
-// for a given shape, so `/users/:userId/...` above always won and the legacy
-// handlers were never reachable. The comment further up already claimed they
-// had been removed — now they actually are. The surviving *Enhanced handlers
-// are a strict superset (they accept a `reason` and return the updated state).
-
-// ===== NOTIFICATIONS ===== (reads open to any admin; bulk-clear requires canManageNotifications)
-router.get('/notifications', getNotifications);
-router.get('/notifications/unread-count', getUnreadCount);
-router.put('/notifications/read-all', markAllAsRead);
+// ===== NOTIFICATIONS =====
+// Reading and marking read act on the caller's own feed; removing entries from
+// the shared feed needs canManageNotifications.
+router.get('/notifications', selfScoped, getNotifications);
+router.get('/notifications/unread-count', selfScoped, getUnreadCount);
+router.put('/notifications/read-all', selfScoped, markAllAsRead);
 router.delete('/notifications/clear-all', requirePermission('canManageNotifications'), clearAllNotifications);
-router.put('/notifications/:notificationId/read', markAsRead);
-router.delete('/notifications/:notificationId', deleteNotification);
+router.put('/notifications/:notificationId/read', selfScoped, markAsRead);
+router.delete('/notifications/:notificationId', requirePermission('canManageNotifications'), deleteNotification);
 
 // ===== SETTINGS =====
 // Reads are open to every admin (the app shows them read-only without the
-// permission); writes need canManageSettings, and security is super-admin only.
-// The appearance section and GET /settings/notifications are gone: appearance
-// was stored and read by nothing, and the notifications values are in GET /settings.
+// permission); writes need canManageSettings; security and finance are
+// super-admin only. The appearance section and GET /settings/notifications are
+// gone: appearance was stored and read by nothing, and the notifications values
+// are in GET /settings.
 router.get('/settings', getSettings);
 router.put('/settings/general', requirePermission('canManageSettings'), updateGeneralSettings);
 router.put('/settings/notifications', requirePermission('canManageSettings'), updateNotificationSettings);
 router.put('/settings/security', requireSuperAdmin, updateSecuritySettings);
+router.put('/settings/finance', requireSuperAdmin, updateFinanceSettings);
 
 // ===== POST MANAGEMENT =====
 router.delete('/posts/:id', requirePermission('canManagePosts'), deletePost);
 
-// ===== PROVIDER SUBMISSION MANAGEMENT =====
-router.get('/provider-submissions', getProviderSubmissions);
-router.get('/provider-submissions/:id', getProviderSubmissionById);
-router.post('/provider-submissions/:id/approve', requirePermission('canApproveProviders'), approveProviderSubmission);
-router.post(
-  '/provider-submissions/:id/reject',
-  requirePermission('canApproveProviders'),
-  body('rejectionReason').notEmpty().withMessage('Rejection reason is required'),
-  validate,
-  rejectProviderSubmission
-);
+// The admin /provider-submissions review queue is gone: nothing ever created
+// a ProviderSubmission (provider profiles are submitted onto the Provider
+// document and reviewed through /providers/* above), so it was always empty —
+// and its approve path didn't even set the flag provider login checks.
 
 module.exports = router;

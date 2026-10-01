@@ -79,6 +79,27 @@ const adminSchema = new mongoose.Schema(
         type: Boolean,
         default: true,
       },
+      // Home-services oversight: bookings, disputes, categories, HS settings.
+      canManageHomeServices: {
+        type: Boolean,
+        default: false,
+      },
+      // Money: refunds (every vertical), payout decisions, wallet adjustments,
+      // reconciliation. Separate from module oversight on purpose.
+      canManageFinance: {
+        type: Boolean,
+        default: false,
+      },
+      // Sending broadcast notifications to users/providers.
+      canBroadcast: {
+        type: Boolean,
+        default: false,
+      },
+      // Reading the admin audit trail.
+      canViewAudit: {
+        type: Boolean,
+        default: false,
+      },
     },
 
     // Profile
@@ -131,52 +152,9 @@ const adminSchema = new mongoose.Schema(
     resetPasswordToken: String,
     resetPasswordExpire: Date,
 
-    // Activity Tracking
-    activityLog: [
-      {
-        action: {
-          type: String,
-          enum: [
-            'login',
-            'logout',
-            'approve_provider',
-            'reject_provider',
-            'deactivate_user',
-            'activate_user',
-            'delete_post',
-            'create_admin',
-            'update_settings',
-          ],
-        },
-        targetId: mongoose.Schema.Types.ObjectId,
-        targetType: String,
-        details: String,
-        timestamp: {
-          type: Date,
-          default: Date.now,
-        },
-      },
-    ],
-
-    // Statistics
-    stats: {
-      totalProvidersApproved: {
-        type: Number,
-        default: 0,
-      },
-      totalProvidersRejected: {
-        type: Number,
-        default: 0,
-      },
-      totalUsersManaged: {
-        type: Number,
-        default: 0,
-      },
-      totalPostsModerated: {
-        type: Number,
-        default: 0,
-      },
-    },
+    // (activityLog and stats were removed: every admin action is recorded in
+    // AdminAuditLog, and scripts/migrations/03-audit-backfill.js copies the old
+    // embedded entries there before unsetting them.)
 
     // Created by (for tracking who created this admin)
     createdBy: {
@@ -199,6 +177,15 @@ adminSchema.index({ isActive: 1 });
 // so admin logins were corrupting their own hash too.
 adminSchema.pre('save', hashPasswordPreSave);
 
+// `role` is the source of truth; isSuperAdmin (which hasPermission and every
+// super-admin check read) follows it. They used to be set independently, so a
+// seeded role:'super_admin' without isSuperAdmin got none of the bypass, and
+// vice versa.
+adminSchema.pre('validate', function syncSuperAdminFlag(next) {
+  this.isSuperAdmin = this.role === 'super_admin';
+  next();
+});
+
 // Match passwords
 adminSchema.methods.matchPassword = async function (enteredPassword) {
   // See User.matchPassword.
@@ -218,29 +205,6 @@ adminSchema.methods.getResetPasswordToken = function () {
   this.resetPasswordExpire = Date.now() + 10 * 60 * 1000; // 10 minutes
 
   return resetToken;
-};
-
-// Log admin activity
-adminSchema.methods.logActivity = function (action, targetId, targetType, details) {
-  this.activityLog.push({
-    action,
-    targetId,
-    targetType,
-    details,
-    timestamp: new Date(),
-  });
-
-  // Keep only last 100 activities
-  if (this.activityLog.length > 100) {
-    this.activityLog = this.activityLog.slice(-100);
-  }
-};
-
-// Update statistics
-adminSchema.methods.incrementStat = function (statName) {
-  if (this.stats[statName] !== undefined) {
-    this.stats[statName] += 1;
-  }
 };
 
 // Check permissions

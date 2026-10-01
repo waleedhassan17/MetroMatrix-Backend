@@ -94,7 +94,7 @@ const createBrand = asyncHandler(async (req, res) => {
   });
   if (req.body.isActive === false) payload.status = 'suspended';
   const brand = await Brand.create(payload);
-  await audit(req.user._id, 'create_brand', 'Brand', brand._id, { after: brand.toJSON() });
+  await audit(req, 'create_brand', 'Brand', brand._id, { after: brand.toJSON() });
   return ok(res, brand, 201);
 });
 
@@ -120,7 +120,7 @@ const updateBrand = asyncHandler(async (req, res) => {
   if (req.body.isActive === true && brand.status !== 'active') brand.status = 'active';
   if (req.body.isActive === false && brand.status === 'active') brand.status = 'suspended';
   await brand.save();
-  await audit(req.user._id, 'update_brand', 'Brand', brand._id, { before, after: brand.toJSON() });
+  await audit(req, 'update_brand', 'Brand', brand._id, { before, after: brand.toJSON() });
   return ok(res, brand);
 });
 
@@ -141,7 +141,7 @@ const setBrandStatus = asyncHandler(async (req, res) => {
     brand.approvedAt = new Date();
   }
   await brand.save();
-  await audit(req.user._id, 'set_brand_status', 'Brand', brand._id, {
+  await audit(req, 'set_brand_status', 'Brand', brand._id, {
     before,
     after: { status },
     reason,
@@ -158,7 +158,7 @@ const deleteBrand = asyncHandler(async (req, res) => {
   brand.isDeleted = true;
   brand.status = 'suspended';
   await brand.save();
-  await audit(req.user._id, 'delete_brand', 'Brand', brand._id, { reason: req.body.reason });
+  await audit(req, 'delete_brand', 'Brand', brand._id, { reason: req.body.reason });
   return res.json({ success: true });
 });
 
@@ -216,7 +216,7 @@ const createOutlet = asyncHandler(async (req, res) => {
   applyOutletPayload(outlet, req.body);
   outlet.name = req.body.name;
   await outlet.save();
-  await audit(req.user._id, 'create_outlet', 'Outlet', outlet._id, { after: outlet.toJSON() });
+  await audit(req, 'create_outlet', 'Outlet', outlet._id, { after: outlet.toJSON() });
   await outlet.populate('brandId', 'name primaryColor');
   return ok(res, outlet, 201);
 });
@@ -227,7 +227,7 @@ const updateOutlet = asyncHandler(async (req, res) => {
   const before = outlet.toJSON();
   applyOutletPayload(outlet, req.body);
   await outlet.save();
-  await audit(req.user._id, 'update_outlet', 'Outlet', outlet._id, { before, after: outlet.toJSON() });
+  await audit(req, 'update_outlet', 'Outlet', outlet._id, { before, after: outlet.toJSON() });
   await outlet.populate('brandId', 'name primaryColor');
   return ok(res, outlet);
 });
@@ -236,7 +236,7 @@ const deleteOutlet = asyncHandler(async (req, res) => {
   const outlet = await Outlet.findById(req.params.outletId);
   if (!outlet) return fail(res, 404, 'Outlet not found');
   await outlet.deleteOne();
-  await audit(req.user._id, 'delete_outlet', 'Outlet', outlet._id, { before: outlet.toJSON() });
+  await audit(req, 'delete_outlet', 'Outlet', outlet._id, { before: outlet.toJSON() });
   return res.json({ success: true });
 });
 
@@ -252,7 +252,7 @@ const assignBrand = asyncHandler(async (req, res) => {
     outlet.brandId = null;
   }
   await outlet.save();
-  await audit(req.user._id, 'assign_outlet_brand', 'Outlet', outlet._id, {
+  await audit(req, 'assign_outlet_brand', 'Outlet', outlet._id, {
     after: { brandId: req.body.brandId },
   });
   await outlet.populate('brandId', 'name primaryColor');
@@ -275,7 +275,7 @@ const toggleOutletStatus = asyncHandler(async (req, res) => {
   if (!outlet) return fail(res, 404, 'Outlet not found');
   outlet.isActive = !outlet.isActive;
   await outlet.save();
-  await audit(req.user._id, 'toggle_outlet_status', 'Outlet', outlet._id, {
+  await audit(req, 'toggle_outlet_status', 'Outlet', outlet._id, {
     after: { isActive: outlet.isActive },
   });
   await outlet.populate('brandId', 'name primaryColor');

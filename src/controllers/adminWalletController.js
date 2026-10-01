@@ -1,18 +1,18 @@
 const asyncHandler = require('express-async-handler');
-const mongoose = require('mongoose');
 const Wallet = require('../models/Wallet');
 const WalletTransaction = require('../models/WalletTransaction');
-const WalletAuditLog = require('../models/WalletAuditLog');
+const WalletAdjustment = require('../models/WalletAdjustment');
 const WalletService = require('../services/walletService');
 const User = require('../models/User');
 const Provider = require('../models/Provider');
+const AppError = require('../utils/AppError');
+const { ERROR_CODES } = require('../utils/errorCodes');
+const apiResponse = require('../utils/apiResponse');
+const { getAdminSettings } = require('../services/settingsCache');
+const { audit } = require('../services/auditService');
 
 const ok = (res, data, message, pagination) =>
   res.json({ success: true, data, message, ...(pagination ? { pagination } : {}) });
-
-async function audit(adminId, action, targetId, before, after, reason) {
-  await WalletAuditLog.create({ admin: adminId, action, targetId, before, after, reason });
-}
 
 // GET /api/admin/wallets — all wallets: owner type, balance, last activity; searchable, paginated
 const listWallets = asyncHandler(async (req, res) => {
@@ -126,66 +126,157 @@ const getWalletTransactions = asyncHandler(async (req, res) => {
   );
 });
 
-// POST /api/admin/wallets/:id/adjust — manual credit/debit, MANDATORY reason
+// ---- Manual adjustments (maker-checker) ----
+
+const walletShape = (w) => ({ id: String(w._id), balance: w.balance, currency: w.currency });
+
+/**
+ * Apply a claimed adjustment (status already moved to 'applying'). On an
+ * insufficient balance the adjustment is marked failed — nothing moved.
+ */
+async function applyClaimed(req, adjustment, { approvedBy }) {
+  try {
+    const { wallet, transaction, balanceBefore } = await WalletService.applyAdminAdjustment(adjustment, { approvedBy });
+    adjustment.status = 'applied';
+    adjustment.transaction = transaction._id;
+    adjustment.balanceBefore = balanceBefore;
+    adjustment.balanceAfter = wallet.balance;
+    await adjustment.save();
+    await audit(req, {
+      action: 'wallet.adjust.applied',
+      module: 'wallet',
+      targetType: 'Wallet',
+      targetId: adjustment.wallet,
+      before: { balance: balanceBefore },
+      after: { balance: wallet.balance },
+      reason: adjustment.reason,
+      meta: {
+        adjustmentId: String(adjustment._id),
+        direction: adjustment.direction,
+        amount: adjustment.amount,
+        requestedBy: String(adjustment.requestedBy),
+        approvedBy: approvedBy ? String(approvedBy) : null,
+      },
+    });
+    return { wallet, transaction };
+  } catch (err) {
+    adjustment.status = 'failed';
+    adjustment.failureReason = err.message;
+    await adjustment.save();
+    if (/insufficient/i.test(err.message)) {
+      throw new AppError(ERROR_CODES.INSUFFICIENT_BALANCE, 'The wallet balance does not cover this debit.', {
+        details: { adjustmentId: String(adjustment._id) },
+      });
+    }
+    throw err;
+  }
+}
+
+// POST /api/admin/wallets/:id/adjust — manual credit/debit, reason required.
+// At or below finance.adjustmentApprovalThreshold it is applied now; above
+// it, it waits for a different super admin (202 + the pending adjustment).
 const adjustWallet = asyncHandler(async (req, res) => {
   const { type, amount, reason } = req.body;
-  if (!['credit', 'debit'].includes(type)) {
-    res.status(400);
-    throw new Error("type must be 'credit' or 'debit'");
-  }
-  const amountN = Number(amount);
-  if (!Number.isFinite(amountN) || amountN <= 0) {
-    res.status(400);
-    throw new Error('amount must be a positive number');
-  }
+  const problems = [];
+  if (!['credit', 'debit'].includes(type)) problems.push({ field: 'type', message: "type must be 'credit' or 'debit'" });
+  const amountN = Math.round(Number(amount) * 100) / 100;
+  if (!Number.isFinite(amountN) || amountN <= 0) problems.push({ field: 'amount', message: 'amount must be a positive number' });
   if (!reason || !String(reason).trim()) {
-    res.status(400);
-    throw new Error('A reason is required for a manual wallet adjustment');
+    problems.push({ field: 'reason', message: 'A reason is required for a manual wallet adjustment' });
+  }
+  if (problems.length) {
+    throw new AppError(ERROR_CODES.VALIDATION_FAILED, problems.map((p) => p.message).join('; '), { details: { fields: problems } });
   }
 
   const wallet = await Wallet.findById(req.params.id);
-  if (!wallet) {
-    res.status(404);
-    throw new Error('Wallet not found');
-  }
-  const before = { balance: wallet.balance };
+  if (!wallet) throw new AppError(ERROR_CODES.NOT_FOUND, 'Wallet not found');
 
-  const updated =
-    type === 'credit'
-      ? await Wallet.creditAtomic(wallet._id, amountN)
-      : await Wallet.debitAtomic(wallet._id, amountN).catch((e) => {
-          if (/insufficient/i.test(e.message)) {
-            res.status(400);
-            throw new Error('Insufficient balance for this debit');
-          }
-          throw e;
-        });
-
-  const txn = await WalletTransaction.create({
+  const threshold = (await getAdminSettings()).finance?.adjustmentApprovalThreshold ?? 10000;
+  const requiresApproval = amountN > threshold;
+  const adjustment = await WalletAdjustment.create({
     wallet: wallet._id,
-    type,
+    direction: type,
     amount: amountN,
     currency: wallet.currency,
-    description: `Admin adjustment: ${reason}`,
-    source: 'admin_adjustment',
-    status: 'completed',
-    metadata: { adminId: String(req.user._id) },
+    reason: String(reason).trim(),
+    requiresApproval,
+    thresholdAtRequest: threshold,
+    requestedBy: req.user._id,
+    status: requiresApproval ? 'pending' : 'applying',
   });
 
-  await audit(
-    req.user._id,
-    'wallet.adjust',
-    wallet._id,
-    before,
-    { balance: updated.balance },
-    reason
-  );
+  if (requiresApproval) {
+    await audit(req, {
+      action: 'wallet.adjust.requested',
+      module: 'wallet',
+      targetType: 'Wallet',
+      targetId: wallet._id,
+      reason: adjustment.reason,
+      meta: { adjustmentId: String(adjustment._id), direction: type, amount: amountN, threshold },
+    });
+    return apiResponse.ok(res, { adjustment: adjustment.toPublic(), requiresApproval: true }, undefined, 202);
+  }
 
-  ok(
-    res,
-    { wallet: { id: String(updated._id), balance: updated.balance, currency: updated.currency }, transaction: txn },
-    'Wallet adjusted'
+  const { wallet: updated, transaction } = await applyClaimed(req, adjustment, { approvedBy: null });
+  return apiResponse.ok(res, {
+    adjustment: adjustment.toPublic(),
+    requiresApproval: false,
+    wallet: walletShape(updated),
+    transaction,
+  });
+});
+
+// GET /api/admin/wallets/adjustments?status=pending
+const listAdjustments = asyncHandler(async (req, res) => {
+  const filter = {};
+  if (typeof req.query.status === 'string' && WalletAdjustment.schema.path('status').enumValues.includes(req.query.status)) {
+    filter.status = req.query.status;
+  }
+  const limit = Math.min(100, Math.max(1, parseInt(req.query.limit, 10) || 20));
+  const page = Math.max(1, parseInt(req.query.page, 10) || 1);
+  const [items, total] = await Promise.all([
+    WalletAdjustment.find(filter).sort({ createdAt: -1 }).skip((page - 1) * limit).limit(limit),
+    WalletAdjustment.countDocuments(filter),
+  ]);
+  return apiResponse.ok(res, items.map((a) => a.toPublic()), { page, limit, total, pages: Math.max(1, Math.ceil(total / limit)) });
+});
+
+// Claim a pending adjustment for a decision. Atomic, so two super admins
+// approving at the same moment can't both apply it.
+async function claimPending(req, nextStatus) {
+  const adjustment = await WalletAdjustment.findById(req.params.adjustmentId);
+  if (!adjustment) throw new AppError(ERROR_CODES.NOT_FOUND, 'Adjustment not found');
+  if (String(adjustment.requestedBy) === String(req.user._id)) {
+    throw new AppError(ERROR_CODES.SECOND_APPROVER_REQUIRED, 'A different super admin has to decide on an adjustment you requested.');
+  }
+  const claimed = await WalletAdjustment.findOneAndUpdate(
+    { _id: adjustment._id, status: 'pending' },
+    { $set: { status: nextStatus, decidedBy: req.user._id, decidedAt: new Date(), decisionNote: String(req.body.note || '').slice(0, 500) } },
+    { new: true }
   );
+  if (!claimed) throw new AppError(ERROR_CODES.CONFLICT, `This adjustment is already ${adjustment.status}.`);
+  return claimed;
+}
+
+// POST /api/admin/wallets/adjustments/:adjustmentId/approve
+const approveAdjustment = asyncHandler(async (req, res) => {
+  const adjustment = await claimPending(req, 'applying');
+  const { wallet, transaction } = await applyClaimed(req, adjustment, { approvedBy: req.user._id });
+  return apiResponse.ok(res, { adjustment: adjustment.toPublic(), wallet: walletShape(wallet), transaction });
+});
+
+// POST /api/admin/wallets/adjustments/:adjustmentId/reject
+const rejectAdjustment = asyncHandler(async (req, res) => {
+  const adjustment = await claimPending(req, 'rejected');
+  await audit(req, {
+    action: 'wallet.adjust.rejected',
+    module: 'wallet',
+    targetType: 'Wallet',
+    targetId: adjustment.wallet,
+    reason: adjustment.decisionNote || '',
+    meta: { adjustmentId: String(adjustment._id), direction: adjustment.direction, amount: adjustment.amount },
+  });
+  return apiResponse.ok(res, { adjustment: adjustment.toPublic() });
 });
 
 // GET /api/admin/wallets/reconciliation
@@ -251,4 +342,12 @@ const reconciliation = asyncHandler(async (req, res) => {
   }, 'Reconciliation computed');
 });
 
-module.exports = { listWallets, getWalletTransactions, adjustWallet, reconciliation };
+module.exports = {
+  listWallets,
+  getWalletTransactions,
+  adjustWallet,
+  listAdjustments,
+  approveAdjustment,
+  rejectAdjustment,
+  reconciliation,
+};

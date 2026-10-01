@@ -1,6 +1,6 @@
 const express = require('express');
 const router = express.Router();
-const { protect } = require('../../../middleware/authMiddleware');
+const { protect, requirePermission } = require('../../../middleware/authMiddleware');
 const { requireShoppingAdmin } = require('../middleware/adminAuth');
 const brandCtrl = require('../controllers/adminBrandController');
 const orderCtrl = require('../controllers/adminOrderController');
@@ -37,7 +37,8 @@ router.post('/banners/:bannerId/image', bannerCtrl.uploadBannerImage);
 router.get('/orders', orderCtrl.listAllOrders);
 router.get('/orders/:orderId', orderCtrl.getOrderDetail);
 router.patch('/orders/:orderId/status', orderCtrl.forceOrderStatus);
-router.post('/orders/:orderId/refund', orderCtrl.manualRefund);
+// A refund moves money: shopping oversight AND canManageFinance.
+router.post('/orders/:orderId/refund', requirePermission('canManageFinance'), orderCtrl.manualRefund);
 
 // Analytics, dashboard, settings
 router.get('/analytics', orderCtrl.platformAnalytics);

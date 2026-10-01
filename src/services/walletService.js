@@ -1075,6 +1075,58 @@ class WalletService {
     tx.metadata = { ...(tx.metadata || {}), failureReason: reason, refundedAt: new Date() };
     return tx.save();
   }
+
+  /**
+   * Apply an admin WalletAdjustment: move the balance and write the ledger row
+   * in ONE MongoDB transaction — both happen or neither does. (The old adjust
+   * endpoint did the balance $inc and the ledger insert as two separate
+   * writes; a failure between them left a balance change with no ledger
+   * entry, i.e. unexplained drift.) The ledger row's idempotency key is the
+   * adjustment id, so an adjustment can never be applied twice.
+   *
+   * Requires a replica set (Atlas always is; tests use an in-memory one).
+   * @returns {Promise<{ wallet, transaction, balanceBefore }>}
+   * @throws Error('Insufficient balance') for a debit the wallet can't cover
+   */
+  static async applyAdminAdjustment(adjustment, { approvedBy } = {}) {
+    const session = await mongoose.startSession();
+    try {
+      let out;
+      await session.withTransaction(async () => {
+        const wallet = await Wallet.findById(adjustment.wallet).session(session);
+        if (!wallet) throw new Error('Wallet not found');
+        const balanceBefore = wallet.balance;
+        const updated =
+          adjustment.direction === 'credit'
+            ? await Wallet.creditAtomic(wallet._id, adjustment.amount, session)
+            : await Wallet.debitAtomic(wallet._id, adjustment.amount, session);
+        const [transaction] = await WalletTransaction.create(
+          [
+            {
+              wallet: wallet._id,
+              type: adjustment.direction,
+              amount: adjustment.amount,
+              currency: wallet.currency,
+              description: `Admin adjustment: ${adjustment.reason}`,
+              source: 'admin_adjustment',
+              status: 'completed',
+              idempotencyKey: `admin_adjustment:${adjustment._id}`,
+              metadata: {
+                adjustmentId: String(adjustment._id),
+                requestedBy: String(adjustment.requestedBy),
+                approvedBy: approvedBy ? String(approvedBy) : null,
+              },
+            },
+          ],
+          { session }
+        );
+        out = { wallet: updated, transaction, balanceBefore };
+      });
+      return out;
+    } finally {
+      await session.endSession();
+    }
+  }
 }
 
 module.exports = WalletService;

@@ -81,6 +81,17 @@ const adminSettingsSchema = new mongoose.Schema(
       },
     },
 
+    // Finance controls (super admin only).
+    finance: {
+      // Manual wallet adjustments above this amount (PKR) wait for a second,
+      // different super admin to approve them (maker-checker).
+      adjustmentApprovalThreshold: {
+        type: Number,
+        default: 10000,
+        min: 0,
+      },
+    },
+
     // Shopping Settings — the SAME values shopping checkout/inventory/analytics read.
     // Managed via GET/PATCH /api/shopping/admin/settings.
     shopping: {
@@ -224,6 +235,7 @@ adminSettingsSchema.statics.updateSettings = async function (category, data, adm
     if (data.general) settings.general = { ...settings.general.toObject(), ...data.general };
     if (data.notifications) settings.notifications = { ...settings.notifications.toObject(), ...data.notifications };
     if (data.security) settings.security = { ...settings.security.toObject(), ...data.security };
+    if (data.finance) settings.finance = { ...settings.finance.toObject(), ...data.finance };
   } else {
     // Update specific category
     settings[category] = { ...settings[category].toObject(), ...data };

@@ -1,5 +1,6 @@
 const asyncHandler = require('express-async-handler');
 const Notification = require('../models/Notification');
+const { audit } = require('../services/auditService');
 
 // @desc    Get notifications
 // @route   GET /api/admin/notifications
@@ -148,7 +149,14 @@ const deleteNotification = asyncHandler(async (req, res) => {
   }
   
   await Notification.deleteOne({ _id: notification._id });
-  
+  await audit(req, {
+    action: 'notification.delete',
+    module: 'core',
+    targetType: 'Notification',
+    targetId: notification._id,
+    before: { type: notification.type, title: notification.title },
+  });
+
   res.json({
     success: true,
     message: 'Notification deleted successfully',
@@ -165,7 +173,8 @@ const clearAllNotifications = asyncHandler(async (req, res) => {
       { adminId: null, isRead: true }, // Only clear read broadcast notifications
     ],
   });
-  
+  await audit(req, { action: 'notification.clear_all', module: 'core', meta: { deletedCount: result.deletedCount } });
+
   res.json({
     success: true,
     message: 'All notifications cleared',
