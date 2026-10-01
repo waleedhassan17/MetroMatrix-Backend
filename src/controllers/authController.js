@@ -1295,7 +1295,12 @@ const refreshToken = asyncHandler(async (req, res) => {
   
   try {
     const decoded = jwt.verify(token, process.env.REFRESH_TOKEN_SECRET);
-    
+    // Only refresh tokens refresh (tokens issued before `typ` existed have none).
+    if (decoded.typ && decoded.typ !== 'refresh') {
+      res.status(401);
+      throw new Error('Invalid refresh token');
+    }
+
     // Find user or provider
     let user = await User.findById(decoded.id);
     let isProvider = false;
