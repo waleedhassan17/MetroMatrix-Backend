@@ -29,6 +29,12 @@ class RedisStore {
   constructor(name) {
     this.name = name;
     this.localKeys = false;
+    // express-rate-limit tells shared stores apart by constructor name +
+    // `prefix`. Without a per-limiter prefix, the general limiter and a
+    // stricter one stacked on the same route (nlq, upload signing) look like
+    // ONE store counting the request twice (ERR_ERL_DOUBLE_COUNT). The real
+    // Redis key is built in key() and does not use this.
+    this.prefix = `${name}:`;
     this.fallback = new rateLimit.MemoryStore();
   }
 

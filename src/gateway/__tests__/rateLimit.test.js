@@ -28,6 +28,21 @@ describe('gateway RedisStore', () => {
     expect(fake.state.calls.filter((c) => c === 'eval')).toHaveLength(2);
   });
 
+  it('two limiters stacked on one route are two stores, not one counted twice', async () => {
+    const errors = jest.spyOn(console, 'error').mockImplementation(() => {});
+    try {
+      const { api, nlq } = buildLimiters();
+      const app = express();
+      app.use(api);
+      app.get('/api/search/services', nlq, (req, res) => res.json({ ok: true }));
+      expect((await request(app).get('/api/search/services')).status).toBe(200);
+      const doubleCount = errors.mock.calls.some((c) => String(c[0] && (c[0].code || c[0].message || c[0])).includes('DOUBLE_COUNT'));
+      expect(doubleCount).toBe(false);
+    } finally {
+      errors.mockRestore();
+    }
+  });
+
   it('falls back to a per-instance MemoryStore when Redis fails', async () => {
     const fake = createFakeRedis();
     fake.state.failWith = new Error('down');
