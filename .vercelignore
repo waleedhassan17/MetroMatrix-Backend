@@ -13,3 +13,7 @@ coverage/
 .env
 .env.*
 wallet-qa-results.json
+
+# Python ML batch jobs run in GitHub Actions, never in the function.
+ml/
+.github/

@@ -52,6 +52,9 @@ const hsNotificationSchema = new mongoose.Schema(
         'booking_arrived',
         'booking_in_progress',
         'booking_completed',
+        'booking_nearby', // provider ~5 minutes away (realtime tracking)
+        'booking_reminder', // an accepted job starts within the hour
+        'review_received',
         // conversation
         'message',
         'missed_call',

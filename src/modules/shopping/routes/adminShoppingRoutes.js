@@ -5,6 +5,7 @@ const { requireShoppingAdmin } = require('../middleware/adminAuth');
 const brandCtrl = require('../controllers/adminBrandController');
 const orderCtrl = require('../controllers/adminOrderController');
 const bannerCtrl = require('../controllers/adminBannerController');
+const productCtrl = require('../controllers/adminProductController');
 
 router.use(protect, requireShoppingAdmin);
 
@@ -32,6 +33,10 @@ router.post('/banners', bannerCtrl.createBanner);
 router.patch('/banners/:bannerId', bannerCtrl.updateBanner);
 router.delete('/banners/:bannerId', bannerCtrl.deleteBanner);
 router.post('/banners/:bannerId/image', bannerCtrl.uploadBannerImage);
+
+// Product moderation
+router.get('/products', productCtrl.listProducts);
+router.patch('/products/:productId/moderation', productCtrl.moderateProduct);
 
 // Order oversight
 router.get('/orders', orderCtrl.listAllOrders);

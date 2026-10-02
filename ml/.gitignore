@@ -1,0 +1,5 @@
+# Python build/test artefacts — never commit
+__pycache__/
+*.pyc
+.pytest_cache/
+.venv/

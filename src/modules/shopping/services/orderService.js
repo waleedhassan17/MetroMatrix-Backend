@@ -125,6 +125,9 @@ const transition = async (
 
   await order.save();
   await syncGroupPaymentStatus(order.orderGroup);
+  // Saved first, announced second: nobody is told about a change that then
+  // failed to persist. Best-effort — never fails the transition.
+  await require('./orderNotifications').announceOrderTransition(order, nextStatus, actor);
   return order;
 };
 

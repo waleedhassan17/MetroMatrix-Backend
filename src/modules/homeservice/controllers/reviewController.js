@@ -111,6 +111,28 @@ const submitReview = asyncHandler(async (req, res) => {
     },
   ]);
 
+  // Tell the provider — a review is the feedback they work for, and it used to
+  // arrive silently. Best-effort: the review is already saved.
+  const stars = '★'.repeat(ratingN);
+  const customerName = req.user.fullName ? req.user.fullName.split(' ')[0] : 'A customer';
+  const service = String(booking.serviceSubCategory || booking.serviceCategory || 'job').toLowerCase();
+  const results = await Promise.allSettled([
+    require('../services/notificationService').notifyReviewReceived(booking, {
+      rating: ratingN,
+      customerName,
+      service,
+    }),
+    require('../../../sockets').pushToUser(booking.provider, 'provider', {
+      type: 'review_received',
+      title: `New ${ratingN}-star review`,
+      body: `${customerName} rated your ${service} ${stars}${feedback ? `: "${String(feedback).slice(0, 80)}"` : ''}`,
+      data: { bookingId: String(booking._id), reviewId: String(review._id), roomType: 'homeservice', audience: 'provider' },
+    }),
+  ]);
+  results.forEach((r) => {
+    if (r.status === 'rejected') console.error(`[review] notify failed booking=${booking._id}: ${r.reason && r.reason.message}`);
+  });
+
   ok(res, {
     id: String(review._id),
     rating: review.rating,

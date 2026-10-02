@@ -104,12 +104,14 @@ const getCategoryById = asyncHandler(async (req, res) => {
 const getProducts = asyncHandler(async (req, res) => {
   const { page, limit, skip } = parsePagination(req.query);
   try {
-    const { products, total } = await catalogService.listProducts(req.query, {
+    const { products, total, interpreted } = await catalogService.listProducts(req.query, {
       page,
       limit,
       skip,
     });
-    return paginated(res, { data: products, page, limit, total });
+    // With `q`, say how the query was understood so the app can show it as
+    // removable chips ("Nike ×", "Under Rs 5,000 ×").
+    return paginated(res, { data: products, page, limit, total, extra: interpreted ? { interpretedAs: interpreted } : undefined });
   } catch (e) {
     if (isCastError(e)) return fail(res, 400, 'Invalid filter ID');
     throw e;
@@ -119,7 +121,7 @@ const getProducts = asyncHandler(async (req, res) => {
 // @desc  GET /api/shopping/products/:productId (public)
 const getProductById = asyncHandler(async (req, res) => {
   try {
-    const product = await Product.findOne({ _id: req.params.productId, isActive: true });
+    const product = await Product.findOne({ _id: req.params.productId, ...catalogService.CUSTOMER_VISIBLE });
     if (!product) return fail(res, 404, 'Product not found');
     const brand = await Brand.findOne({
       _id: product.brandId,

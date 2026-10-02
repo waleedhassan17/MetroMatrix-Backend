@@ -1,0 +1,23 @@
+# Fast checks on every push and pull request: the module test suites, which
+# mock MongoDB and run in seconds. The src/__tests__ wallet/auth suites need a
+# live database and are deliberately not run here.
+name: ci
+on:
+  push:
+  pull_request:
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+      - run: npm ci --no-audit --no-fund
+      - run: node node_modules/jest/bin/jest.js --runInBand src/modules src/gateway src/lib src/utils
+        env:
+          NODE_ENV: test
+          JWT_SECRET: ci-only-secret

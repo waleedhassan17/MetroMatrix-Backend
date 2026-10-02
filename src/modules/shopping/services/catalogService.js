@@ -11,8 +11,14 @@ const ShoppingBanner = require('../models/ShoppingBanner');
  */
 
 // Matches FetchProductsParams in the frontend's networks/shopping/productApi.ts
+/** What any customer-facing read requires of a product, besides its brand being active. */
+const CUSTOMER_VISIBLE = Object.freeze({
+  isActive: true,
+  'moderation.status': { $nin: ['pending', 'rejected', 'removed'] },
+});
+
 const buildProductQuery = (params = {}, activeBrandIds = null) => {
-  const query = { isActive: true };
+  const query = { ...CUSTOMER_VISIBLE };
 
   if (params.brandId) query.brandId = params.brandId;
   else if (activeBrandIds) query.brandId = { $in: activeBrandIds };
@@ -22,6 +28,11 @@ const buildProductQuery = (params = {}, activeBrandIds = null) => {
   if (parseBool(params.isFeatured)) query.isFeatured = true;
   if (parseBool(params.isNewArrival)) query.isNewArrival = true;
   if (parseBool(params.inStock)) query.inStock = true;
+  if (params.color) {
+    query['variants.color'] = new RegExp(`\\b${escapeRegex(String(params.color).trim())}\\b`, 'i');
+  }
+  const minRating = Number(params.minRating);
+  if (Number.isFinite(minRating) && minRating > 0) query.rating = { $gte: Math.min(minRating, 5) };
 
   const min = params.minPrice !== undefined ? Number(params.minPrice) : undefined;
   const max = params.maxPrice !== undefined ? Number(params.maxPrice) : undefined;
@@ -135,24 +146,89 @@ const listProducts = async (params, { page, limit, skip }) => {
       : categoryId;
   }
 
-  const query = buildProductQuery(queryParams, activeBrands);
-  const sort = buildProductSort(params.sortBy);
+  // Natural-language search (`q`): understood filters + a weighted text
+  // search over what is left. `search` keeps its old substring behaviour.
+  let interpreted = null;
+  let textTerms = '';
+  if (params.q && String(params.q).trim()) {
+    const { understand } = require('../../ml/services/queryUnderstanding');
+    const { interpreted: raw, source } = await understand(params.q);
+    // `ignore=price,color` — the shopper removed those chips: drop what was
+    // understood for them and search without.
+    const ignored = String(params.ignore || '')
+      .split(',')
+      .map((f) => f.trim())
+      .filter((f) => IGNORABLE[f]);
+    const parsed = { ...raw };
+    ignored.forEach((f) => IGNORABLE[f].forEach((key) => delete parsed[key]));
+    interpreted = { ...parsed, source, ...(ignored.length ? { ignored } : {}) };
+    applyInterpretation(queryParams, parsed, params);
+    textTerms = parsed.terms || '';
+  }
 
-  const pipeline = [
-    { $match: query },
-    { $addFields: { effectivePrice: { $ifNull: ['$salePrice', '$basePrice'] } } },
-    { $sort: { ...sort, _id: 1 } },
-    { $skip: skip },
-    { $limit: limit },
-  ];
+  const run = async (useText) => {
+    const query = buildProductQuery(queryParams, activeBrands);
+    if (useText) query.$text = { $search: textTerms };
+    else if (textTerms) {
+      const rx = new RegExp(textTerms.split(/\s+/).map(escapeRegex).join('|'), 'i');
+      query.$or = [{ name: rx }, { description: rx }, { tags: rx }];
+    }
+    const explicitSort = params.sortBy && params.sortBy !== 'relevance';
+    const sort = useText && !explicitSort ? { textScore: -1, rating: -1 } : buildProductSort(params.sortBy);
+    const pipeline = [
+      { $match: query },
+      {
+        $addFields: {
+          effectivePrice: { $ifNull: ['$salePrice', '$basePrice'] },
+          ...(useText ? { textScore: { $meta: 'textScore' } } : {}),
+        },
+      },
+      { $sort: { ...sort, _id: 1 } },
+      { $skip: skip },
+      { $limit: limit },
+    ];
+    const [rows, total] = await Promise.all([Product.aggregate(pipeline), Product.countDocuments(query)]);
+    return { rows, total };
+  };
 
-  const [rows, total] = await Promise.all([
-    Product.aggregate(pipeline),
-    Product.countDocuments(query),
-  ]);
+  // Whole-word text search first; when it finds nothing (a partial word, a
+  // typo-ish fragment) fall back to substring matching.
+  let rows = [];
+  let total = 0;
+  try {
+    ({ rows, total } = await run(Boolean(textTerms)));
+  } catch (e) {
+    // No text index (e.g. while scripts/sync-indexes.js swaps it for the
+    // weighted one): substring matching below still answers.
+    if (!textTerms || !/text index required/i.test((e && e.message) || '')) throw e;
+  }
+  if (textTerms && total === 0) ({ rows, total } = await run(false));
   // Re-hydrate so toJSON transforms apply
   const products = rows.map((r) => new Product(r).toJSON());
-  return { products, total };
+  return { products, total, interpreted };
+};
+
+/** Chip name → the understood fields it stands for. */
+const IGNORABLE = {
+  price: ['minPrice', 'maxPrice'],
+  color: ['color'],
+  gender: ['gender'],
+  brand: ['brandId', 'brandName'],
+  category: ['category', 'categoryIds'],
+};
+
+/** Fold understood filters into the query params; what the caller set explicitly wins. */
+const applyInterpretation = (queryParams, parsed, explicit) => {
+  if (parsed.maxPrice && explicit.maxPrice === undefined) queryParams.maxPrice = parsed.maxPrice;
+  if (parsed.minPrice && explicit.minPrice === undefined) queryParams.minPrice = parsed.minPrice;
+  if (parsed.gender && !explicit.gender) queryParams.gender = parsed.gender;
+  if (parsed.brandId && !explicit.brandId && mongoose.isValidObjectId(parsed.brandId)) {
+    queryParams.brandId = new mongoose.Types.ObjectId(parsed.brandId);
+  }
+  if (Array.isArray(parsed.categoryIds) && parsed.categoryIds.length && !explicit.categoryId) {
+    queryParams.categoryId = { $in: parsed.categoryIds.filter((id) => mongoose.isValidObjectId(id)).map((id) => new mongoose.Types.ObjectId(id)) };
+  }
+  if (parsed.color) queryParams.color = parsed.color;
 };
 
 const getBrandCategories = async (brandId) => {
@@ -204,11 +280,29 @@ const listOutlets = async (params, { skip, limit }) => {
 
   const lat = parseFloat(params.lat);
   const lng = parseFloat(params.lng);
-  if (!Number.isNaN(lat) && !Number.isNaN(lng)) {
-    const radiusKm = parseFloat(params.radiusKm) || 25;
-    filter.geo = {
-      $geoWithin: { $centerSphere: [[lng, lat], radiusKm / 6371] },
-    };
+  if (!Number.isNaN(lat) && !Number.isNaN(lng) && Math.abs(lat) <= 90 && Math.abs(lng) <= 180) {
+    // Nearest first, with the distance — "outlets near you" used to return
+    // the ones inside the circle in creation order, with no distance at all.
+    const radiusKm = Math.min(parseFloat(params.radiusKm) || 25, 500);
+    const [res] = await Outlet.aggregate([
+      {
+        $geoNear: {
+          near: { type: 'Point', coordinates: [lng, lat] },
+          distanceField: 'distanceMeters',
+          maxDistance: radiusKm * 1000,
+          spherical: true,
+          query: filter,
+        },
+      },
+      { $facet: { items: [{ $skip: skip }, { $limit: limit }], total: [{ $count: 'count' }] } },
+    ]);
+    const docs = res.items.map((raw) => Outlet.hydrate(raw));
+    await Outlet.populate(docs, { path: 'brandId', select: 'name primaryColor' });
+    const outlets = docs.map((doc, i) => ({
+      ...doc.toJSON(),
+      distanceKm: Math.round((res.items[i].distanceMeters / 1000) * 10) / 10,
+    }));
+    return { outlets, total: res.total[0] ? res.total[0].count : 0 };
   }
 
   const [outlets, total] = await Promise.all([
@@ -219,6 +313,7 @@ const listOutlets = async (params, { skip, limit }) => {
 };
 
 module.exports = {
+  CUSTOMER_VISIBLE,
   buildProductQuery,
   buildProductSort,
   buildCategoryTree,

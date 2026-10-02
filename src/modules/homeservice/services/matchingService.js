@@ -10,6 +10,12 @@
  * The weights are hardcoded for FYP-I and intended to be LEARNED from booking
  * outcomes in FYP-II. Admin can tune them via /api/admin/homeservice/settings
  * (settingsService) — matchingWeights there overrides these defaults.
+ *
+ * This is the FYP-I reference formula, kept as documented. The LIVE ranking
+ * (services/discoveryPipeline.js) extends it: availability means available
+ * now (online, recently seen, inside working hours), rating is a Bayesian
+ * average, a completion-rate quality term is added, and the weighted sum is
+ * normalised by the sum of the weights.
  */
 const MATCHING_WEIGHTS = {
   distance: 0.4,

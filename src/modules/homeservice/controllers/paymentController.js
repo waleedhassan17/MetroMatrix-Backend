@@ -172,6 +172,16 @@ const processPayment = asyncHandler(async (req, res) => {
           body: `${req.user.fullName || 'The customer'} will pay ${rupees(bill)} in cash for the ${String(service || 'service').toLowerCase()} job.`,
           data: { bookingId: String(b._id), roomType: 'homeservice', audience: 'provider' },
         }),
+      // A provider with the booking open sees the choice at once, instead of
+      // on the next 6-second poll of their payment screen.
+      () =>
+        require('../../../sockets').emitToBooking(b._id, 'payment_status_changed', {
+          bookingId: String(b._id),
+          roomId: String(b._id),
+          status: 'cash_selected',
+          method: 'cash',
+          amount: bill,
+        }),
     ]);
 
     return ok(res, {

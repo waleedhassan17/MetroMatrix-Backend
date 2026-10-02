@@ -14,14 +14,19 @@ const getDoctors = async (req, res, next) => {
       maxFee,
       consultationType,
       city,
+      search,
+      minRating,
+      lat,
+      lng,
+      radiusKm,
       sortBy,
       page = 1,
       limit = 10,
     } = req.query;
 
     const result = await doctorService.getDoctors(
-      { specialtyId, availability, minFee, maxFee, consultationType, city },
-      { sortBy, page: Number(page), limit: Number(limit) }
+      { specialtyId, availability, minFee, maxFee, consultationType, city, search, minRating, lat, lng, radiusKm },
+      { sortBy, page: Math.max(Number(page) || 1, 1), limit: Math.min(Math.max(Number(limit) || 10, 1), 50) }
     );
 
     res.json({ success: true, data: result });

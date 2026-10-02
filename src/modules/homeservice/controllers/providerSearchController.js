@@ -10,9 +10,19 @@ const {
   publicName,
   CATEGORY_TO_SUBTYPE,
   avatar,
+  coords,
 } = require('../services/serializers');
 const { searchableProviderFilter } = require('../services/providerVisibility');
 const { servicesFor, weeklyAvailability } = require('../services/catalogue');
+const { buildDiscoveryPipeline, normalizeSort } = require('../services/discoveryPipeline');
+const { LAHORE_CENTRE } = require('../services/geo');
+const { SEARCH_NS } = require('../services/discoveryConstants');
+const { getOrSet, ns, hashOf } = require('../../../lib/cache');
+const { k } = require('../../../lib/redis');
+const crypto = require('crypto');
+const MlSearchImpression = require('../../ml/models/MlSearchImpression');
+const { getModelNonBlocking } = require('../../ml/services/modelStore');
+const { rerank, withFeatures } = require('../../ml/services/rankingService');
 
 const ok = (res, data, message, pagination) =>
   res.json({ success: true, data, message, ...(pagination ? { pagination } : {}) });
@@ -44,6 +54,7 @@ const searchProviders = asyncHandler(async (req, res, next) => {
     lat,
     lng,
     radiusKm,
+    maxDistanceKm,
     minRating,
     maxPrice,
     verified,
@@ -94,14 +105,18 @@ const searchProviders = asyncHandler(async (req, res, next) => {
   const fMaxPrice = Number(maxPrice || parsedFilters.maxPrice || 0);
   // `verified` is accepted for older clients but needs no clause: every
   // provider a customer can see has already been approved.
+  // `available` means available NOW — online, recently seen, inside working
+  // hours — not the `isAvailable` flag, which defaults to true and so used to
+  // filter out nobody.
   const fAvailable = available === 'true' || parsedFilters.available === true;
+  const fMaxDistanceKm = Number(maxDistanceKm || parsedFilters.maxDistanceKm || parsedFilters.radiusKm || 0);
 
-  const settings = await getHomeserviceSettings();
-  const weights = settings.matchingWeights;
+  // Ranking knobs only — the shared 60 s cache is safe here (never for money).
+  const settings = await getHomeserviceSettings({ cached: true });
 
   // The customer's position, when the app knows it (their saved address, or
   // the phone's). Without one there is no "near you" to speak of: the search
-  // covers the whole city and no distance is reported, rather than measuring
+  // covers every city and no distance is reported, rather than measuring
   // every provider from the city centre and presenting that as "2.1 km away".
   const latN = Number(lat);
   const lngN = Number(lng);
@@ -112,13 +127,14 @@ const searchProviders = asyncHandler(async (req, res, next) => {
     Number.isFinite(lngN) &&
     Math.abs(latN) <= 90 &&
     Math.abs(lngN) <= 180 &&
-    !(latN === 0 && lngN === 0);
-  const centre = hasLocation ? [lngN, latN] : LAHORE_CENTRE;
+    !(latN === 0 && lngN === 0) &&
+    // The old saved-address placeholder is not a customer location.
+    !(lngN === LAHORE_CENTRE[0] && latN === LAHORE_CENTRE[1]);
+  const centre = hasLocation ? [lngN, latN] : null;
 
   const match = searchableProviderFilter(CATEGORY_TO_SUBTYPE[cat]);
   if (fMinRating) match['ratings.average'] = { $gte: fMinRating };
   if (fMaxPrice) match.basePrice = { $lte: fMaxPrice };
-  if (fAvailable) match.isAvailable = true;
   const term = typeof search === 'string' ? search.trim().slice(0, 60) : '';
   if (term) {
     // Escaped: this is a customer's typing, not a pattern. "(" or "*" used to
@@ -133,40 +149,115 @@ const searchProviders = asyncHandler(async (req, res, next) => {
 
   const pageN = Math.max(parseInt(page, 10) || 1, 1);
   const limitN = Math.min(Math.max(parseInt(limit, 10) || 15, 1), 50);
+  const sortKey = normalizeSort(sortBy || sort);
 
   // Nearby first. Only if nobody serves the customer within the configured
   // radius does the search reach further — a list is never empty merely
   // because the ring was drawn too tight, and never padded with far-away
-  // providers when close ones exist.
+  // providers when close ones exist. An explicit "within X km" filter is a
+  // promise: no widening, and unknown distances cannot qualify.
   const baseKm = Number(radiusKm) > 0 ? Number(radiusKm) : settings.defaultSearchRadiusKm;
-  const rings = hasLocation
-    ? [baseKm, ...WIDER_RINGS_KM.filter((r) => r > baseKm)]
-    : [CITY_RADIUS_KM];
-
-  let result = { items: [], total: [] };
-  let radiusMeters = rings[0] * 1000;
-  for (const km of rings) {
-    radiusMeters = km * 1000;
-    [result] = await Provider.aggregate(
-      buildPipeline({ centre, radiusMeters, match, weights, hasLocation, sortBy: sortBy || sort, pageN, limitN })
-    );
-    if (result.total[0] && result.total[0].count) break;
+  let rings = [null];
+  if (hasLocation) {
+    rings = fMaxDistanceKm > 0
+      ? [Math.min(fMaxDistanceKm, 100)]
+      : [baseKm, ...WIDER_RINGS_KM.filter((r) => r > baseKm)];
   }
 
-  const items = result.items || [];
-  const total = (result.total[0] && result.total[0].count) || 0;
+  const now = new Date();
+  const runSearchWith = async ({ pageN: pN, limitN: lN }) => {
+    let result = { items: [], total: [] };
+    let usedKm = rings[0];
+    for (const km of rings) {
+      usedKm = km;
+      [result] = await Provider.aggregate(
+        buildDiscoveryPipeline({
+          centre,
+          hasLocation,
+          radiusMeters: (km || 0) * 1000,
+          match,
+          weights: settings.matchingWeights,
+          sort: sortKey,
+          now,
+          staleMinutes: settings.onlineStaleMinutes,
+          availableOnly: fAvailable,
+          knownDistanceOnly: fMaxDistanceKm > 0,
+          pageN: pN,
+          limitN: lN,
+        })
+      );
+      if (result.total[0] && result.total[0].count) break;
+    }
+    return { items: result.items || [], total: (result.total[0] && result.total[0].count) || 0, usedKm };
+  };
+  const runSearch = () => runSearchWith({ pageN, limitN });
+
+  // Shared 30 s cache keyed by everything that shapes the answer; customers
+  // are bucketed to ~1 km (2 dp), and the namespace is bumped whenever a
+  // provider's availability or base changes.
+  const cacheKey = k(
+    'c', 'hs', 'search', `v${await ns(SEARCH_NS)}`, cat,
+    hasLocation ? `${latN.toFixed(2)},${lngN.toFixed(2)}` : 'anywhere',
+    hashOf({ sortKey, fMinRating, fMaxPrice, fAvailable, fMaxDistanceKm, term, baseKm, pageN, limitN })
+  );
+  // Stage 2 — the learned model, when one is active and the admin turned it
+  // on. Only "best match" is re-ranked (an explicit sort is the customer's
+  // choice). The top RERANK_POOL candidates are re-ordered and then paged;
+  // past the pool the heuristic order continues.
+  const ranking = settings.ranking || { mode: 'heuristic' };
+  const servedModel = ranking.mode !== 'heuristic' && sortKey === 'best' ? getModelNonBlocking() : null;
+  const pool = Math.min(RERANK_POOL, Math.max(pageN * limitN, limitN));
+  const reranking = Boolean(servedModel) && pageN * limitN <= RERANK_POOL;
+
+  let items;
+  let total;
+  let usedKm;
+  let rankingSource = 'heuristic';
+  let scored = null;
+  if (reranking) {
+    const poolKey = `${cacheKey}:pool${pool}`;
+    const poolPage = { pageN: 1, limitN: pool };
+    const stage1 = await getOrSet(poolKey, SEARCH_CACHE_SEC, () => runSearchWith(poolPage));
+    const ranked = await rerank(stage1.items, { ...ranking, model: servedModel, hasLocation });
+    const start = (pageN - 1) * limitN;
+    items = ranked.items.slice(start, start + limitN);
+    scored = ranked.scored.slice(start, start + limitN);
+    total = stage1.total;
+    usedKm = stage1.usedKm;
+    rankingSource = ranked.rankingSource;
+  } else {
+    ({ items, total, usedKm } = await getOrSet(cacheKey, SEARCH_CACHE_SEC, runSearch));
+  }
   const totalPages = Math.max(1, Math.ceil(total / limitN));
 
+  // What this search showed, with each card's serve-time features — the
+  // matching model's training data. Capped at 250 ms: a slow write must never
+  // slow a search, and a lost impression only costs a little signal.
+  const searchId = crypto.randomUUID();
+  if (Math.random() < IMPRESSION_SAMPLE && items.length) {
+    const features = scored || withFeatures(items, hasLocation).map((r) => ({ features: r.features, heuristicScore: r.p.matchingScore, modelScore: null }));
+    await Promise.race([
+      MlSearchImpression.create({
+        searchId,
+        userId: req.user ? req.user._id : null,
+        category: cat,
+        hasLocation,
+        sort: sortKey,
+        rankingSource,
+        items: items.map((p, i) => ({
+          providerId: p._id,
+          position: (pageN - 1) * limitN + i,
+          heuristicScore: features[i] ? features[i].heuristicScore : p.matchingScore,
+          modelScore: features[i] ? features[i].modelScore : null,
+          features: features[i] ? features[i].features : undefined,
+        })),
+      }).catch((e) => console.warn(`[ml] impression not logged: ${e.message}`)),
+      new Promise((resolve) => setTimeout(resolve, 250)),
+    ]);
+  }
+
   ok(res, {
-    providers: items.map((p) =>
-      toPublicProviderCard(p, {
-        distanceKm: hasLocation ? Math.round((p.distanceMeters / 1000) * 10) / 10 : null,
-        etaMinutes: hasLocation
-          ? estimatedTravelMinutes(p.distanceMeters, settings.avgUrbanSpeedKmh)
-          : null,
-        matchingScore: Math.round(p.matchingScore * 1000) / 1000,
-      })
-    ),
+    providers: items.map((p) => toDiscoveryCard(p, { hasLocation, avgSpeed: settings.avgUrbanSpeedKmh, rankingSource })),
     pagination: {
       currentPage: pageN,
       totalPages,
@@ -177,15 +268,49 @@ const searchProviders = asyncHandler(async (req, res, next) => {
     },
     searchArea: {
       nearYou: hasLocation,
-      radiusKm: radiusMeters / 1000,
-      widened: hasLocation && radiusMeters / 1000 > baseKm,
+      radiusKm: hasLocation ? usedKm : null,
+      widened: hasLocation && !(fMaxDistanceKm > 0) && usedKm > baseKm,
     },
+    sort: sortKey,
+    rankingSource,
+    // Pass back on booking (rankingContext) so the outcome can be credited to
+    // the search that produced it.
+    searchId,
   }, 'Providers fetched successfully');
 });
 
-const LAHORE_CENTRE = [74.3587, 31.5204];
-/** Without a customer location, the search spans the whole metro area. */
-const CITY_RADIUS_KM = 40;
+/** One search result as a public card, plus what ranking knows about it. */
+function toDiscoveryCard(p, { hasLocation, avgSpeed, rankingSource = 'heuristic' }) {
+  const located = p.distanceKnown || p.distanceApprox;
+  const showDistance = hasLocation && located && Number.isFinite(p.distanceMeters);
+  const round2 = (n) => Math.round((Number(n) || 0) * 100) / 100;
+  return toPublicProviderCard(p, {
+    distanceKm: showDistance ? Math.round((p.distanceMeters / 1000) * 10) / 10 : null,
+    distanceApprox: Boolean(showDistance && p.distanceApprox),
+    etaMinutes: showDistance && p.distanceKnown ? estimatedTravelMinutes(p.distanceMeters, avgSpeed) : null,
+    availableNow: Boolean(p.availableNow),
+    matchingScore: Math.round((p.matchingScore || 0) * 1000) / 1000,
+    scoreBreakdown: p.scoreBreakdown
+      ? {
+          distance: round2(p.scoreBreakdown.distance),
+          rating: round2(p.scoreBreakdown.rating),
+          availability: round2(p.scoreBreakdown.availability),
+          quality: round2(p.scoreBreakdown.quality),
+        }
+      : null,
+    // A base is an area (~500 m grid), and only shown when one is set.
+    coordinates: located ? coords(p.currentLocation) : null,
+    rankingSource,
+    ...(typeof p.modelScore === 'number' ? { modelScore: p.modelScore } : {}),
+  });
+}
+
+/** How long one search answer is shared between customers in the same ~1 km cell. */
+const SEARCH_CACHE_SEC = 30;
+/** How many top candidates the learned model may re-order. */
+const RERANK_POOL = 50;
+/** Share of searches whose impressions are logged for training (0..1). */
+const IMPRESSION_SAMPLE = Math.min(Math.max(Number(process.env.ML_IMPRESSION_SAMPLE ?? 1), 0), 1);
 /** Rings tried, in order, after the configured radius finds no one. */
 const WIDER_RINGS_KM = [30, 60];
 
@@ -193,77 +318,20 @@ function escapeRegex(text) {
   return text.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 }
 
-function buildPipeline({ centre, radiusMeters, match, weights, hasLocation, sortBy, pageN, limitN }) {
-  const pipeline = [
-    // $geoNear MUST be the first stage; spherical distances in metres.
-    {
-      $geoNear: {
-        near: { type: 'Point', coordinates: centre },
-        distanceField: 'distanceMeters',
-        maxDistance: radiusMeters,
-        spherical: true,
-        query: match,
-      },
-    },
-  ];
-  if (hasLocation) {
-    // Each provider's own reach: someone who serves 10 km is not offered to a
-    // customer 20 km away, however wide the search ring.
-    pipeline.push({
-      $match: {
-        $expr: {
-          $lte: ['$distanceMeters', { $multiply: [{ $ifNull: ['$serviceRadius', 15] }, 1000] }],
-        },
-      },
-    });
-  }
-  pipeline.push(
-    {
-      // score = w_d*(1 - min(d/radius,1)) + w_r*(rating/5) + w_a*(isOnline?1:0)
-      // Without a customer location distance says nothing, so it scores
-      // every provider the same.
-      $addFields: {
-        matchingScore: {
-          $add: [
-            hasLocation
-              ? {
-                  $multiply: [
-                    weights.distance,
-                    { $subtract: [1, { $min: [{ $divide: ['$distanceMeters', radiusMeters] }, 1] }] },
-                  ],
-                }
-              : weights.distance * 0.5,
-            { $multiply: [weights.rating, { $divide: [{ $ifNull: ['$ratings.average', 0] }, 5] }] },
-            { $multiply: [weights.availability, { $cond: [{ $eq: ['$isOnline', true] }, 1, 0] }] },
-          ],
-        },
-      },
-    },
-    { $sort: buildSort(sortBy, hasLocation) },
-    {
-      $facet: {
-        items: [{ $skip: (pageN - 1) * limitN }, { $limit: limitN }],
-        total: [{ $count: 'count' }],
-      },
-    }
-  );
-  return pipeline;
-}
-
-function buildSort(sortBy, hasLocation = true) {
-  switch (sortBy) {
-    case 'rating':
-      return { 'ratings.average': -1, matchingScore: -1 };
-    case 'price_low':
-      return { basePrice: 1, matchingScore: -1 };
-    case 'price_high':
-      return { basePrice: -1, matchingScore: -1 };
-    case 'distance':
-      // Nearest-first means nothing without knowing where "here" is.
-      return hasLocation ? { distanceMeters: 1 } : { matchingScore: -1, 'ratings.average': -1 };
-    default:
-      return { matchingScore: -1, distanceMeters: 1 };
-  }
+/** Kept for callers/tests that build the pipeline directly. */
+function buildPipeline({ centre, radiusMeters, match, weights, hasLocation, sortBy, pageN, limitN, now, staleMinutes }) {
+  return buildDiscoveryPipeline({
+    centre,
+    hasLocation,
+    radiusMeters,
+    match,
+    weights,
+    sort: normalizeSort(sortBy),
+    now,
+    staleMinutes,
+    pageN,
+    limitN,
+  });
 }
 
 /**
@@ -340,4 +408,12 @@ const getProviderReviews = asyncHandler(async (req, res) => {
   });
 });
 
-module.exports = { searchProviders, getProviderDetails, getProviderReviews, escapeRegex, buildPipeline };
+module.exports = {
+  searchProviders,
+  getProviderDetails,
+  getProviderReviews,
+  escapeRegex,
+  buildPipeline,
+  toDiscoveryCard,
+  SEARCH_NS,
+};

@@ -9,6 +9,8 @@ router.use('/appointments', require('./appointmentRoutes'));
 router.use('/reviews', require('./reviewRoutes'));
 router.use('/prescriptions', require('./prescriptionRoutes'));
 router.use('/health-records', require('./healthRecordRoutes'));
+// Vital signs from Bluetooth monitors (heart rate, blood pressure) or typed in.
+router.use('/vitals', require('./vitalsRoutes'));
 // Telemedicine (H6 BUILD decision): Jitsi-in-WebView transport, participant-guarded.
 router.use('/video-calls', require('./videoCallRoutes'));
 // AI symptom checker (TC-19): LLM tier + deterministic fallback, always disclaimed.

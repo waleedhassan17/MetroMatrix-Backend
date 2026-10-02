@@ -31,14 +31,22 @@ Error:  { "success": false, "error": "message", "errors?": [...] }   (4xx / 5xx)
 | GET | `/brands/slug/:slug` | — | `BrandConfig` | 404 |
 | GET | `/brands/:brandId/categories` | — | `Category[]` (2-level tree with productCount) | 404 |
 | GET | `/categories/:categoryId` | — | `Category` with its real `children[]` and rolled-up `productCount` | 400, 404 |
-| GET | `/products` | `brandId, categoryId, search, sortBy (price_asc\|price_desc\|rating\|newest\|popular), minPrice, maxPrice, inStock, isFeatured, isNewArrival, page, limit` | Paginated `Product` | 400 bad filter id |
+| GET | `/products` | `brandId, categoryId, search, q, ignore, sortBy (price_asc\|price_desc\|rating\|newest\|popular\|relevance), minPrice, maxPrice, minRating, color, inStock, isFeatured, isNewArrival, page, limit` | Paginated `Product`. **`q` = natural-language search**: "red nike running shoes under 5k" is understood into filters (price, colour, gender, brand, category — English + Roman-Urdu; Gemini only for long free text the rules cannot structure) plus a weighted `$text` search (`product_text_v2`: name 10, tags 5, description 1) over what is left, with a substring fallback; the response carries `interpretedAs` (+ `ignored`). `ignore=price,color,…` drops understood filters the shopper removed. Explicit params always win. `q` is rate-limited (`nlq`, 30/min) | 400 bad filter id |
 | GET | `/products/:productId` | — | `Product` | 400, 404 (also 404 if brand suspended) |
 | GET | `/products/:productId/reviews` | `page,limit` | Paginated `ProductReview` | 400 |
-| GET | `/outlets` | `brandId, city, lat, lng, radiusKm, page, limit` | Paginated `OutletConfig` | 400 |
+| GET | `/outlets` | `brandId, city, lat, lng, radiusKm, page, limit` | Paginated `OutletConfig`; with `lat,lng` sorted nearest-first by `$geoNear`, each with `distanceKm` | 400 |
 | GET | `/outlets/:outletId` | — | `OutletConfig` | 404 |
 | GET | `/banners` | — | `Banner[]` — storefront promo carousel, active and inside its date window, `sortOrder` first | — |
 
-Suspended/pending brands and their products are invisible on all of the above.
+Suspended/pending brands and their products are invisible on all of the above, and so is any product its vendor unpublished (`isActive:false`) or that moderation holds (`moderation.status` pending/rejected/removed).
+
+**Recommendations** (mounted at `/api`, every item re-checked against today's visibility; `brandId` keeps a shelf inside one storefront):
+
+| Method | Path | Returns |
+|---|---|---|
+| GET | `/api/recommendations/shopping?brandId` | `optionalAuth`. Signed in → the nightly personal list (item-item collaborative filtering on orders/wishlist/cart/views, time-decayed, + TF-IDF content similarity), topped up with best sellers; anonymous → best sellers. `{ source: 'personal'\|'popular', items[{product, reason}] }` |
+| GET | `/api/recommendations/shopping/trending?brandId` | best sellers (nightly `ml_popular`, else live orders of the last 30 days) |
+| GET | `/api/recommendations/shopping/similar/:productId?brandId` | "Bought together" / "Similar" neighbours, topped up from the same category |
 
 ## 2. Cart, coupons, wishlist (Customer)
 
@@ -94,6 +102,9 @@ Actors: vendor fulfils; customer cancels only pending/confirmed; admin force-tra
 | GET | `/vendor/products` | `?search&stockStatus(in|low|out)&page&limit` |
 | POST / PATCH / DELETE | `/vendor/products[/:productId]` | delete = soft (isActive=false) |
 | POST | `/vendor/products/:productId/images` | `{ images: [base64] }` |
+| PATCH | `/vendor/products/:productId/model3d` | `{ glbUrl, usdzUrl? }` — files uploaded first via `POST /api/uploads/sign` (purpose `product_model3d`); the server checks they are this vendor's uploads and reads the first bytes (ranged request): glTF 2.0 binary ≤ 10 MB, USDZ = ZIP. Powers "View in your room" (Android Scene Viewer / iPhone AR Quick Look). 400 not your upload / wrong extension, 422 not a real glTF/USDZ |
+| DELETE | `/vendor/products/:productId/model3d` | removes the model |
+| PATCH | `/vendor/products/:productId` `{ isActive }` | publish / unpublish; content edits re-enter review when `autoApproveProducts` is off |
 | GET/POST/PATCH/DELETE | `/vendor/categories[/:categoryId]` | 2 levels max; delete blocked while products attached |
 | GET | `/vendor/inventory` | per-variant rows + lowStock/outOfStock flags |
 | PATCH | `/vendor/inventory/:variantId` | `{ stockQuantity, reason }` → InventoryLog |
@@ -126,9 +137,13 @@ Cross-brand access (`:brandId` not yours or another brand's resources) → 403, 
 | POST | `/admin/orders/:orderId/refund` | manual wallet refund; **reason mandatory**; paid orders only |
 | GET | `/admin/analytics` | `?from&to` — GMV series, revenueByBrand, commission, ordersByStatus, topProducts, returnRate |
 | GET | `/admin/dashboard` | pendingBrandApprovals, ordersToday, gmvToday, openReturnRequests, lowStockAlerts |
-| GET / PATCH | `/admin/settings` | commissionPercent, shippingFeePerBrand, freeShippingThreshold, lowStockThreshold, defaultReturnDays, autoApproveBrands, deliveryTiers — same values checkout/inventory read |
+| GET / PATCH | `/admin/settings` | commissionPercent, shippingFeePerBrand, freeShippingThreshold, lowStockThreshold, defaultReturnDays, autoApproveBrands, autoApproveProducts, deliveryTiers — same values checkout/inventory read |
+| GET | `/admin/products` | `?moderationStatus&brandId&search` — the moderation queue |
+| PATCH | `/admin/products/:productId/moderation` | `{ status: approved\|rejected\|removed, note }` (note required to reject/remove); pushes the vendor (`product_moderation`) |
 
 Every admin mutation writes `ShoppingAuditLog { admin, action, targetType, targetId, before, after, reason, at }`.
+
+**Notifications:** every order transition (confirmed, shipped, out for delivery, delivered, cancelled, refunded), new orders and return requests write a `ShoppingNotification` (customer `GET /notifications`, unread count, mark read) and push the customer or vendor (Expo Push → FCM HTTP v1).
 
 ## Scripts
 

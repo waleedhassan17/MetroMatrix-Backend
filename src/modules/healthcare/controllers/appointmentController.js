@@ -456,6 +456,14 @@ const bookAppointment = async (req, res, next) => {
     // 8. Commit
     await session.commitTransaction();
 
+    // Which doctors (and so specialties) this patient sees — for recommendations.
+    require('../../ml/services/eventService').recordServerEvent({
+      userId: req.user._id,
+      module: 'healthcare',
+      type: 'appointment',
+      refId: doctor._id,
+    });
+
     // 9. Notification (best effort)
     try {
       await notificationService.notifyAppointmentBooked(

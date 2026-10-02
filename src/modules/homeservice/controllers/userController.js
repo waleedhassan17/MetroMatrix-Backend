@@ -9,6 +9,8 @@ const { STATUS } = require('../services/statusMap');
 const { toUserBooking, avatar, CATEGORY_TO_SUBTYPE } = require('../services/serializers');
 const ProviderReview = require('../models/ProviderReview');
 const { expireStale } = require('../services/expiryService');
+const { assertOwnedAsset } = require('../../../utils/assetUrl');
+const { isRealPoint, latLngOrNull, parseLatLng, round6 } = require('../services/geo');
 const { searchableProviderFilter } = require('../services/providerVisibility');
 
 const ok = (res, data, message, pagination) =>
@@ -211,11 +213,57 @@ const updateUserProfile = asyncHandler(async (req, res) => {
 });
 
 // POST /api/user/profile/avatar
+// POST /api/user/profile/avatar  { avatarUrl }  (legacy clients send { avatar })
+// The URL must be the caller's own signed upload (POST /api/uploads/sign,
+// purpose 'avatar'). This used to store whatever string the phone sent —
+// usually a file:// path that only ever existed on that one device.
 const updateUserAvatar = asyncHandler(async (req, res) => {
-  const { avatar: avatarUri } = req.body;
-  await User.updateOne({ _id: req.user._id }, { profilePhoto: avatarUri });
-  ok(res, { avatar: avatarUri }, 'Avatar updated');
+  const raw = (req.body && (req.body.avatarUrl || req.body.avatar)) || '';
+  let url;
+  try {
+    url = assertOwnedAsset(raw, { purpose: 'avatar', ownerId: req.user._id });
+  } catch (e) {
+    res.status(400);
+    throw new Error(e.message);
+  }
+  await User.updateOne({ _id: req.user._id }, { profilePhoto: url });
+  ok(res, { avatar: url }, 'Avatar updated');
 });
+
+/** One saved address as the app sees it; unknown coordinates are null, not a guess. */
+function toAddressDto(a) {
+  const located = isRealPoint(a.coordinates);
+  return {
+    id: String(a._id),
+    label: a.label,
+    address: a.line1,
+    city: a.city,
+    isDefault: a.isDefault,
+    coordinates: located ? latLngOrNull(a.coordinates) : null,
+    coordinatesSource: located ? a.coordinatesSource || 'legacy' : null,
+    located,
+    icon: a.icon,
+  };
+}
+
+const COORDINATE_SOURCES = ['gps', 'pin', 'geocode'];
+
+/** Validated GeoJSON + source from a request body, or null when none was sent. */
+function coordinatesFrom(body, res) {
+  const { coordinates, coordinatesSource } = body || {};
+  if (!coordinates || coordinates.latitude === undefined || coordinates.latitude === null) return null;
+  let point;
+  try {
+    point = parseLatLng(coordinates);
+  } catch (e) {
+    res.status(400);
+    throw new Error(e.message);
+  }
+  return {
+    coordinates: { type: 'Point', coordinates: [round6(point.lng), round6(point.lat)] },
+    coordinatesSource: COORDINATE_SOURCES.includes(coordinatesSource) ? coordinatesSource : 'pin',
+  };
+}
 
 // GET /api/user/addresses
 const getAddresses = asyncHandler(async (req, res) => {
@@ -223,27 +271,19 @@ const getAddresses = asyncHandler(async (req, res) => {
     isDefault: -1,
     createdAt: -1,
   });
-  ok(res, addresses.map((a) => ({
-    id: String(a._id),
-    label: a.label,
-    address: a.line1,
-    city: a.city,
-    isDefault: a.isDefault,
-    coordinates: {
-      latitude: a.coordinates.coordinates[1],
-      longitude: a.coordinates.coordinates[0],
-    },
-    icon: a.icon,
-  })), 'Addresses fetched');
+  ok(res, addresses.map(toAddressDto), 'Addresses fetched');
 });
 
 // POST /api/user/addresses
+// { label, address, city, isDefault, icon, coordinates?: {latitude, longitude},
+//   coordinatesSource?: 'gps'|'pin'|'geocode' }
 const addAddress = asyncHandler(async (req, res) => {
-  const { label, address, city, isDefault, coordinates, icon } = req.body;
+  const { label, address, city, isDefault, icon } = req.body;
   if (!address) {
     res.status(400);
     throw new Error('Address line is required');
   }
+  const located = coordinatesFrom(req.body, res);
   if (isDefault) {
     await SavedAddress.updateMany({ user: req.user._id }, { isDefault: false });
   }
@@ -254,17 +294,9 @@ const addAddress = asyncHandler(async (req, res) => {
     city: city || '',
     icon: icon || 'location',
     isDefault: !!isDefault,
-    ...(coordinates && coordinates.latitude
-      ? { coordinates: { type: 'Point', coordinates: [coordinates.longitude, coordinates.latitude] } }
-      : {}),
+    ...(located || {}),
   });
-  ok(res, {
-    id: String(doc._id),
-    label: doc.label,
-    address: doc.line1,
-    city: doc.city,
-    isDefault: doc.isDefault,
-  }, 'Address added');
+  ok(res, toAddressDto(doc), 'Address added');
 });
 
 // PATCH /api/user/addresses/:addressId
@@ -274,26 +306,22 @@ const updateAddress = asyncHandler(async (req, res) => {
     res.status(404);
     throw new Error('Address not found');
   }
-  const { label, address, city, isDefault, icon, coordinates } = req.body;
+  const { label, address, city, isDefault, icon } = req.body;
   if (label !== undefined) doc.label = label;
   if (address !== undefined) doc.line1 = address;
   if (city !== undefined) doc.city = city;
   if (icon !== undefined) doc.icon = icon;
-  if (coordinates && coordinates.latitude) {
-    doc.coordinates = { type: 'Point', coordinates: [coordinates.longitude, coordinates.latitude] };
+  const located = coordinatesFrom(req.body, res);
+  if (located) {
+    doc.coordinates = located.coordinates;
+    doc.coordinatesSource = located.coordinatesSource;
   }
   if (isDefault) {
     await SavedAddress.updateMany({ user: req.user._id }, { isDefault: false });
     doc.isDefault = true;
   }
   await doc.save();
-  ok(res, {
-    id: String(doc._id),
-    label: doc.label,
-    address: doc.line1,
-    city: doc.city,
-    isDefault: doc.isDefault,
-  }, 'Address updated');
+  ok(res, toAddressDto(doc), 'Address updated');
 });
 
 // DELETE /api/user/addresses/:addressId

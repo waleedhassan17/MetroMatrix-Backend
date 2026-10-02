@@ -57,9 +57,18 @@ const errorHandler = (err, req, res, next) => {
   }
 
   const resStatus = res.statusCode && res.statusCode !== 200 ? res.statusCode : null;
-  res.status(error.statusCode || err.statusCode || resStatus || 500).json({
+  const status = error.statusCode || err.statusCode || resStatus || 500;
+  if (status >= 500 && process.env.NODE_ENV !== 'test') {
+    // One line that ties the failure to the request's access-log entry.
+    console.error(
+      JSON.stringify({ t: 'err', id: req.id, p: (req.originalUrl || '').split('?')[0], msg: err.message })
+    );
+  }
+  res.status(status).json({
     success: false,
     error: error.message || 'Server Error',
+    // Quote this when reporting a problem: it finds the request in the logs.
+    ...(req.id && { requestId: req.id }),
     ...(process.env.NODE_ENV === 'development' && { stack: err.stack }),
   });
 };

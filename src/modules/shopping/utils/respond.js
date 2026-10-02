@@ -7,9 +7,10 @@
 
 const ok = (res, data, status = 200) => res.status(status).json({ success: true, data });
 
-const paginated = (res, { data, page, limit, total }) =>
+const paginated = (res, { data, page, limit, total, extra }) =>
   res.json({
     success: true,
+    ...(extra || {}),
     data,
     pagination: {
       page: Number(page),

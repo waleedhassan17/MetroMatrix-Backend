@@ -109,6 +109,12 @@ const appointmentSchema = new mongoose.Schema(
       type: Date,
       default: null,
     },
+    // The "starts in 5 minutes" push for video consultations, claimed
+    // atomically like reminderSentAt so it is sent exactly once.
+    videoReminderSentAt: {
+      type: Date,
+      default: null,
+    },
 
     // ── When it happens, copied from the slot (see services/appointmentTime) ─
     // The date lived only on Slot, so every "today" / "this week" query loaded
@@ -149,6 +155,8 @@ appointmentSchema.index({ doctorId: 1, status: 1 });
 appointmentSchema.index({ createdAt: -1 });
 // Every doctor date query: today's list, the week, the dashboard, earnings.
 appointmentSchema.index({ doctorId: 1, startUtc: 1 });
+// The reminder sweep: confirmed appointments starting soon.
+appointmentSchema.index({ status: 1, startUtc: 1 });
 // The doctor's transaction ledger: completed, newest first.
 appointmentSchema.index({ doctorId: 1, status: 1, completedAt: -1 });
 

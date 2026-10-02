@@ -170,6 +170,7 @@ const requestReturn = asyncHandler(async (req, res) => {
     images: Array.isArray(req.body.images) ? req.body.images : [],
     refundAmount: items.reduce((s, it) => s + it.unitPrice * it.quantity, 0),
   });
+  await require('../services/orderNotifications').announceReturnRequested(request, order);
   return ok(res, request, 201);
 });
 

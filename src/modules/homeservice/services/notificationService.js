@@ -82,9 +82,20 @@ async function create({ recipient, recipientRole, type, title, message, data }) 
  * @param {string} status   the status just transitioned INTO
  * @param {object} ctx      { customerName, providerName, service }
  */
-async function notifyBookingStatus(booking, status, ctx = {}) {
-  const spec = BOOKING_EVENTS[status];
+async function notifyBookingStatus(booking, status, ctx = {}, actor = null) {
+  let spec = BOOKING_EVENTS[status];
   if (!spec || !booking) return null;
+
+  // A job the CUSTOMER confirmed is news for the provider, not for the person
+  // who just tapped "confirm" — this always went to the customer.
+  if (status === STATUS.COMPLETED && actor && actor.role === 'customer') {
+    spec = {
+      to: 'provider',
+      type: 'booking_completed',
+      title: 'Job confirmed',
+      message: (c) => `${c.customerName || 'The customer'} confirmed the job is done.`,
+    };
+  }
 
   // Populated or raw — accept both, since call sites differ.
   const customerId = booking.customer?._id || booking.customer;
@@ -125,6 +136,18 @@ async function notifyBookingCancelled(booking, cancelledBy, ctx = {}) {
         ctx.reason || 'Another provider accepted this job first.',
       data: { bookingId: String(booking._id), roomType: 'homeservice' },
     });
+  }
+
+  // Support cancelled it: both parties hear it, and neither is told the
+  // other one did it (an admin id never matches the customer, so this used to
+  // tell the customer "the provider cancelled").
+  if (ctx.byRole === 'admin') {
+    const message = `MetroMatrix support cancelled this booking${ctx.reason ? `: ${ctx.reason}` : '.'}`;
+    const data = { bookingId: String(booking._id), roomType: 'homeservice' };
+    return Promise.all([
+      create({ recipient: customerId, recipientRole: 'user', type: 'booking_cancelled', title: 'Booking cancelled', message, data }),
+      create({ recipient: providerId, recipientRole: 'provider', type: 'booking_cancelled', title: 'Booking cancelled', message, data }),
+    ]);
   }
 
   const toProvider = String(cancelledBy) === String(customerId);
@@ -216,7 +239,35 @@ async function notifyCashConfirmed(booking, ctx = {}) {
   });
 }
 
+/** A customer reviewed a completed job — tell the provider. */
+async function notifyReviewReceived(booking, { rating, customerName, service } = {}) {
+  const providerId = booking.provider?._id || booking.provider;
+  return create({
+    recipient: providerId,
+    recipientRole: 'provider',
+    type: 'review_received',
+    title: `New ${rating}-star review`,
+    message: `${customerName || 'A customer'} reviewed your ${service || 'job'}.`,
+    data: { bookingId: String(booking._id), roomType: 'homeservice', rating },
+  });
+}
+
+/** The provider is about five minutes away (detected by the realtime service). */
+async function notifyProviderNearby(booking, { providerName, etaMinutes } = {}) {
+  const customerId = booking.customer?._id || booking.customer;
+  return create({
+    recipient: customerId,
+    recipientRole: 'user',
+    type: 'booking_nearby',
+    title: 'Almost there',
+    message: `${providerName || 'Your provider'} is about ${etaMinutes || 5} minutes away.`,
+    data: { bookingId: String(booking._id), roomType: 'homeservice', etaMinutes },
+  });
+}
+
 module.exports = {
+  notifyReviewReceived,
+  notifyProviderNearby,
   create,
   notifyBookingStatus,
   notifyBookingCancelled,

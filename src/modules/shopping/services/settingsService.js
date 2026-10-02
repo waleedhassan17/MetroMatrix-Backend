@@ -47,6 +47,7 @@ const SHOPPING_SETTINGS_DEFAULTS = Object.freeze({
   lowStockThreshold: 5,
   defaultReturnDays: 7,
   autoApproveBrands: false,
+  autoApproveProducts: true,
   deliveryTiers: DEFAULT_DELIVERY_TIERS,
 });
 

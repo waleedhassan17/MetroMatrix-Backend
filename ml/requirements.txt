@@ -1,0 +1,9 @@
+# MetroMatrix ML batch jobs — run nightly by .github/workflows/ml-nightly.yml.
+# Pinned: a silent upgrade must never change what a model or forecast means.
+numpy==1.26.4
+pandas==2.2.3
+scipy==1.13.1
+statsmodels==0.14.4
+scikit-learn==1.5.2
+pymongo==4.10.1
+pytest==8.3.3

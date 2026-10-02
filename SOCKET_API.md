@@ -62,9 +62,15 @@ REST fallback: `GET /api/chat/:bookingId` (ChatData history) ·
   booking leaves `EN_ROUTE/ARRIVED`. Location history is **never** written to
   the database, so there is nothing to delete after job completion.
 
-REST fallback: `GET /api/bookings/:bookingId/tracking` (TrackingData; serves the
-last in-memory position or the provider's static location) ·
+REST fallback: `GET /api/bookings/:bookingId/tracking` (TrackingData; the last
+live position, or `providerLocation: null` — never the provider's stored service
+base, which would present an area they work from as where they are now) ·
 `POST /api/provider/location { latitude, longitude, jobId }`.
+
+**"About 5 minutes away":** when a live position comes within ~2 km (≈5 min at
+the configured urban speed) the realtime service calls the main API
+(`POST /api/internal/homeservice/bookings/:bookingId/nearby`), which claims
+`notifications.nearbyAt` atomically and sends the push + room event exactly once.
 
 ## Booking lifecycle fan-out
 
@@ -72,12 +78,35 @@ last in-memory position or the provider's static location) ·
 |---|---|---|
 | `booking_status_changed` | server → room | `{ bookingId, status: <canonical>, changedAt }` |
 | `payment_requested` | server → room | `{ bookingId, amount }` |
+| `payment_received` | server → room | the customer paid (wallet) |
+| `payment_status_changed` | server → room | `{ bookingId, status: 'cash_selected' }` — the customer chose cash |
+| `provider_nearby` | server → room | `{ bookingId, etaMinutes, distanceMeters }` — once per trip |
+| `identity_verified` | server → room | `{ bookingId, method: 'nfc'\|'qr'\|'code', verifiedAt }` — the customer checked the provider's ID at the door |
 
 Emitted from `bookingService.transition()` and the payment controller, so both
 apps update live without polling. (No-ops when the socket layer isn't attached
 — REST polling still works.)
 
+## Push notifications
+
+The main API never talks to FCM directly: it posts `{ userId, role, type, title, body, data }`
+to the realtime service (`POST /api/internal/push`, `x-internal-key`), which looks up the
+person's Expo push tokens and sends through **Expo Push → FCM HTTP v1** (Android) / APNs.
+`type` must be on the realtime allow-list; each push collapses per entity
+(`bookingId`/`appointmentId`/`orderId`), and time-bound ones expire (`booking_nearby`,
+`identity_verified` 15 min; reminders 2 h).
+
+| Module | Types |
+|---|---|
+| Home services | `booking_created`, `booking_update` (accepted / rejected / en route / arrived / **work started** / completed), `booking_cancelled` (customer / provider / **system release** / **expiry** / admin), `payment_requested`, `payment_received`, `payment_update` (cash selected), `booking_nearby`, `booking_reminder`, `review_received`, `identity_verified` |
+| Healthcare | `appointment_update`, `appointment_reminder`, `prescription_ready`, `video_call_starting` |
+| Shopping | `order_created`, `order_update`, `return_update`, `product_moderation` |
+
 ## Calling — signalling only (documented decision)
+
+> Superseded: calls are now peer-to-peer WebRTC (`react-native-webrtc`) relayed
+> through Cloudflare TURN when needed — see `CHAT_CALL_CHANGELOG.md` in the app
+> repo. The section below describes the original FYP-I design.
 
 **In-app voice is NOT implemented.** Given FYP-I scope, the call screens do
 ring/accept/decline/end signalling over sockets and hand the actual audio to

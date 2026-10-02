@@ -1,0 +1,34 @@
+# Backup clock for the platform's scheduled work.
+#
+# The realtime Heroku dyno ticks POST /api/internal/scheduler/tick every ~5
+# minutes (metromatrix-realtime/src/services/scheduler.js). If that dyno is
+# down or restarting, this keeps reminders and expiry moving every 15 minutes.
+# GitHub's cron is best-effort (often several minutes late, and disabled after
+# 60 days without repository activity), which is why it is the watchdog and
+# not the primary. Overlap with the dyno is harmless: every send is claimed
+# atomically in the API.
+#
+# Secrets: API_URL (e.g. https://metro-matrix-backend.vercel.app) and
+#          INTERNAL_API_KEY (same value as the API's env).
+name: scheduler-watchdog
+on:
+  schedule:
+    - cron: '*/15 * * * *'
+  workflow_dispatch:
+
+jobs:
+  tick:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Tick the API scheduler
+        env:
+          API_URL: ${{ secrets.API_URL }}
+          INTERNAL_API_KEY: ${{ secrets.INTERNAL_API_KEY }}
+        run: |
+          if [ -z "$API_URL" ] || [ -z "$INTERNAL_API_KEY" ]; then
+            echo "API_URL / INTERNAL_API_KEY secrets not set — skipping"; exit 0
+          fi
+          curl -fsS --max-time 60 -X POST \
+            -H "x-internal-key: $INTERNAL_API_KEY" \
+            "${API_URL%/}/api/internal/scheduler/tick"

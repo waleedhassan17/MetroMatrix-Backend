@@ -23,6 +23,11 @@ const SUPERSEDED = [
     name: 'uniq_single_patient_slot',
     why: 'did not include `type`, so video and in-clinic at the same clinic and time collided',
   },
+  {
+    collection: 'shoppingproducts',
+    name: 'name_text_description_text_tags_text',
+    why: 'unweighted; replaced by product_text_v2 (a collection may have only one text index)',
+  },
 ];
 
 /** Load every model file so every schema is registered. */

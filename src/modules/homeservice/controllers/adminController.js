@@ -1,4 +1,5 @@
 const asyncHandler = require('express-async-handler');
+const { assertOwnedAsset } = require('../../../utils/assetUrl');
 const mongoose = require('mongoose');
 const Booking = require('../models/Booking');
 const Dispute = require('../models/Dispute');
@@ -210,6 +211,18 @@ const refundBooking = asyncHandler(async (req, res) => {
 const raiseDispute = asyncHandler(async (req, res) => {
   const b = req.booking;
   const { reason, description, evidence } = req.body;
+  // Photos must be the caller's own uploads (POST /api/uploads/sign, purpose
+  // 'dispute_evidence'). The app used to send the phone's file:// paths, which
+  // were stored as "evidence" nobody else could ever open.
+  let cleanEvidence = [];
+  try {
+    cleanEvidence = (Array.isArray(evidence) ? evidence : [])
+      .slice(0, 6)
+      .map((u) => assertOwnedAsset(u, { purpose: 'dispute_evidence', ownerId: req.user._id }));
+  } catch (e) {
+    res.status(400);
+    throw new Error(e.message);
+  }
   if (!reason || !String(reason).trim()) {
     res.status(400);
     throw new Error('A dispute reason is required');
@@ -232,7 +245,7 @@ const raiseDispute = asyncHandler(async (req, res) => {
     againstRole: req.bookingRole === 'customer' ? 'provider' : 'customer',
     reason,
     description: description || '',
-    evidence: Array.isArray(evidence) ? evidence : [],
+    evidence: cleanEvidence,
   });
   ok(res, { disputeId: String(dispute._id), status: dispute.status }, 'Dispute raised');
 });
@@ -644,11 +657,53 @@ const patchSettings = asyncHandler(async (req, res) => {
     'matchingWeights',
     'minPayoutAmount',
     'avgUrbanSpeedKmh',
+    'onlineStaleMinutes',
+    'ranking',
   ];
   const patch = {};
   allowed.forEach((k) => {
     if (req.body[k] !== undefined) patch[k] = req.body[k];
   });
+  const invalid = (message) => {
+    res.status(400);
+    throw new Error(message);
+  };
+  if (patch.onlineStaleMinutes !== undefined) {
+    const m = Number(patch.onlineStaleMinutes);
+    if (!Number.isFinite(m) || m < 5 || m > 240) invalid('onlineStaleMinutes must be between 5 and 240');
+    patch.onlineStaleMinutes = Math.round(m);
+  }
+  if (patch.ranking !== undefined) {
+    const r = patch.ranking || {};
+    const clean = {};
+    if (r.mode !== undefined) {
+      if (!['heuristic', 'shadow', 'blend', 'model'].includes(r.mode)) invalid('ranking.mode must be heuristic, shadow, blend or model');
+      clean.mode = r.mode;
+    }
+    if (r.blendAlpha !== undefined) {
+      const a = Number(r.blendAlpha);
+      if (!Number.isFinite(a) || a < 0 || a > 1) invalid('ranking.blendAlpha must be between 0 and 1');
+      clean.blendAlpha = a;
+    }
+    if (r.explorationBoost !== undefined) {
+      const b = Number(r.explorationBoost);
+      if (!Number.isFinite(b) || b < 0 || b > 0.5) invalid('ranking.explorationBoost must be between 0 and 0.5');
+      clean.explorationBoost = b;
+    }
+    patch.ranking = clean;
+  }
+  if (patch.matchingWeights !== undefined) {
+    const w = patch.matchingWeights;
+    if (!w || typeof w !== 'object') invalid('matchingWeights must be an object');
+    const clean = {};
+    for (const key of ['distance', 'rating', 'availability', 'quality']) {
+      if (w[key] === undefined) continue;
+      const v = Number(w[key]);
+      if (!Number.isFinite(v) || v < 0 || v > 1) invalid(`matchingWeights.${key} must be between 0 and 1`);
+      clean[key] = v;
+    }
+    patch.matchingWeights = clean;
+  }
   const after = await updateHomeserviceSettings(patch);
   await audit(req.user._id, 'settings.update', 'settings',
     new mongoose.Types.ObjectId('000000000000000000000000'),
