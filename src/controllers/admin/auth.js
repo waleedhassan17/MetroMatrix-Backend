@@ -68,8 +68,12 @@ async function refuseIfLocked(keys) {
 // Issue a session and the response body every successful sign-in returns.
 async function completeSignIn(req, admin, security) {
   const { tokens, session } = await sessions.createSession(admin, req, { deviceLabel: req.body.deviceLabel });
-  await Admin.updateOne({ _id: admin._id }, { $set: { lastLoginDate: new Date() } });
-  admin.lastLoginDate = new Date();
+  const set = { lastLoginDate: new Date() };
+  // Accounts from before password changes were recorded: their expiry clock
+  // starts now (security.passwordExpiry then applies from this sign-in).
+  if (!admin.passwordChangedAt) set.passwordChangedAt = new Date();
+  await Admin.updateOne({ _id: admin._id }, { $set: set });
+  Object.assign(admin, set);
   await audit(req, {
     action: 'admin.login.succeeded',
     module: 'auth',
