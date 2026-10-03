@@ -1,0 +1,5966 @@
+# MetroMatrix admin console API — the contract between the backend and the
+# admin app. Hand-maintained (scaffolded once from docs/ROUTES.json).
+#
+# Kept honest by src/__tests__/adminContract.test.js: every admin route must
+# have an operation here and vice versa, and real responses are validated
+# against these schemas. The app generates its types from this file.
+openapi: 3.0.3
+info:
+  title: MetroMatrix admin console API
+  version: 2.0.0
+  description: >-
+    Every admin endpoint (/api/admin, /api/v1/admin, /api/shopping/admin) answers in one envelope:
+
+
+    - success: `{ success: true, data, meta? }` — `meta` pages lists (`page, limit, total, pages, nextCursor`); `limit`
+    is clamped to 1–100.
+
+    - failure: `{ success: false, error: { code, message, details? }, requestId }` — clients branch on `error.code` (see
+    src/utils/errorCodes.js).
+
+
+    Authentication: `Authorization: Bearer <accessToken>` from POST /api/admin/auth/login. Access tokens are
+    short-lived; renew with POST /api/admin/auth/refresh-token (rotates the refresh token — replaying an old one revokes
+    the session).
+
+    A session may be restricted (`restrict: password_change | totp_enrol`) until the admin fixes their account.
+
+
+    `x-guards` lists the permission guard of each operation (source: docs/ROUTES.json). Money, personal data and audit
+    reads are guarded too.
+
+    Status lists, labels, tones, limits and reference data come from GET /api/admin/meta — never hardcode them in a
+    client.
+servers:
+  - url: /
+    description: API host (Vercel)
+tags:
+  - name: Admin management
+  - name: Analytics
+  - name: Authentication
+  - name: Console
+  - name: Finance
+  - name: Healthcare
+  - name: Home services
+  - name: Notifications
+  - name: Own account
+  - name: Posts
+  - name: Provider onboarding (not admin console)
+  - name: Providers
+  - name: Settings
+  - name: Shopping
+  - name: Users
+components:
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+  responses:
+    ValidationFailed:
+      description: Validation failed (details.fields lists the problems)
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+    Unauthenticated:
+      description: Not signed in, token expired, or session revoked/idle
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+    Forbidden:
+      description: Missing permission, super admin required, or session restricted
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+    NotFound:
+      description: Not found
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+    Conflict:
+      description: Conflicts with the current state (e.g. DELETE_BLOCKED, INVALID_TRANSITION)
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+    TooManyAttempts:
+      description: Too many failed attempts — see Retry-After
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+  schemas:
+    Meta:
+      type: object
+      description: Paging for list responses. `page` is null when paging by cursor.
+      required:
+        - limit
+      properties:
+        page:
+          type: integer
+          nullable: true
+        limit:
+          type: integer
+        total:
+          type: integer
+        pages:
+          type: integer
+        nextCursor:
+          type: string
+          nullable: true
+        counts:
+          type: object
+          additionalProperties: true
+        unread:
+          type: integer
+        types:
+          type: array
+          items:
+            type: object
+            additionalProperties: true
+    Error:
+      type: object
+      required:
+        - success
+        - error
+      properties:
+        success:
+          type: boolean
+          enum:
+            - false
+        error:
+          type: object
+          required:
+            - code
+            - message
+          properties:
+            code:
+              type: string
+            message:
+              type: string
+            details:
+              type: object
+              additionalProperties: true
+        requestId:
+          type: string
+          nullable: true
+    Permissions:
+      type: object
+      additionalProperties:
+        type: boolean
+    AdminProfile:
+      type: object
+      required:
+        - id
+        - email
+        - fullName
+        - role
+        - isSuperAdmin
+        - permissions
+        - isActive
+        - mustChangePassword
+        - twoFactorEnabled
+      properties:
+        id:
+          type: string
+        email:
+          type: string
+        fullName:
+          type: string
+        role:
+          type: string
+          enum:
+            - super_admin
+            - admin
+            - moderator
+        isSuperAdmin:
+          type: boolean
+        permissions:
+          $ref: '#/components/schemas/Permissions'
+        avatar:
+          type: string
+          nullable: true
+        isActive:
+          type: boolean
+        mustChangePassword:
+          type: boolean
+        passwordChangedAt:
+          type: string
+          format: date-time
+          nullable: true
+        twoFactorEnabled:
+          type: boolean
+        lastLoginDate:
+          type: string
+          format: date-time
+          nullable: true
+        createdAt:
+          type: string
+          format: date-time
+        restrict:
+          type: string
+          nullable: true
+          enum:
+            - password_change
+            - totp_enrol
+            - null
+        liveSessions:
+          type: integer
+    SessionTokens:
+      type: object
+      required:
+        - accessToken
+        - refreshToken
+        - accessTokenExpiresAt
+        - expiresInSeconds
+        - sessionId
+        - admin
+      properties:
+        accessToken:
+          type: string
+        refreshToken:
+          type: string
+        accessTokenExpiresAt:
+          type: string
+          format: date-time
+        expiresInSeconds:
+          type: integer
+        sessionId:
+          type: string
+        restrict:
+          type: string
+          nullable: true
+          enum:
+            - password_change
+            - totp_enrol
+            - null
+        admin:
+          $ref: '#/components/schemas/AdminProfile'
+    LoginResult:
+      type: object
+      description: >-
+        `step: 'signed_in'` carries the session tokens; `step: 'totp_required'` carries a 5-minute challenge token for
+        POST /auth/login/totp.
+      required:
+        - step
+      properties:
+        step:
+          type: string
+          enum:
+            - signed_in
+            - totp_required
+        challengeToken:
+          type: string
+        expiresInSeconds:
+          type: integer
+        accessToken:
+          type: string
+        refreshToken:
+          type: string
+        accessTokenExpiresAt:
+          type: string
+          format: date-time
+        sessionId:
+          type: string
+        restrict:
+          type: string
+          nullable: true
+        admin:
+          $ref: '#/components/schemas/AdminProfile'
+    Session:
+      type: object
+      required:
+        - id
+        - createdAt
+        - lastUsedAt
+        - expiresAt
+        - current
+      properties:
+        id:
+          type: string
+        deviceLabel:
+          type: string
+          nullable: true
+        ip:
+          type: string
+          nullable: true
+        userAgent:
+          type: string
+          nullable: true
+        createdAt:
+          type: string
+          format: date-time
+        lastUsedAt:
+          type: string
+          format: date-time
+        expiresAt:
+          type: string
+          format: date-time
+        revokedAt:
+          type: string
+          format: date-time
+          nullable: true
+        revokedReason:
+          type: string
+          nullable: true
+        current:
+          type: boolean
+    HistoryEntry:
+      type: object
+      required:
+        - id
+        - action
+        - createdAt
+      properties:
+        id:
+          type: string
+        action:
+          type: string
+        actor:
+          type: object
+          nullable: true
+          properties:
+            id:
+              type: string
+            name:
+              type: string
+            role:
+              type: string
+        reason:
+          type: string
+          nullable: true
+        before:
+          nullable: true
+        after:
+          nullable: true
+        createdAt:
+          type: string
+          format: date-time
+    ProviderSummary:
+      type: object
+      required:
+        - id
+        - fullName
+        - email
+        - providerType
+        - state
+        - createdAt
+      properties:
+        id:
+          type: string
+        fullName:
+          type: string
+        email:
+          type: string
+        phoneNumber:
+          type: string
+          nullable: true
+        providerType:
+          type: string
+        providerSubType:
+          type: string
+          nullable: true
+        city:
+          type: string
+          nullable: true
+        profilePhoto:
+          type: string
+          nullable: true
+        state:
+          type: string
+          enum:
+            - incomplete
+            - pending
+            - approved
+            - rejected
+            - suspended
+        submittedAt:
+          type: string
+          format: date-time
+          nullable: true
+        createdAt:
+          type: string
+          format: date-time
+        approvedAt:
+          type: string
+          format: date-time
+          nullable: true
+        rejectionReason:
+          type: string
+          nullable: true
+        rating:
+          type: object
+          nullable: true
+          properties:
+            average:
+              type: number
+              nullable: true
+            count:
+              type: integer
+        isOnline:
+          type: boolean
+    ProviderDetail:
+      allOf:
+        - $ref: '#/components/schemas/ProviderSummary'
+        - type: object
+          properties:
+            emailVerified:
+              type: boolean
+            idNumber:
+              type: string
+              nullable: true
+            documents:
+              type: object
+              additionalProperties: true
+            suspendedReason:
+              type: string
+              nullable: true
+            suspendedAt:
+              type: string
+              format: date-time
+              nullable: true
+            history:
+              type: array
+              items:
+                $ref: '#/components/schemas/HistoryEntry'
+    UserSummary:
+      type: object
+      required:
+        - id
+        - fullName
+        - email
+        - isActive
+        - createdAt
+      properties:
+        id:
+          type: string
+        fullName:
+          type: string
+        email:
+          type: string
+        phoneNumber:
+          type: string
+          nullable: true
+        profilePhoto:
+          type: string
+          nullable: true
+        isActive:
+          type: boolean
+        emailVerified:
+          type: boolean
+        createdAt:
+          type: string
+          format: date-time
+        lastLoginAt:
+          type: string
+          format: date-time
+          nullable: true
+    UserDetail:
+      allOf:
+        - $ref: '#/components/schemas/UserSummary'
+        - type: object
+          properties:
+            counts:
+              type: object
+              required:
+                - bookings
+                - appointments
+                - orders
+                - posts
+              properties:
+                bookings:
+                  type: integer
+                appointments:
+                  type: integer
+                orders:
+                  type: integer
+                posts:
+                  type: integer
+            wallet:
+              type: object
+              nullable: true
+              properties:
+                balance:
+                  type: number
+                currency:
+                  type: string
+            history:
+              type: array
+              items:
+                $ref: '#/components/schemas/HistoryEntry'
+    DeletionResult:
+      type: object
+      required:
+        - id
+        - deletedAt
+        - restorable
+      properties:
+        id:
+          type: string
+        deletedAt:
+          type: string
+          format: date-time
+        restorable:
+          type: boolean
+    RestoreResult:
+      type: object
+      required:
+        - id
+        - restored
+        - email
+      properties:
+        id:
+          type: string
+        restored:
+          type: boolean
+        email:
+          type: string
+    Notification:
+      type: object
+      required:
+        - id
+        - type
+        - title
+        - message
+        - severity
+        - read
+        - createdAt
+      properties:
+        id:
+          type: string
+        type:
+          type: string
+        title:
+          type: string
+        message:
+          type: string
+        severity:
+          type: string
+          enum:
+            - info
+            - success
+            - warning
+            - error
+        target:
+          type: object
+          nullable: true
+          properties:
+            type:
+              type: string
+            id:
+              type: string
+        read:
+          type: boolean
+        createdAt:
+          type: string
+          format: date-time
+    Metric:
+      type: object
+      required:
+        - key
+        - label
+        - value
+        - unit
+        - period
+      properties:
+        key:
+          type: string
+        label:
+          type: string
+        value:
+          type: number
+          nullable: true
+        unit:
+          type: string
+        period:
+          type: string
+          enum:
+            - today
+            - now
+            - month_to_date
+            - all_time
+        delta:
+          type: number
+          nullable: true
+        comparedTo:
+          type: string
+    QueueSummary:
+      type: object
+      required:
+        - type
+        - label
+        - count
+        - requiredPermission
+      properties:
+        type:
+          type: string
+        label:
+          type: string
+        count:
+          type: integer
+          nullable: true
+        oldestAt:
+          type: string
+          format: date-time
+          nullable: true
+        requiredPermission:
+          type: string
+        status:
+          type: string
+        detail:
+          type: object
+          additionalProperties: true
+    QueueItem:
+      type: object
+      required:
+        - type
+        - id
+        - requiredPermission
+        - title
+        - target
+      properties:
+        type:
+          type: string
+        id:
+          type: string
+        waitingSince:
+          type: string
+          format: date-time
+          nullable: true
+        requiredPermission:
+          type: string
+        title:
+          type: string
+        subtitle:
+          type: string
+          nullable: true
+        amount:
+          type: object
+          properties:
+            value:
+              type: number
+            currency:
+              type: string
+        target:
+          type: object
+          properties:
+            type:
+              type: string
+            id:
+              type: string
+            orderId:
+              type: string
+              nullable: true
+    Vertical:
+      type: object
+      required:
+        - label
+        - status
+        - headline
+      properties:
+        label:
+          type: string
+        status:
+          type: string
+          enum:
+            - ok
+            - unavailable
+        headline:
+          type: array
+          items:
+            $ref: '#/components/schemas/Metric'
+    Overview:
+      type: object
+      required:
+        - generatedAt
+        - timezone
+        - currency
+        - queues
+        - kpis
+        - verticals
+        - recentActivity
+      properties:
+        generatedAt:
+          type: string
+          format: date-time
+        timezone:
+          type: string
+        currency:
+          type: string
+        queues:
+          type: array
+          items:
+            $ref: '#/components/schemas/QueueSummary'
+        kpis:
+          type: array
+          items:
+            $ref: '#/components/schemas/Metric'
+        verticals:
+          type: object
+          additionalProperties:
+            $ref: '#/components/schemas/Vertical'
+        recentActivity:
+          type: array
+          items:
+            type: object
+            additionalProperties: true
+    Option:
+      type: object
+      required:
+        - value
+        - label
+        - tone
+      properties:
+        value:
+          type: string
+        label:
+          type: string
+        tone:
+          type: string
+          enum:
+            - neutral
+            - info
+            - success
+            - warning
+            - danger
+    ConsoleMeta:
+      type: object
+      required:
+        - serverTime
+        - timezone
+        - currency
+        - platform
+        - viewer
+        - limits
+        - featureFlags
+        - roles
+        - permissions
+        - superAdminOnly
+        - enums
+        - specialties
+        - serviceCategories
+        - cities
+      properties:
+        serverTime:
+          type: string
+          format: date-time
+        timezone:
+          type: string
+        currency:
+          type: string
+        platform:
+          type: object
+          additionalProperties: true
+        viewer:
+          $ref: '#/components/schemas/AdminProfile'
+        limits:
+          type: object
+          required:
+            - maxPageSize
+            - adjustmentApprovalThreshold
+          properties:
+            maxPageSize:
+              type: integer
+            adjustmentApprovalThreshold:
+              type: number
+        featureFlags:
+          type: object
+          additionalProperties:
+            type: boolean
+        roles:
+          type: array
+          items:
+            type: object
+            additionalProperties: true
+        permissions:
+          type: array
+          items:
+            type: object
+            required:
+              - key
+              - label
+              - description
+            properties:
+              key:
+                type: string
+              label:
+                type: string
+              description:
+                type: string
+        superAdminOnly:
+          type: array
+          items:
+            type: string
+        enums:
+          type: object
+          additionalProperties:
+            type: array
+            items:
+              type: object
+              additionalProperties: true
+        specialties:
+          type: array
+          items:
+            type: object
+            additionalProperties: true
+        serviceCategories:
+          type: array
+          items:
+            type: object
+            additionalProperties: true
+        cities:
+          type: array
+          items:
+            type: string
+    SettingsResponse:
+      type: object
+      required:
+        - values
+        - spec
+      properties:
+        values:
+          type: object
+          additionalProperties: true
+        spec:
+          type: object
+          additionalProperties: true
+        updatedAt:
+          type: string
+          format: date-time
+          nullable: true
+        lastUpdatedBy:
+          type: string
+          nullable: true
+    SettingsUpdate:
+      type: object
+      required:
+        - section
+        - values
+        - updatedAt
+      properties:
+        section:
+          type: string
+        values:
+          type: object
+          additionalProperties: true
+        updatedAt:
+          type: string
+          format: date-time
+    WalletAdjustment:
+      type: object
+      required:
+        - id
+        - walletId
+        - direction
+        - amount
+        - reason
+        - status
+      properties:
+        id:
+          type: string
+        walletId:
+          type: string
+        direction:
+          type: string
+          enum:
+            - credit
+            - debit
+        amount:
+          type: number
+        currency:
+          type: string
+        reason:
+          type: string
+        status:
+          type: string
+          enum:
+            - pending
+            - applying
+            - applied
+            - rejected
+            - failed
+        requiresApproval:
+          type: boolean
+        requestedBy:
+          type: string
+          nullable: true
+        decidedBy:
+          type: string
+          nullable: true
+        createdAt:
+          type: string
+          format: date-time
+    Reconciliation:
+      type: object
+      required:
+        - totalUserBalance
+        - totalProviderBalance
+        - platformCommissionBalance
+        - sumOfAllWallets
+        - totalToppedUp
+        - totalPaidOut
+        - netAdjustments
+        - expected
+        - drift
+        - balanced
+        - computedAt
+      properties:
+        totalUserBalance:
+          type: number
+        totalProviderBalance:
+          type: number
+        platformCommissionBalance:
+          type: number
+        sumOfAllWallets:
+          type: number
+        totalToppedUp:
+          type: number
+        totalPaidOut:
+          type: number
+        netAdjustments:
+          type: number
+        expected:
+          type: number
+        drift:
+          type: number
+        balanced:
+          type: boolean
+        computedAt:
+          type: string
+          format: date-time
+    GenericEnvelope:
+      type: object
+      description: Module endpoint in the standard envelope; `data` shape is module-specific (not yet typed here).
+      required:
+        - success
+        - data
+      properties:
+        success:
+          type: boolean
+          enum:
+            - true
+        data:
+          nullable: true
+        meta:
+          $ref: '#/components/schemas/Meta'
+    RegistrationAnalytics:
+      type: object
+      required:
+        - range
+        - users
+        - providers
+        - posts
+      properties:
+        range:
+          type: object
+          additionalProperties: true
+        users:
+          type: object
+          additionalProperties: true
+        providers:
+          type: object
+          additionalProperties: true
+        posts:
+          type: object
+          additionalProperties: true
+paths:
+  /api/admin/admins:
+    get:
+      tags:
+        - Admin management
+      operationId: getAdminAdmins
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                required:
+                  - success
+                  - data
+                properties:
+                  success:
+                    type: boolean
+                    enum:
+                      - true
+                  data:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/AdminProfile'
+                  meta:
+                    $ref: '#/components/schemas/Meta'
+        '400':
+          $ref: '#/components/responses/ValidationFailed'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+      security:
+        - bearerAuth: []
+      x-guards:
+        - requirePermission(canManageAdmins)
+    post:
+      tags:
+        - Admin management
+      operationId: postAdminAdmins
+      responses:
+        '201':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                required:
+                  - success
+                  - data
+                properties:
+                  success:
+                    type: boolean
+                    enum:
+                      - true
+                  data:
+                    type: object
+                    required:
+                      - admin
+                      - temporaryPassword
+                    properties:
+                      admin:
+                        $ref: '#/components/schemas/AdminProfile'
+                      temporaryPassword:
+                        type: string
+        '400':
+          $ref: '#/components/responses/ValidationFailed'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '409':
+          $ref: '#/components/responses/Conflict'
+      security:
+        - bearerAuth: []
+      x-guards:
+        - requireSuperAdmin
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - email
+                - fullName
+              properties:
+                email:
+                  type: string
+                fullName:
+                  type: string
+                role:
+                  type: string
+                permissions:
+                  $ref: '#/components/schemas/Permissions'
+  /api/admin/admins/{adminId}:
+    get:
+      tags:
+        - Admin management
+      operationId: getAdminAdminsAdminId
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                required:
+                  - success
+                  - data
+                properties:
+                  success:
+                    type: boolean
+                    enum:
+                      - true
+                  data:
+                    allOf:
+                      - $ref: '#/components/schemas/AdminProfile'
+                      - type: object
+                        properties:
+                          storedPermissions:
+                            $ref: '#/components/schemas/Permissions'
+                          recentActions:
+                            type: array
+                            items:
+                              type: object
+                              additionalProperties: true
+        '400':
+          $ref: '#/components/responses/ValidationFailed'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+      parameters:
+        - name: adminId
+          in: path
+          required: true
+          schema:
+            type: string
+      security:
+        - bearerAuth: []
+      x-guards:
+        - requirePermission(canManageAdmins)
+    patch:
+      tags:
+        - Admin management
+      operationId: patchAdminAdminsAdminId
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                required:
+                  - success
+                  - data
+                properties:
+                  success:
+                    type: boolean
+                    enum:
+                      - true
+                  data:
+                    type: object
+                    required:
+                      - admin
+                      - sessionsSignedOut
+                    properties:
+                      admin:
+                        $ref: '#/components/schemas/AdminProfile'
+                      sessionsSignedOut:
+                        type: integer
+        '400':
+          $ref: '#/components/responses/ValidationFailed'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          $ref: '#/components/responses/Conflict'
+      parameters:
+        - name: adminId
+          in: path
+          required: true
+          schema:
+            type: string
+      security:
+        - bearerAuth: []
+      x-guards:
+        - requirePermission(canManageAdmins)
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: []
+              properties:
+                fullName:
+                  type: string
+                isActive:
+                  type: boolean
+                role:
+                  type: string
+                permissions:
+                  $ref: '#/components/schemas/Permissions'
+                reason:
+                  type: string
+  /api/admin/admins/{adminId}/reset-2fa:
+    post:
+      tags:
+        - Admin management
+      operationId: postAdminAdminsAdminIdReset2fa
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                required:
+                  - success
+                  - data
+                properties:
+                  success:
+                    type: boolean
+                    enum:
+                      - true
+                  data:
+                    type: object
+                    required:
+                      - twoFactorEnabled
+                      - sessionsSignedOut
+                    properties:
+                      twoFactorEnabled:
+                        type: boolean
+                      sessionsSignedOut:
+                        type: integer
+        '400':
+          $ref: '#/components/responses/ValidationFailed'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          $ref: '#/components/responses/Conflict'
+      parameters:
+        - name: adminId
+          in: path
+          required: true
+          schema:
+            type: string
+      security:
+        - bearerAuth: []
+      x-guards:
+        - requireSuperAdmin
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: true
+  /api/admin/admins/{adminId}/reset-password:
+    post:
+      tags:
+        - Admin management
+      operationId: postAdminAdminsAdminIdResetPassword
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                required:
+                  - success
+                  - data
+                properties:
+                  success:
+                    type: boolean
+                    enum:
+                      - true
+                  data:
+                    type: object
+                    required:
+                      - admin
+                      - temporaryPassword
+                      - sessionsSignedOut
+                    properties:
+                      admin:
+                        $ref: '#/components/schemas/AdminProfile'
+                      temporaryPassword:
+                        type: string
+                      sessionsSignedOut:
+                        type: integer
+        '400':
+          $ref: '#/components/responses/ValidationFailed'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          $ref: '#/components/responses/Conflict'
+      parameters:
+        - name: adminId
+          in: path
+          required: true
+          schema:
+            type: string
+      security:
+        - bearerAuth: []
+      x-guards:
+        - requirePermission(canManageAdmins)
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: true
+  /api/admin/admins/{adminId}/sessions:
+    get:
+      tags:
+        - Admin management
+      operationId: getAdminAdminsAdminIdSessions
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                required:
+                  - success
+                  - data
+                properties:
+                  success:
+                    type: boolean
+                    enum:
+                      - true
+                  data:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/Session'
+        '400':
+          $ref: '#/components/responses/ValidationFailed'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+      parameters:
+        - name: adminId
+          in: path
+          required: true
+          schema:
+            type: string
+      security:
+        - bearerAuth: []
+      x-guards:
+        - requirePermission(canManageAdmins)
+  /api/admin/admins/{adminId}/sessions/{sessionId}:
+    delete:
+      tags:
+        - Admin management
+      operationId: deleteAdminAdminsAdminIdSessionsSessionId
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                required:
+                  - success
+                  - data
+                properties:
+                  success:
+                    type: boolean
+                    enum:
+                      - true
+                  data:
+                    type: object
+                    required:
+                      - revoked
+                    properties:
+                      revoked:
+                        type: boolean
+        '400':
+          $ref: '#/components/responses/ValidationFailed'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          $ref: '#/components/responses/Conflict'
+      parameters:
+        - name: adminId
+          in: path
+          required: true
+          schema:
+            type: string
+        - name: sessionId
+          in: path
+          required: true
+          schema:
+            type: string
+      security:
+        - bearerAuth: []
+      x-guards:
+        - requirePermission(canManageAdmins)
+  /api/admin/analytics:
+    get:
+      tags:
+        - Analytics
+      operationId: getAdminAnalytics
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                required:
+                  - success
+                  - data
+                properties:
+                  success:
+                    type: boolean
+                    enum:
+                      - true
+                  data:
+                    $ref: '#/components/schemas/RegistrationAnalytics'
+        '400':
+          $ref: '#/components/responses/ValidationFailed'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+      security:
+        - bearerAuth: []
+      x-guards:
+        - requirePermission(canViewAnalytics)
+  /api/admin/auth/2fa/disable:
+    post:
+      tags:
+        - Authentication
+      operationId: postAdminAuth2faDisable
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                required:
+                  - success
+                  - data
+                properties:
+                  success:
+                    type: boolean
+                    enum:
+                      - true
+                  data:
+                    type: object
+                    required:
+                      - enabled
+                    properties:
+                      enabled:
+                        type: boolean
+        '400':
+          $ref: '#/components/responses/ValidationFailed'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '409':
+          $ref: '#/components/responses/Conflict'
+      security:
+        - bearerAuth: []
+      x-guards:
+        - selfScoped
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - currentPassword
+              properties:
+                currentPassword:
+                  type: string
+                code:
+                  type: string
+                recoveryCode:
+                  type: string
+  /api/admin/auth/2fa/enrol:
+    post:
+      tags:
+        - Authentication
+      operationId: postAdminAuth2faEnrol
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                required:
+                  - success
+                  - data
+                properties:
+                  success:
+                    type: boolean
+                    enum:
+                      - true
+                  data:
+                    type: object
+                    required:
+                      - secret
+                      - otpauthUrl
+                      - issuer
+                      - account
+                      - digits
+                      - periodSeconds
+                    properties:
+                      secret:
+                        type: string
+                      otpauthUrl:
+                        type: string
+                      issuer:
+                        type: string
+                      account:
+                        type: string
+                      digits:
+                        type: integer
+                      periodSeconds:
+                        type: integer
+        '400':
+          $ref: '#/components/responses/ValidationFailed'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '409':
+          $ref: '#/components/responses/Conflict'
+      security:
+        - bearerAuth: []
+      x-guards:
+        - selfScoped
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - currentPassword
+              properties:
+                currentPassword:
+                  type: string
+  /api/admin/auth/2fa/verify:
+    post:
+      tags:
+        - Authentication
+      operationId: postAdminAuth2faVerify
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                required:
+                  - success
+                  - data
+                properties:
+                  success:
+                    type: boolean
+                    enum:
+                      - true
+                  data:
+                    type: object
+                    required:
+                      - enabled
+                      - recoveryCodes
+                    properties:
+                      enabled:
+                        type: boolean
+                      recoveryCodes:
+                        type: array
+                        items:
+                          type: string
+        '400':
+          $ref: '#/components/responses/ValidationFailed'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '409':
+          $ref: '#/components/responses/Conflict'
+      security:
+        - bearerAuth: []
+      x-guards:
+        - selfScoped
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - code
+              properties:
+                code:
+                  type: string
+  /api/admin/auth/login:
+    post:
+      tags:
+        - Authentication
+      operationId: postAdminAuthLogin
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                required:
+                  - success
+                  - data
+                properties:
+                  success:
+                    type: boolean
+                    enum:
+                      - true
+                  data:
+                    $ref: '#/components/schemas/LoginResult'
+        '400':
+          $ref: '#/components/responses/ValidationFailed'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '409':
+          $ref: '#/components/responses/Conflict'
+        '429':
+          $ref: '#/components/responses/TooManyAttempts'
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - email
+                - password
+              properties:
+                email:
+                  type: string
+                  format: email
+                password:
+                  type: string
+                deviceLabel:
+                  type: string
+      description: >-
+        401: wrong email/password or TOTP code (identical for unknown emails). 403: account deactivated (only after the
+        password is proven). 429: locked out — see Retry-After.
+  /api/admin/auth/login/totp:
+    post:
+      tags:
+        - Authentication
+      operationId: postAdminAuthLoginTotp
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                required:
+                  - success
+                  - data
+                properties:
+                  success:
+                    type: boolean
+                    enum:
+                      - true
+                  data:
+                    $ref: '#/components/schemas/LoginResult'
+        '400':
+          $ref: '#/components/responses/ValidationFailed'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '409':
+          $ref: '#/components/responses/Conflict'
+        '429':
+          $ref: '#/components/responses/TooManyAttempts'
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - challengeToken
+              properties:
+                challengeToken:
+                  type: string
+                code:
+                  type: string
+                recoveryCode:
+                  type: string
+      description: >-
+        401: wrong email/password or TOTP code (identical for unknown emails). 403: account deactivated (only after the
+        password is proven). 429: locked out — see Retry-After.
+  /api/admin/auth/logout:
+    post:
+      tags:
+        - Authentication
+      operationId: postAdminAuthLogout
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                required:
+                  - success
+                  - data
+                properties:
+                  success:
+                    type: boolean
+                    enum:
+                      - true
+                  data:
+                    type: object
+                    required:
+                      - signedOut
+                    properties:
+                      signedOut:
+                        type: integer
+        '400':
+          $ref: '#/components/responses/ValidationFailed'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '409':
+          $ref: '#/components/responses/Conflict'
+      security:
+        - bearerAuth: []
+      x-guards:
+        - selfScoped
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: true
+  /api/admin/auth/logout-all:
+    post:
+      tags:
+        - Authentication
+      operationId: postAdminAuthLogoutAll
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                required:
+                  - success
+                  - data
+                properties:
+                  success:
+                    type: boolean
+                    enum:
+                      - true
+                  data:
+                    type: object
+                    required:
+                      - signedOut
+                    properties:
+                      signedOut:
+                        type: integer
+        '400':
+          $ref: '#/components/responses/ValidationFailed'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '409':
+          $ref: '#/components/responses/Conflict'
+      security:
+        - bearerAuth: []
+      x-guards:
+        - selfScoped
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: true
+  /api/admin/auth/refresh-token:
+    post:
+      tags:
+        - Authentication
+      operationId: postAdminAuthRefreshToken
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                required:
+                  - success
+                  - data
+                properties:
+                  success:
+                    type: boolean
+                    enum:
+                      - true
+                  data:
+                    $ref: '#/components/schemas/SessionTokens'
+        '400':
+          $ref: '#/components/responses/ValidationFailed'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '409':
+          $ref: '#/components/responses/Conflict'
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - refreshToken
+              properties:
+                refreshToken:
+                  type: string
+      description: >-
+        401: refresh token invalid, rotated (reuse revokes the session) or session idle/revoked. 403: account
+        deactivated.
+  /api/admin/bookings:
+    get:
+      tags:
+        - Home services
+      operationId: getAdminBookings
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/GenericEnvelope'
+        '400':
+          $ref: '#/components/responses/ValidationFailed'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+      security:
+        - bearerAuth: []
+      x-guards:
+        - requirePermission(canManageHomeServices)
+  /api/admin/bookings/{id}:
+    get:
+      tags:
+        - Home services
+      operationId: getAdminBookingsId
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/GenericEnvelope'
+        '400':
+          $ref: '#/components/responses/ValidationFailed'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      security:
+        - bearerAuth: []
+      x-guards:
+        - requirePermission(canManageHomeServices)
+  /api/admin/bookings/{id}/refund:
+    post:
+      tags:
+        - Home services
+      operationId: postAdminBookingsIdRefund
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/GenericEnvelope'
+        '201':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/GenericEnvelope'
+        '400':
+          $ref: '#/components/responses/ValidationFailed'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          $ref: '#/components/responses/Conflict'
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      security:
+        - bearerAuth: []
+      x-guards:
+        - requirePermission(canManageHomeServices+canManageFinance)
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: true
+  /api/admin/bookings/{id}/status:
+    patch:
+      tags:
+        - Home services
+      operationId: patchAdminBookingsIdStatus
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/GenericEnvelope'
+        '400':
+          $ref: '#/components/responses/ValidationFailed'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          $ref: '#/components/responses/Conflict'
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      security:
+        - bearerAuth: []
+      x-guards:
+        - requirePermission(canManageHomeServices)
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: true
+  /api/admin/change-password:
+    put:
+      tags:
+        - Own account
+      operationId: putAdminChangePassword
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                required:
+                  - success
+                  - data
+                properties:
+                  success:
+                    type: boolean
+                    enum:
+                      - true
+                  data:
+                    type: object
+                    required:
+                      - admin
+                      - restrict
+                      - otherSessionsSignedOut
+                    properties:
+                      admin:
+                        $ref: '#/components/schemas/AdminProfile'
+                      restrict:
+                        type: string
+                        nullable: true
+                      otherSessionsSignedOut:
+                        type: integer
+        '400':
+          $ref: '#/components/responses/ValidationFailed'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '409':
+          $ref: '#/components/responses/Conflict'
+      security:
+        - bearerAuth: []
+      x-guards:
+        - selfScoped
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - currentPassword
+                - newPassword
+              properties:
+                currentPassword:
+                  type: string
+                newPassword:
+                  type: string
+  /api/admin/disputes:
+    get:
+      tags:
+        - Home services
+      operationId: getAdminDisputes
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/GenericEnvelope'
+        '400':
+          $ref: '#/components/responses/ValidationFailed'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+      security:
+        - bearerAuth: []
+      x-guards:
+        - requirePermission(canManageHomeServices)
+  /api/admin/disputes/{id}:
+    patch:
+      tags:
+        - Home services
+      operationId: patchAdminDisputesId
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/GenericEnvelope'
+        '400':
+          $ref: '#/components/responses/ValidationFailed'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          $ref: '#/components/responses/Conflict'
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      security:
+        - bearerAuth: []
+      x-guards:
+        - requirePermission(canManageHomeServices)
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: true
+  /api/admin/homeservice/analytics:
+    get:
+      tags:
+        - Home services
+      operationId: getAdminHomeserviceAnalytics
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/GenericEnvelope'
+        '400':
+          $ref: '#/components/responses/ValidationFailed'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+      security:
+        - bearerAuth: []
+      x-guards:
+        - requirePermission(canManageHomeServices)
+  /api/admin/homeservice/dashboard:
+    get:
+      tags:
+        - Home services
+      operationId: getAdminHomeserviceDashboard
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/GenericEnvelope'
+        '400':
+          $ref: '#/components/responses/ValidationFailed'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+      security:
+        - bearerAuth: []
+      x-guards:
+        - requirePermission(canManageHomeServices)
+  /api/admin/homeservice/settings:
+    get:
+      tags:
+        - Home services
+      operationId: getAdminHomeserviceSettings
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/GenericEnvelope'
+        '400':
+          $ref: '#/components/responses/ValidationFailed'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+      security:
+        - bearerAuth: []
+      x-guards:
+        - requirePermission(canManageHomeServices)
+    patch:
+      tags:
+        - Home services
+      operationId: patchAdminHomeserviceSettings
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/GenericEnvelope'
+        '400':
+          $ref: '#/components/responses/ValidationFailed'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '409':
+          $ref: '#/components/responses/Conflict'
+      security:
+        - bearerAuth: []
+      x-guards:
+        - requirePermission(canManageHomeServices)
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: true
+  /api/admin/login:
+    post:
+      tags:
+        - Authentication
+      operationId: postAdminLogin
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                required:
+                  - success
+                  - data
+                properties:
+                  success:
+                    type: boolean
+                    enum:
+                      - true
+                  data:
+                    $ref: '#/components/schemas/LoginResult'
+        '400':
+          $ref: '#/components/responses/ValidationFailed'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '409':
+          $ref: '#/components/responses/Conflict'
+        '429':
+          $ref: '#/components/responses/TooManyAttempts'
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - email
+                - password
+              properties:
+                email:
+                  type: string
+                  format: email
+                password:
+                  type: string
+                deviceLabel:
+                  type: string
+      description: >-
+        401: wrong email/password or TOTP code (identical for unknown emails). 403: account deactivated (only after the
+        password is proven). 429: locked out — see Retry-After.
+  /api/admin/meta:
+    get:
+      tags:
+        - Console
+      operationId: getAdminMeta
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                required:
+                  - success
+                  - data
+                properties:
+                  success:
+                    type: boolean
+                    enum:
+                      - true
+                  data:
+                    $ref: '#/components/schemas/ConsoleMeta'
+        '400':
+          $ref: '#/components/responses/ValidationFailed'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+      security:
+        - bearerAuth: []
+  /api/admin/notifications:
+    get:
+      tags:
+        - Notifications
+      operationId: getAdminNotifications
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                required:
+                  - success
+                  - data
+                properties:
+                  success:
+                    type: boolean
+                    enum:
+                      - true
+                  data:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/Notification'
+                  meta:
+                    $ref: '#/components/schemas/Meta'
+        '400':
+          $ref: '#/components/responses/ValidationFailed'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+      security:
+        - bearerAuth: []
+      x-guards:
+        - selfScoped
+  /api/admin/notifications/{notificationId}:
+    delete:
+      tags:
+        - Notifications
+      operationId: deleteAdminNotificationsNotificationId
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                required:
+                  - success
+                  - data
+                properties:
+                  success:
+                    type: boolean
+                    enum:
+                      - true
+                  data:
+                    type: object
+                    required:
+                      - id
+                      - dismissed
+                    properties:
+                      id:
+                        type: string
+                      dismissed:
+                        type: boolean
+        '400':
+          $ref: '#/components/responses/ValidationFailed'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          $ref: '#/components/responses/Conflict'
+      parameters:
+        - name: notificationId
+          in: path
+          required: true
+          schema:
+            type: string
+      security:
+        - bearerAuth: []
+      x-guards:
+        - selfScoped
+  /api/admin/notifications/{notificationId}/read:
+    put:
+      tags:
+        - Notifications
+      operationId: putAdminNotificationsNotificationIdRead
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                required:
+                  - success
+                  - data
+                properties:
+                  success:
+                    type: boolean
+                    enum:
+                      - true
+                  data:
+                    type: object
+                    required:
+                      - id
+                      - read
+                    properties:
+                      id:
+                        type: string
+                      read:
+                        type: boolean
+        '400':
+          $ref: '#/components/responses/ValidationFailed'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          $ref: '#/components/responses/Conflict'
+      parameters:
+        - name: notificationId
+          in: path
+          required: true
+          schema:
+            type: string
+      security:
+        - bearerAuth: []
+      x-guards:
+        - selfScoped
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: true
+  /api/admin/notifications/clear-all:
+    delete:
+      tags:
+        - Notifications
+      operationId: deleteAdminNotificationsClearAll
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                required:
+                  - success
+                  - data
+                properties:
+                  success:
+                    type: boolean
+                    enum:
+                      - true
+                  data:
+                    type: object
+                    required:
+                      - dismissed
+                    properties:
+                      dismissed:
+                        type: integer
+        '400':
+          $ref: '#/components/responses/ValidationFailed'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '409':
+          $ref: '#/components/responses/Conflict'
+      security:
+        - bearerAuth: []
+      x-guards:
+        - selfScoped
+  /api/admin/notifications/purge:
+    delete:
+      tags:
+        - Notifications
+      operationId: deleteAdminNotificationsPurge
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                required:
+                  - success
+                  - data
+                properties:
+                  success:
+                    type: boolean
+                    enum:
+                      - true
+                  data:
+                    type: object
+                    required:
+                      - deleted
+                      - olderThanDays
+                    properties:
+                      deleted:
+                        type: integer
+                      olderThanDays:
+                        type: integer
+        '400':
+          $ref: '#/components/responses/ValidationFailed'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '409':
+          $ref: '#/components/responses/Conflict'
+      security:
+        - bearerAuth: []
+      x-guards:
+        - requirePermission(canManageNotifications)
+  /api/admin/notifications/read-all:
+    put:
+      tags:
+        - Notifications
+      operationId: putAdminNotificationsReadAll
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                required:
+                  - success
+                  - data
+                properties:
+                  success:
+                    type: boolean
+                    enum:
+                      - true
+                  data:
+                    type: object
+                    required:
+                      - marked
+                    properties:
+                      marked:
+                        type: integer
+        '400':
+          $ref: '#/components/responses/ValidationFailed'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '409':
+          $ref: '#/components/responses/Conflict'
+      security:
+        - bearerAuth: []
+      x-guards:
+        - selfScoped
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: true
+  /api/admin/notifications/unread-count:
+    get:
+      tags:
+        - Notifications
+      operationId: getAdminNotificationsUnreadCount
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                required:
+                  - success
+                  - data
+                properties:
+                  success:
+                    type: boolean
+                    enum:
+                      - true
+                  data:
+                    type: object
+                    required:
+                      - unread
+                    properties:
+                      unread:
+                        type: integer
+        '400':
+          $ref: '#/components/responses/ValidationFailed'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+      security:
+        - bearerAuth: []
+      x-guards:
+        - selfScoped
+  /api/admin/overview:
+    get:
+      tags:
+        - Console
+      operationId: getAdminOverview
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                required:
+                  - success
+                  - data
+                properties:
+                  success:
+                    type: boolean
+                    enum:
+                      - true
+                  data:
+                    $ref: '#/components/schemas/Overview'
+        '400':
+          $ref: '#/components/responses/ValidationFailed'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+      security:
+        - bearerAuth: []
+  /api/admin/payout-requests:
+    get:
+      tags:
+        - Home services
+      operationId: getAdminPayoutRequests
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/GenericEnvelope'
+        '400':
+          $ref: '#/components/responses/ValidationFailed'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+      security:
+        - bearerAuth: []
+      x-guards:
+        - requirePermission(canManageFinance)
+  /api/admin/payout-requests/{id}:
+    patch:
+      tags:
+        - Home services
+      operationId: patchAdminPayoutRequestsId
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/GenericEnvelope'
+        '400':
+          $ref: '#/components/responses/ValidationFailed'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          $ref: '#/components/responses/Conflict'
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      security:
+        - bearerAuth: []
+      x-guards:
+        - requirePermission(canManageFinance)
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: true
+  /api/admin/posts/{id}:
+    delete:
+      tags:
+        - Posts
+      operationId: deleteAdminPostsId
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                required:
+                  - success
+                  - data
+                properties:
+                  success:
+                    type: boolean
+                    enum:
+                      - true
+                  data:
+                    type: object
+                    required:
+                      - id
+                      - deleted
+                    properties:
+                      id:
+                        type: string
+                      deleted:
+                        type: boolean
+        '400':
+          $ref: '#/components/responses/ValidationFailed'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          $ref: '#/components/responses/Conflict'
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      security:
+        - bearerAuth: []
+      x-guards:
+        - requirePermission(canManagePosts)
+  /api/admin/profile:
+    get:
+      tags:
+        - Own account
+      operationId: getAdminProfile
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                required:
+                  - success
+                  - data
+                properties:
+                  success:
+                    type: boolean
+                    enum:
+                      - true
+                  data:
+                    $ref: '#/components/schemas/AdminProfile'
+        '400':
+          $ref: '#/components/responses/ValidationFailed'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+      security:
+        - bearerAuth: []
+      x-guards:
+        - selfScoped
+    put:
+      tags:
+        - Own account
+      operationId: putAdminProfile
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                required:
+                  - success
+                  - data
+                properties:
+                  success:
+                    type: boolean
+                    enum:
+                      - true
+                  data:
+                    $ref: '#/components/schemas/AdminProfile'
+        '400':
+          $ref: '#/components/responses/ValidationFailed'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '409':
+          $ref: '#/components/responses/Conflict'
+      security:
+        - bearerAuth: []
+      x-guards:
+        - selfScoped
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: true
+  /api/admin/provider-submissions:
+    post:
+      tags:
+        - Provider onboarding (not admin console)
+      operationId: postAdminProviderSubmissions
+      responses:
+        '200':
+          description: Legacy provider-app shape (not the admin envelope).
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: true
+        '201':
+          description: Legacy provider-app shape (not the admin envelope).
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: true
+        '400':
+          $ref: '#/components/responses/ValidationFailed'
+        '409':
+          $ref: '#/components/responses/Conflict'
+      security: []
+  /api/admin/provider-submissions/check-status:
+    get:
+      tags:
+        - Provider onboarding (not admin console)
+      operationId: getAdminProviderSubmissionsCheckStatus
+      responses:
+        '200':
+          description: Legacy provider-app shape (not the admin envelope).
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: true
+        '400':
+          $ref: '#/components/responses/ValidationFailed'
+      security: []
+  /api/admin/providers:
+    get:
+      tags:
+        - Providers
+      operationId: getAdminProviders
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                required:
+                  - success
+                  - data
+                properties:
+                  success:
+                    type: boolean
+                    enum:
+                      - true
+                  data:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/ProviderSummary'
+                  meta:
+                    $ref: '#/components/schemas/Meta'
+        '400':
+          $ref: '#/components/responses/ValidationFailed'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+      security:
+        - bearerAuth: []
+      x-guards:
+        - requirePermission(canApproveProviders)
+  /api/admin/providers/{providerId}:
+    get:
+      tags:
+        - Providers
+      operationId: getAdminProvidersProviderId
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                required:
+                  - success
+                  - data
+                properties:
+                  success:
+                    type: boolean
+                    enum:
+                      - true
+                  data:
+                    $ref: '#/components/schemas/ProviderDetail'
+        '400':
+          $ref: '#/components/responses/ValidationFailed'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+      parameters:
+        - name: providerId
+          in: path
+          required: true
+          schema:
+            type: string
+      security:
+        - bearerAuth: []
+      x-guards:
+        - requirePermission(canApproveProviders)
+    delete:
+      tags:
+        - Providers
+      operationId: deleteAdminProvidersProviderId
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                required:
+                  - success
+                  - data
+                properties:
+                  success:
+                    type: boolean
+                    enum:
+                      - true
+                  data:
+                    $ref: '#/components/schemas/DeletionResult'
+        '400':
+          $ref: '#/components/responses/ValidationFailed'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          $ref: '#/components/responses/Conflict'
+      parameters:
+        - name: providerId
+          in: path
+          required: true
+          schema:
+            type: string
+      security:
+        - bearerAuth: []
+      x-guards:
+        - requirePermission(canApproveProviders)
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - reason
+              properties:
+                reason:
+                  type: string
+  /api/admin/providers/{providerId}/approve:
+    put:
+      tags:
+        - Providers
+      operationId: putAdminProvidersProviderIdApprove
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                required:
+                  - success
+                  - data
+                properties:
+                  success:
+                    type: boolean
+                    enum:
+                      - true
+                  data:
+                    $ref: '#/components/schemas/ProviderDetail'
+        '400':
+          $ref: '#/components/responses/ValidationFailed'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          $ref: '#/components/responses/Conflict'
+      parameters:
+        - name: providerId
+          in: path
+          required: true
+          schema:
+            type: string
+      security:
+        - bearerAuth: []
+      x-guards:
+        - requirePermission(canApproveProviders)
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: true
+  /api/admin/providers/{providerId}/reject:
+    put:
+      tags:
+        - Providers
+      operationId: putAdminProvidersProviderIdReject
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                required:
+                  - success
+                  - data
+                properties:
+                  success:
+                    type: boolean
+                    enum:
+                      - true
+                  data:
+                    $ref: '#/components/schemas/ProviderDetail'
+        '400':
+          $ref: '#/components/responses/ValidationFailed'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          $ref: '#/components/responses/Conflict'
+      parameters:
+        - name: providerId
+          in: path
+          required: true
+          schema:
+            type: string
+      security:
+        - bearerAuth: []
+      x-guards:
+        - requirePermission(canApproveProviders)
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - reason
+              properties:
+                reason:
+                  type: string
+                notes:
+                  type: string
+  /api/admin/providers/{providerId}/restore:
+    post:
+      tags:
+        - Providers
+      operationId: postAdminProvidersProviderIdRestore
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                required:
+                  - success
+                  - data
+                properties:
+                  success:
+                    type: boolean
+                    enum:
+                      - true
+                  data:
+                    $ref: '#/components/schemas/RestoreResult'
+        '400':
+          $ref: '#/components/responses/ValidationFailed'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          $ref: '#/components/responses/Conflict'
+      parameters:
+        - name: providerId
+          in: path
+          required: true
+          schema:
+            type: string
+      security:
+        - bearerAuth: []
+      x-guards:
+        - requireSuperAdmin
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: true
+  /api/admin/providers/{providerId}/suspend:
+    put:
+      tags:
+        - Providers
+      operationId: putAdminProvidersProviderIdSuspend
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                required:
+                  - success
+                  - data
+                properties:
+                  success:
+                    type: boolean
+                    enum:
+                      - true
+                  data:
+                    $ref: '#/components/schemas/ProviderDetail'
+        '400':
+          $ref: '#/components/responses/ValidationFailed'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          $ref: '#/components/responses/Conflict'
+      parameters:
+        - name: providerId
+          in: path
+          required: true
+          schema:
+            type: string
+      security:
+        - bearerAuth: []
+      x-guards:
+        - requirePermission(canApproveProviders)
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - reason
+              properties:
+                reason:
+                  type: string
+  /api/admin/providers/{providerId}/unsuspend:
+    put:
+      tags:
+        - Providers
+      operationId: putAdminProvidersProviderIdUnsuspend
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                required:
+                  - success
+                  - data
+                properties:
+                  success:
+                    type: boolean
+                    enum:
+                      - true
+                  data:
+                    $ref: '#/components/schemas/ProviderDetail'
+        '400':
+          $ref: '#/components/responses/ValidationFailed'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          $ref: '#/components/responses/Conflict'
+      parameters:
+        - name: providerId
+          in: path
+          required: true
+          schema:
+            type: string
+      security:
+        - bearerAuth: []
+      x-guards:
+        - requirePermission(canApproveProviders)
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: true
+  /api/admin/queue:
+    get:
+      tags:
+        - Console
+      operationId: getAdminQueue
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                required:
+                  - success
+                  - data
+                properties:
+                  success:
+                    type: boolean
+                    enum:
+                      - true
+                  data:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/QueueItem'
+                  meta:
+                    $ref: '#/components/schemas/Meta'
+        '400':
+          $ref: '#/components/responses/ValidationFailed'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+      security:
+        - bearerAuth: []
+  /api/admin/service-categories:
+    get:
+      tags:
+        - Home services
+      operationId: getAdminServiceCategories
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/GenericEnvelope'
+        '400':
+          $ref: '#/components/responses/ValidationFailed'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+      security:
+        - bearerAuth: []
+      x-guards:
+        - requirePermission(canManageHomeServices)
+    post:
+      tags:
+        - Home services
+      operationId: postAdminServiceCategories
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/GenericEnvelope'
+        '201':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/GenericEnvelope'
+        '400':
+          $ref: '#/components/responses/ValidationFailed'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '409':
+          $ref: '#/components/responses/Conflict'
+      security:
+        - bearerAuth: []
+      x-guards:
+        - requirePermission(canManageHomeServices)
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: true
+  /api/admin/service-categories/{id}:
+    patch:
+      tags:
+        - Home services
+      operationId: patchAdminServiceCategoriesId
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/GenericEnvelope'
+        '400':
+          $ref: '#/components/responses/ValidationFailed'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          $ref: '#/components/responses/Conflict'
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      security:
+        - bearerAuth: []
+      x-guards:
+        - requirePermission(canManageHomeServices)
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: true
+    delete:
+      tags:
+        - Home services
+      operationId: deleteAdminServiceCategoriesId
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/GenericEnvelope'
+        '400':
+          $ref: '#/components/responses/ValidationFailed'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          $ref: '#/components/responses/Conflict'
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      security:
+        - bearerAuth: []
+      x-guards:
+        - requirePermission(canManageHomeServices)
+  /api/admin/sessions:
+    get:
+      tags:
+        - Own account
+      operationId: getAdminSessions
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                required:
+                  - success
+                  - data
+                properties:
+                  success:
+                    type: boolean
+                    enum:
+                      - true
+                  data:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/Session'
+        '400':
+          $ref: '#/components/responses/ValidationFailed'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+      security:
+        - bearerAuth: []
+      x-guards:
+        - selfScoped
+  /api/admin/sessions/{sessionId}:
+    delete:
+      tags:
+        - Own account
+      operationId: deleteAdminSessionsSessionId
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                required:
+                  - success
+                  - data
+                properties:
+                  success:
+                    type: boolean
+                    enum:
+                      - true
+                  data:
+                    type: object
+                    required:
+                      - revoked
+                      - current
+                    properties:
+                      revoked:
+                        type: boolean
+                      current:
+                        type: boolean
+        '400':
+          $ref: '#/components/responses/ValidationFailed'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          $ref: '#/components/responses/Conflict'
+      parameters:
+        - name: sessionId
+          in: path
+          required: true
+          schema:
+            type: string
+      security:
+        - bearerAuth: []
+      x-guards:
+        - selfScoped
+  /api/admin/settings:
+    get:
+      tags:
+        - Settings
+      operationId: getAdminSettings
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                required:
+                  - success
+                  - data
+                properties:
+                  success:
+                    type: boolean
+                    enum:
+                      - true
+                  data:
+                    $ref: '#/components/schemas/SettingsResponse'
+        '400':
+          $ref: '#/components/responses/ValidationFailed'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+      security:
+        - bearerAuth: []
+  /api/admin/settings/finance:
+    put:
+      tags:
+        - Settings
+      operationId: putAdminSettingsFinance
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                required:
+                  - success
+                  - data
+                properties:
+                  success:
+                    type: boolean
+                    enum:
+                      - true
+                  data:
+                    $ref: '#/components/schemas/SettingsUpdate'
+        '400':
+          $ref: '#/components/responses/ValidationFailed'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '409':
+          $ref: '#/components/responses/Conflict'
+      security:
+        - bearerAuth: []
+      x-guards:
+        - requireSuperAdmin
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: true
+  /api/admin/settings/general:
+    put:
+      tags:
+        - Settings
+      operationId: putAdminSettingsGeneral
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                required:
+                  - success
+                  - data
+                properties:
+                  success:
+                    type: boolean
+                    enum:
+                      - true
+                  data:
+                    $ref: '#/components/schemas/SettingsUpdate'
+        '400':
+          $ref: '#/components/responses/ValidationFailed'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '409':
+          $ref: '#/components/responses/Conflict'
+      security:
+        - bearerAuth: []
+      x-guards:
+        - requirePermission(canManageSettings)
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: true
+  /api/admin/settings/notifications:
+    put:
+      tags:
+        - Settings
+      operationId: putAdminSettingsNotifications
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                required:
+                  - success
+                  - data
+                properties:
+                  success:
+                    type: boolean
+                    enum:
+                      - true
+                  data:
+                    $ref: '#/components/schemas/SettingsUpdate'
+        '400':
+          $ref: '#/components/responses/ValidationFailed'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '409':
+          $ref: '#/components/responses/Conflict'
+      security:
+        - bearerAuth: []
+      x-guards:
+        - requirePermission(canManageSettings)
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: true
+  /api/admin/settings/security:
+    put:
+      tags:
+        - Settings
+      operationId: putAdminSettingsSecurity
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                required:
+                  - success
+                  - data
+                properties:
+                  success:
+                    type: boolean
+                    enum:
+                      - true
+                  data:
+                    $ref: '#/components/schemas/SettingsUpdate'
+        '400':
+          $ref: '#/components/responses/ValidationFailed'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '409':
+          $ref: '#/components/responses/Conflict'
+      security:
+        - bearerAuth: []
+      x-guards:
+        - requireSuperAdmin
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: true
+  /api/admin/users:
+    get:
+      tags:
+        - Users
+      operationId: getAdminUsers
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                required:
+                  - success
+                  - data
+                properties:
+                  success:
+                    type: boolean
+                    enum:
+                      - true
+                  data:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/UserSummary'
+                  meta:
+                    $ref: '#/components/schemas/Meta'
+        '400':
+          $ref: '#/components/responses/ValidationFailed'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+      security:
+        - bearerAuth: []
+      x-guards:
+        - requirePermission(canManageUsers)
+  /api/admin/users/{userId}:
+    get:
+      tags:
+        - Users
+      operationId: getAdminUsersUserId
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                required:
+                  - success
+                  - data
+                properties:
+                  success:
+                    type: boolean
+                    enum:
+                      - true
+                  data:
+                    $ref: '#/components/schemas/UserDetail'
+        '400':
+          $ref: '#/components/responses/ValidationFailed'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+      parameters:
+        - name: userId
+          in: path
+          required: true
+          schema:
+            type: string
+      security:
+        - bearerAuth: []
+      x-guards:
+        - requirePermission(canManageUsers)
+    delete:
+      tags:
+        - Users
+      operationId: deleteAdminUsersUserId
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                required:
+                  - success
+                  - data
+                properties:
+                  success:
+                    type: boolean
+                    enum:
+                      - true
+                  data:
+                    $ref: '#/components/schemas/DeletionResult'
+        '400':
+          $ref: '#/components/responses/ValidationFailed'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          $ref: '#/components/responses/Conflict'
+      parameters:
+        - name: userId
+          in: path
+          required: true
+          schema:
+            type: string
+      security:
+        - bearerAuth: []
+      x-guards:
+        - requirePermission(canManageUsers)
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - reason
+              properties:
+                reason:
+                  type: string
+  /api/admin/users/{userId}/activate:
+    put:
+      tags:
+        - Users
+      operationId: putAdminUsersUserIdActivate
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                required:
+                  - success
+                  - data
+                properties:
+                  success:
+                    type: boolean
+                    enum:
+                      - true
+                  data:
+                    $ref: '#/components/schemas/UserSummary'
+        '400':
+          $ref: '#/components/responses/ValidationFailed'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          $ref: '#/components/responses/Conflict'
+      parameters:
+        - name: userId
+          in: path
+          required: true
+          schema:
+            type: string
+      security:
+        - bearerAuth: []
+      x-guards:
+        - requirePermission(canManageUsers)
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: true
+  /api/admin/users/{userId}/deactivate:
+    put:
+      tags:
+        - Users
+      operationId: putAdminUsersUserIdDeactivate
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                required:
+                  - success
+                  - data
+                properties:
+                  success:
+                    type: boolean
+                    enum:
+                      - true
+                  data:
+                    $ref: '#/components/schemas/UserSummary'
+        '400':
+          $ref: '#/components/responses/ValidationFailed'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          $ref: '#/components/responses/Conflict'
+      parameters:
+        - name: userId
+          in: path
+          required: true
+          schema:
+            type: string
+      security:
+        - bearerAuth: []
+      x-guards:
+        - requirePermission(canManageUsers)
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - reason
+              properties:
+                reason:
+                  type: string
+  /api/admin/users/{userId}/restore:
+    post:
+      tags:
+        - Users
+      operationId: postAdminUsersUserIdRestore
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                required:
+                  - success
+                  - data
+                properties:
+                  success:
+                    type: boolean
+                    enum:
+                      - true
+                  data:
+                    $ref: '#/components/schemas/RestoreResult'
+        '400':
+          $ref: '#/components/responses/ValidationFailed'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          $ref: '#/components/responses/Conflict'
+      parameters:
+        - name: userId
+          in: path
+          required: true
+          schema:
+            type: string
+      security:
+        - bearerAuth: []
+      x-guards:
+        - requireSuperAdmin
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: true
+  /api/admin/wallets:
+    get:
+      tags:
+        - Finance
+      operationId: getAdminWallets
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/GenericEnvelope'
+        '400':
+          $ref: '#/components/responses/ValidationFailed'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+      security:
+        - bearerAuth: []
+      x-guards:
+        - requirePermission(canManageFinance)
+  /api/admin/wallets/{id}/adjust:
+    post:
+      tags:
+        - Finance
+      operationId: postAdminWalletsIdAdjust
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                required:
+                  - success
+                  - data
+                properties:
+                  success:
+                    type: boolean
+                    enum:
+                      - true
+                  data:
+                    type: object
+                    required:
+                      - adjustment
+                      - requiresApproval
+                    properties:
+                      adjustment:
+                        $ref: '#/components/schemas/WalletAdjustment'
+                      requiresApproval:
+                        type: boolean
+                      wallet:
+                        type: object
+                        additionalProperties: true
+                      transaction:
+                        type: object
+                        additionalProperties: true
+        '202':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                required:
+                  - success
+                  - data
+                properties:
+                  success:
+                    type: boolean
+                    enum:
+                      - true
+                  data:
+                    type: object
+                    required:
+                      - adjustment
+                      - requiresApproval
+                    properties:
+                      adjustment:
+                        $ref: '#/components/schemas/WalletAdjustment'
+                      requiresApproval:
+                        type: boolean
+                      wallet:
+                        type: object
+                        additionalProperties: true
+                      transaction:
+                        type: object
+                        additionalProperties: true
+        '400':
+          $ref: '#/components/responses/ValidationFailed'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          $ref: '#/components/responses/Conflict'
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      security:
+        - bearerAuth: []
+      x-guards:
+        - requirePermission(canManageFinance)
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - type
+                - amount
+                - reason
+              properties:
+                type:
+                  type: string
+                  enum:
+                    - credit
+                    - debit
+                amount:
+                  type: number
+                reason:
+                  type: string
+  /api/admin/wallets/{id}/transactions:
+    get:
+      tags:
+        - Finance
+      operationId: getAdminWalletsIdTransactions
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/GenericEnvelope'
+        '400':
+          $ref: '#/components/responses/ValidationFailed'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      security:
+        - bearerAuth: []
+      x-guards:
+        - requirePermission(canManageFinance)
+  /api/admin/wallets/adjustments:
+    get:
+      tags:
+        - Finance
+      operationId: getAdminWalletsAdjustments
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                required:
+                  - success
+                  - data
+                properties:
+                  success:
+                    type: boolean
+                    enum:
+                      - true
+                  data:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/WalletAdjustment'
+                  meta:
+                    $ref: '#/components/schemas/Meta'
+        '400':
+          $ref: '#/components/responses/ValidationFailed'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+      security:
+        - bearerAuth: []
+      x-guards:
+        - requirePermission(canManageFinance)
+  /api/admin/wallets/adjustments/{adjustmentId}/approve:
+    post:
+      tags:
+        - Finance
+      operationId: postAdminWalletsAdjustmentsAdjustmentIdApprove
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                required:
+                  - success
+                  - data
+                properties:
+                  success:
+                    type: boolean
+                    enum:
+                      - true
+                  data:
+                    type: object
+                    required:
+                      - adjustment
+                      - wallet
+                      - transaction
+                    properties:
+                      adjustment:
+                        $ref: '#/components/schemas/WalletAdjustment'
+                      wallet:
+                        type: object
+                        additionalProperties: true
+                      transaction:
+                        type: object
+                        additionalProperties: true
+        '400':
+          $ref: '#/components/responses/ValidationFailed'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          $ref: '#/components/responses/Conflict'
+      parameters:
+        - name: adjustmentId
+          in: path
+          required: true
+          schema:
+            type: string
+      security:
+        - bearerAuth: []
+      x-guards:
+        - requirePermission(canManageFinance)
+        - requireSuperAdmin
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: true
+  /api/admin/wallets/adjustments/{adjustmentId}/reject:
+    post:
+      tags:
+        - Finance
+      operationId: postAdminWalletsAdjustmentsAdjustmentIdReject
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                required:
+                  - success
+                  - data
+                properties:
+                  success:
+                    type: boolean
+                    enum:
+                      - true
+                  data:
+                    type: object
+                    required:
+                      - adjustment
+                    properties:
+                      adjustment:
+                        $ref: '#/components/schemas/WalletAdjustment'
+        '400':
+          $ref: '#/components/responses/ValidationFailed'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          $ref: '#/components/responses/Conflict'
+      parameters:
+        - name: adjustmentId
+          in: path
+          required: true
+          schema:
+            type: string
+      security:
+        - bearerAuth: []
+      x-guards:
+        - requirePermission(canManageFinance)
+        - requireSuperAdmin
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: true
+  /api/admin/wallets/reconciliation:
+    get:
+      tags:
+        - Finance
+      operationId: getAdminWalletsReconciliation
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                required:
+                  - success
+                  - data
+                properties:
+                  success:
+                    type: boolean
+                    enum:
+                      - true
+                  data:
+                    $ref: '#/components/schemas/Reconciliation'
+        '400':
+          $ref: '#/components/responses/ValidationFailed'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+      security:
+        - bearerAuth: []
+      x-guards:
+        - requirePermission(canManageFinance)
+  /api/shopping/admin/analytics:
+    get:
+      tags:
+        - Shopping
+      operationId: getShoppingAdminAnalytics
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/GenericEnvelope'
+        '400':
+          $ref: '#/components/responses/ValidationFailed'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+      security:
+        - bearerAuth: []
+      x-guards:
+        - requirePermission(canManageShopping)
+  /api/shopping/admin/banners:
+    get:
+      tags:
+        - Shopping
+      operationId: getShoppingAdminBanners
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/GenericEnvelope'
+        '400':
+          $ref: '#/components/responses/ValidationFailed'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+      security:
+        - bearerAuth: []
+      x-guards:
+        - requirePermission(canManageShopping)
+    post:
+      tags:
+        - Shopping
+      operationId: postShoppingAdminBanners
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/GenericEnvelope'
+        '201':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/GenericEnvelope'
+        '400':
+          $ref: '#/components/responses/ValidationFailed'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '409':
+          $ref: '#/components/responses/Conflict'
+      security:
+        - bearerAuth: []
+      x-guards:
+        - requirePermission(canManageShopping)
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: true
+  /api/shopping/admin/banners/{bannerId}:
+    patch:
+      tags:
+        - Shopping
+      operationId: patchShoppingAdminBannersBannerId
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/GenericEnvelope'
+        '400':
+          $ref: '#/components/responses/ValidationFailed'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          $ref: '#/components/responses/Conflict'
+      parameters:
+        - name: bannerId
+          in: path
+          required: true
+          schema:
+            type: string
+      security:
+        - bearerAuth: []
+      x-guards:
+        - requirePermission(canManageShopping)
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: true
+    delete:
+      tags:
+        - Shopping
+      operationId: deleteShoppingAdminBannersBannerId
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/GenericEnvelope'
+        '400':
+          $ref: '#/components/responses/ValidationFailed'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          $ref: '#/components/responses/Conflict'
+      parameters:
+        - name: bannerId
+          in: path
+          required: true
+          schema:
+            type: string
+      security:
+        - bearerAuth: []
+      x-guards:
+        - requirePermission(canManageShopping)
+  /api/shopping/admin/banners/{bannerId}/image:
+    post:
+      tags:
+        - Shopping
+      operationId: postShoppingAdminBannersBannerIdImage
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/GenericEnvelope'
+        '201':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/GenericEnvelope'
+        '400':
+          $ref: '#/components/responses/ValidationFailed'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          $ref: '#/components/responses/Conflict'
+      parameters:
+        - name: bannerId
+          in: path
+          required: true
+          schema:
+            type: string
+      security:
+        - bearerAuth: []
+      x-guards:
+        - requirePermission(canManageShopping)
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: true
+  /api/shopping/admin/brands:
+    get:
+      tags:
+        - Shopping
+      operationId: getShoppingAdminBrands
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/GenericEnvelope'
+        '400':
+          $ref: '#/components/responses/ValidationFailed'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+      security:
+        - bearerAuth: []
+      x-guards:
+        - requirePermission(canManageShopping)
+    post:
+      tags:
+        - Shopping
+      operationId: postShoppingAdminBrands
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/GenericEnvelope'
+        '201':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/GenericEnvelope'
+        '400':
+          $ref: '#/components/responses/ValidationFailed'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '409':
+          $ref: '#/components/responses/Conflict'
+      security:
+        - bearerAuth: []
+      x-guards:
+        - requirePermission(canManageShopping)
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: true
+  /api/shopping/admin/brands/{brandId}:
+    get:
+      tags:
+        - Shopping
+      operationId: getShoppingAdminBrandsBrandId
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/GenericEnvelope'
+        '400':
+          $ref: '#/components/responses/ValidationFailed'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+      parameters:
+        - name: brandId
+          in: path
+          required: true
+          schema:
+            type: string
+      security:
+        - bearerAuth: []
+      x-guards:
+        - requirePermission(canManageShopping)
+    patch:
+      tags:
+        - Shopping
+      operationId: patchShoppingAdminBrandsBrandId
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/GenericEnvelope'
+        '400':
+          $ref: '#/components/responses/ValidationFailed'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          $ref: '#/components/responses/Conflict'
+      parameters:
+        - name: brandId
+          in: path
+          required: true
+          schema:
+            type: string
+      security:
+        - bearerAuth: []
+      x-guards:
+        - requirePermission(canManageShopping)
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: true
+    delete:
+      tags:
+        - Shopping
+      operationId: deleteShoppingAdminBrandsBrandId
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/GenericEnvelope'
+        '400':
+          $ref: '#/components/responses/ValidationFailed'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          $ref: '#/components/responses/Conflict'
+      parameters:
+        - name: brandId
+          in: path
+          required: true
+          schema:
+            type: string
+      security:
+        - bearerAuth: []
+      x-guards:
+        - requirePermission(canManageShopping)
+  /api/shopping/admin/brands/{brandId}/status:
+    patch:
+      tags:
+        - Shopping
+      operationId: patchShoppingAdminBrandsBrandIdStatus
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/GenericEnvelope'
+        '400':
+          $ref: '#/components/responses/ValidationFailed'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          $ref: '#/components/responses/Conflict'
+      parameters:
+        - name: brandId
+          in: path
+          required: true
+          schema:
+            type: string
+      security:
+        - bearerAuth: []
+      x-guards:
+        - requirePermission(canManageShopping)
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: true
+  /api/shopping/admin/dashboard:
+    get:
+      tags:
+        - Shopping
+      operationId: getShoppingAdminDashboard
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/GenericEnvelope'
+        '400':
+          $ref: '#/components/responses/ValidationFailed'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+      security:
+        - bearerAuth: []
+      x-guards:
+        - requirePermission(canManageShopping)
+  /api/shopping/admin/orders:
+    get:
+      tags:
+        - Shopping
+      operationId: getShoppingAdminOrders
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/GenericEnvelope'
+        '400':
+          $ref: '#/components/responses/ValidationFailed'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+      security:
+        - bearerAuth: []
+      x-guards:
+        - requirePermission(canManageShopping)
+  /api/shopping/admin/orders/{orderId}:
+    get:
+      tags:
+        - Shopping
+      operationId: getShoppingAdminOrdersOrderId
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/GenericEnvelope'
+        '400':
+          $ref: '#/components/responses/ValidationFailed'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+      parameters:
+        - name: orderId
+          in: path
+          required: true
+          schema:
+            type: string
+      security:
+        - bearerAuth: []
+      x-guards:
+        - requirePermission(canManageShopping)
+  /api/shopping/admin/orders/{orderId}/refund:
+    post:
+      tags:
+        - Shopping
+      operationId: postShoppingAdminOrdersOrderIdRefund
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/GenericEnvelope'
+        '201':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/GenericEnvelope'
+        '400':
+          $ref: '#/components/responses/ValidationFailed'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          $ref: '#/components/responses/Conflict'
+      parameters:
+        - name: orderId
+          in: path
+          required: true
+          schema:
+            type: string
+      security:
+        - bearerAuth: []
+      x-guards:
+        - requirePermission(canManageShopping)
+        - requirePermission(canManageFinance)
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: true
+  /api/shopping/admin/orders/{orderId}/status:
+    patch:
+      tags:
+        - Shopping
+      operationId: patchShoppingAdminOrdersOrderIdStatus
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/GenericEnvelope'
+        '400':
+          $ref: '#/components/responses/ValidationFailed'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          $ref: '#/components/responses/Conflict'
+      parameters:
+        - name: orderId
+          in: path
+          required: true
+          schema:
+            type: string
+      security:
+        - bearerAuth: []
+      x-guards:
+        - requirePermission(canManageShopping)
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: true
+  /api/shopping/admin/outlets:
+    get:
+      tags:
+        - Shopping
+      operationId: getShoppingAdminOutlets
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/GenericEnvelope'
+        '400':
+          $ref: '#/components/responses/ValidationFailed'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+      security:
+        - bearerAuth: []
+      x-guards:
+        - requirePermission(canManageShopping)
+    post:
+      tags:
+        - Shopping
+      operationId: postShoppingAdminOutlets
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/GenericEnvelope'
+        '201':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/GenericEnvelope'
+        '400':
+          $ref: '#/components/responses/ValidationFailed'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '409':
+          $ref: '#/components/responses/Conflict'
+      security:
+        - bearerAuth: []
+      x-guards:
+        - requirePermission(canManageShopping)
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: true
+  /api/shopping/admin/outlets/{outletId}:
+    get:
+      tags:
+        - Shopping
+      operationId: getShoppingAdminOutletsOutletId
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/GenericEnvelope'
+        '400':
+          $ref: '#/components/responses/ValidationFailed'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+      parameters:
+        - name: outletId
+          in: path
+          required: true
+          schema:
+            type: string
+      security:
+        - bearerAuth: []
+      x-guards:
+        - requirePermission(canManageShopping)
+    put:
+      tags:
+        - Shopping
+      operationId: putShoppingAdminOutletsOutletId
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/GenericEnvelope'
+        '400':
+          $ref: '#/components/responses/ValidationFailed'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          $ref: '#/components/responses/Conflict'
+      parameters:
+        - name: outletId
+          in: path
+          required: true
+          schema:
+            type: string
+      security:
+        - bearerAuth: []
+      x-guards:
+        - requirePermission(canManageShopping)
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: true
+    delete:
+      tags:
+        - Shopping
+      operationId: deleteShoppingAdminOutletsOutletId
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/GenericEnvelope'
+        '400':
+          $ref: '#/components/responses/ValidationFailed'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          $ref: '#/components/responses/Conflict'
+      parameters:
+        - name: outletId
+          in: path
+          required: true
+          schema:
+            type: string
+      security:
+        - bearerAuth: []
+      x-guards:
+        - requirePermission(canManageShopping)
+  /api/shopping/admin/outlets/{outletId}/assign-brand:
+    patch:
+      tags:
+        - Shopping
+      operationId: patchShoppingAdminOutletsOutletIdAssignBrand
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/GenericEnvelope'
+        '400':
+          $ref: '#/components/responses/ValidationFailed'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          $ref: '#/components/responses/Conflict'
+      parameters:
+        - name: outletId
+          in: path
+          required: true
+          schema:
+            type: string
+      security:
+        - bearerAuth: []
+      x-guards:
+        - requirePermission(canManageShopping)
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: true
+  /api/shopping/admin/outlets/{outletId}/color-scheme:
+    patch:
+      tags:
+        - Shopping
+      operationId: patchShoppingAdminOutletsOutletIdColorScheme
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/GenericEnvelope'
+        '400':
+          $ref: '#/components/responses/ValidationFailed'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          $ref: '#/components/responses/Conflict'
+      parameters:
+        - name: outletId
+          in: path
+          required: true
+          schema:
+            type: string
+      security:
+        - bearerAuth: []
+      x-guards:
+        - requirePermission(canManageShopping)
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: true
+  /api/shopping/admin/outlets/{outletId}/toggle-status:
+    patch:
+      tags:
+        - Shopping
+      operationId: patchShoppingAdminOutletsOutletIdToggleStatus
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/GenericEnvelope'
+        '400':
+          $ref: '#/components/responses/ValidationFailed'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          $ref: '#/components/responses/Conflict'
+      parameters:
+        - name: outletId
+          in: path
+          required: true
+          schema:
+            type: string
+      security:
+        - bearerAuth: []
+      x-guards:
+        - requirePermission(canManageShopping)
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: true
+  /api/shopping/admin/settings:
+    get:
+      tags:
+        - Shopping
+      operationId: getShoppingAdminSettings
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/GenericEnvelope'
+        '400':
+          $ref: '#/components/responses/ValidationFailed'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+      security:
+        - bearerAuth: []
+      x-guards:
+        - requirePermission(canManageShopping)
+    patch:
+      tags:
+        - Shopping
+      operationId: patchShoppingAdminSettings
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/GenericEnvelope'
+        '400':
+          $ref: '#/components/responses/ValidationFailed'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '409':
+          $ref: '#/components/responses/Conflict'
+      security:
+        - bearerAuth: []
+      x-guards:
+        - requirePermission(canManageShopping)
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: true
+  /api/v1/admin/analytics/appointments:
+    get:
+      tags:
+        - Healthcare
+      operationId: getV1AdminAnalyticsAppointments
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/GenericEnvelope'
+        '400':
+          $ref: '#/components/responses/ValidationFailed'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+      security:
+        - bearerAuth: []
+      x-guards:
+        - requirePermission(canViewAnalytics)
+  /api/v1/admin/analytics/revenue:
+    get:
+      tags:
+        - Healthcare
+      operationId: getV1AdminAnalyticsRevenue
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/GenericEnvelope'
+        '400':
+          $ref: '#/components/responses/ValidationFailed'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+      security:
+        - bearerAuth: []
+      x-guards:
+        - requirePermission(canViewAnalytics)
+  /api/v1/admin/analytics/stats:
+    get:
+      tags:
+        - Healthcare
+      operationId: getV1AdminAnalyticsStats
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/GenericEnvelope'
+        '400':
+          $ref: '#/components/responses/ValidationFailed'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+      security:
+        - bearerAuth: []
+      x-guards:
+        - requirePermission(canViewAnalytics)
+  /api/v1/admin/appointments:
+    get:
+      tags:
+        - Healthcare
+      operationId: getV1AdminAppointments
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/GenericEnvelope'
+        '400':
+          $ref: '#/components/responses/ValidationFailed'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+      security:
+        - bearerAuth: []
+      x-guards:
+        - requirePermission(canManageHealthcare)
+  /api/v1/admin/appointments/{id}:
+    get:
+      tags:
+        - Healthcare
+      operationId: getV1AdminAppointmentsId
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/GenericEnvelope'
+        '400':
+          $ref: '#/components/responses/ValidationFailed'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      security:
+        - bearerAuth: []
+      x-guards:
+        - requirePermission(canManageHealthcare)
+  /api/v1/admin/appointments/{id}/refund:
+    post:
+      tags:
+        - Healthcare
+      operationId: postV1AdminAppointmentsIdRefund
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/GenericEnvelope'
+        '201':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/GenericEnvelope'
+        '400':
+          $ref: '#/components/responses/ValidationFailed'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          $ref: '#/components/responses/Conflict'
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      security:
+        - bearerAuth: []
+      x-guards:
+        - requirePermission(canManageHealthcare)
+        - requirePermission(canManageFinance)
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: true
+  /api/v1/admin/appointments/{id}/status:
+    patch:
+      tags:
+        - Healthcare
+      operationId: patchV1AdminAppointmentsIdStatus
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/GenericEnvelope'
+        '400':
+          $ref: '#/components/responses/ValidationFailed'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          $ref: '#/components/responses/Conflict'
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      security:
+        - bearerAuth: []
+      x-guards:
+        - requirePermission(canManageHealthcare)
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: true
+  /api/v1/admin/clinics:
+    get:
+      tags:
+        - Healthcare
+      operationId: getV1AdminClinics
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/GenericEnvelope'
+        '400':
+          $ref: '#/components/responses/ValidationFailed'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+      security:
+        - bearerAuth: []
+      x-guards:
+        - requirePermission(canManageHealthcare)
+  /api/v1/admin/clinics/{id}:
+    get:
+      tags:
+        - Healthcare
+      operationId: getV1AdminClinicsId
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/GenericEnvelope'
+        '400':
+          $ref: '#/components/responses/ValidationFailed'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      security:
+        - bearerAuth: []
+      x-guards:
+        - requirePermission(canManageHealthcare)
+  /api/v1/admin/clinics/{id}/status:
+    patch:
+      tags:
+        - Healthcare
+      operationId: patchV1AdminClinicsIdStatus
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/GenericEnvelope'
+        '400':
+          $ref: '#/components/responses/ValidationFailed'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          $ref: '#/components/responses/Conflict'
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      security:
+        - bearerAuth: []
+      x-guards:
+        - requirePermission(canManageHealthcare)
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: true
+  /api/v1/admin/doctors:
+    get:
+      tags:
+        - Healthcare
+      operationId: getV1AdminDoctors
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/GenericEnvelope'
+        '400':
+          $ref: '#/components/responses/ValidationFailed'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+      security:
+        - bearerAuth: []
+      x-guards:
+        - requirePermission(canManageHealthcare)
+  /api/v1/admin/doctors/{doctorId}:
+    get:
+      tags:
+        - Healthcare
+      operationId: getV1AdminDoctorsDoctorId
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/GenericEnvelope'
+        '400':
+          $ref: '#/components/responses/ValidationFailed'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+      parameters:
+        - name: doctorId
+          in: path
+          required: true
+          schema:
+            type: string
+      security:
+        - bearerAuth: []
+      x-guards:
+        - requirePermission(canManageHealthcare)
+    patch:
+      tags:
+        - Healthcare
+      operationId: patchV1AdminDoctorsDoctorId
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/GenericEnvelope'
+        '400':
+          $ref: '#/components/responses/ValidationFailed'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          $ref: '#/components/responses/Conflict'
+      parameters:
+        - name: doctorId
+          in: path
+          required: true
+          schema:
+            type: string
+      security:
+        - bearerAuth: []
+      x-guards:
+        - requirePermission(canManageHealthcare)
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: true
+  /api/v1/admin/doctors/{doctorId}/approve:
+    patch:
+      tags:
+        - Healthcare
+      operationId: patchV1AdminDoctorsDoctorIdApprove
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/GenericEnvelope'
+        '400':
+          $ref: '#/components/responses/ValidationFailed'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          $ref: '#/components/responses/Conflict'
+      parameters:
+        - name: doctorId
+          in: path
+          required: true
+          schema:
+            type: string
+      security:
+        - bearerAuth: []
+      x-guards:
+        - requirePermission(canManageHealthcare)
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: true
+  /api/v1/admin/doctors/{doctorId}/documents:
+    get:
+      tags:
+        - Healthcare
+      operationId: getV1AdminDoctorsDoctorIdDocuments
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/GenericEnvelope'
+        '400':
+          $ref: '#/components/responses/ValidationFailed'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+      parameters:
+        - name: doctorId
+          in: path
+          required: true
+          schema:
+            type: string
+      security:
+        - bearerAuth: []
+      x-guards:
+        - requirePermission(canManageHealthcare)
+  /api/v1/admin/doctors/{doctorId}/reject:
+    patch:
+      tags:
+        - Healthcare
+      operationId: patchV1AdminDoctorsDoctorIdReject
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/GenericEnvelope'
+        '400':
+          $ref: '#/components/responses/ValidationFailed'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          $ref: '#/components/responses/Conflict'
+      parameters:
+        - name: doctorId
+          in: path
+          required: true
+          schema:
+            type: string
+      security:
+        - bearerAuth: []
+      x-guards:
+        - requirePermission(canManageHealthcare)
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: true
+  /api/v1/admin/doctors/{doctorId}/status:
+    patch:
+      tags:
+        - Healthcare
+      operationId: patchV1AdminDoctorsDoctorIdStatus
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/GenericEnvelope'
+        '400':
+          $ref: '#/components/responses/ValidationFailed'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          $ref: '#/components/responses/Conflict'
+      parameters:
+        - name: doctorId
+          in: path
+          required: true
+          schema:
+            type: string
+      security:
+        - bearerAuth: []
+      x-guards:
+        - requirePermission(canManageHealthcare)
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: true
+  /api/v1/admin/doctors/pending:
+    get:
+      tags:
+        - Healthcare
+      operationId: getV1AdminDoctorsPending
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/GenericEnvelope'
+        '400':
+          $ref: '#/components/responses/ValidationFailed'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+      security:
+        - bearerAuth: []
+      x-guards:
+        - requirePermission(canManageHealthcare)
+  /api/v1/admin/healthcare/dashboard:
+    get:
+      tags:
+        - Healthcare
+      operationId: getV1AdminHealthcareDashboard
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/GenericEnvelope'
+        '400':
+          $ref: '#/components/responses/ValidationFailed'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+      security:
+        - bearerAuth: []
+      x-guards:
+        - requirePermission(canManageHealthcare)
+  /api/v1/admin/healthcare/reviews:
+    get:
+      tags:
+        - Healthcare
+      operationId: getV1AdminHealthcareReviews
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/GenericEnvelope'
+        '400':
+          $ref: '#/components/responses/ValidationFailed'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+      security:
+        - bearerAuth: []
+      x-guards:
+        - requirePermission(canManageHealthcare)
+  /api/v1/admin/healthcare/reviews/{id}:
+    delete:
+      tags:
+        - Healthcare
+      operationId: deleteV1AdminHealthcareReviewsId
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/GenericEnvelope'
+        '400':
+          $ref: '#/components/responses/ValidationFailed'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          $ref: '#/components/responses/Conflict'
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      security:
+        - bearerAuth: []
+      x-guards:
+        - requirePermission(canManageHealthcare)
+  /api/v1/admin/healthcare/settings:
+    get:
+      tags:
+        - Healthcare
+      operationId: getV1AdminHealthcareSettings
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/GenericEnvelope'
+        '400':
+          $ref: '#/components/responses/ValidationFailed'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+      security:
+        - bearerAuth: []
+      x-guards:
+        - requirePermission(canManageHealthcare)
+    patch:
+      tags:
+        - Healthcare
+      operationId: patchV1AdminHealthcareSettings
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/GenericEnvelope'
+        '400':
+          $ref: '#/components/responses/ValidationFailed'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '409':
+          $ref: '#/components/responses/Conflict'
+      security:
+        - bearerAuth: []
+      x-guards:
+        - requirePermission(canManageHealthcare)
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: true
+  /api/v1/admin/specialties:
+    get:
+      tags:
+        - Healthcare
+      operationId: getV1AdminSpecialties
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/GenericEnvelope'
+        '400':
+          $ref: '#/components/responses/ValidationFailed'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+      security:
+        - bearerAuth: []
+    post:
+      tags:
+        - Healthcare
+      operationId: postV1AdminSpecialties
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/GenericEnvelope'
+        '201':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/GenericEnvelope'
+        '400':
+          $ref: '#/components/responses/ValidationFailed'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '409':
+          $ref: '#/components/responses/Conflict'
+      security:
+        - bearerAuth: []
+      x-guards:
+        - requirePermission(canManageHealthcare)
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: true
+  /api/v1/admin/specialties/{id}:
+    patch:
+      tags:
+        - Healthcare
+      operationId: patchV1AdminSpecialtiesId
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/GenericEnvelope'
+        '400':
+          $ref: '#/components/responses/ValidationFailed'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          $ref: '#/components/responses/Conflict'
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      security:
+        - bearerAuth: []
+      x-guards:
+        - requirePermission(canManageHealthcare)
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: true
+    delete:
+      tags:
+        - Healthcare
+      operationId: deleteV1AdminSpecialtiesId
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/GenericEnvelope'
+        '400':
+          $ref: '#/components/responses/ValidationFailed'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          $ref: '#/components/responses/Conflict'
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      security:
+        - bearerAuth: []
+      x-guards:
+        - requirePermission(canManageHealthcare)
