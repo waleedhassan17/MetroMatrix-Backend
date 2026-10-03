@@ -6,6 +6,7 @@ const ServiceCategory = require('../models/ServiceCategory');
 const ProviderReview = require('../models/ProviderReview');
 const User = require('../../../models/User');
 const WalletService = require('../../../services/walletService');
+const { DEFAULT_TIMEZONE } = require('../../../utils/time');
 const { refundBookingToCustomer, refundState } = require('../services/bookingRefunds');
 const { transition } = require('../services/bookingService');
 const { STATUS } = require('../services/statusMap');
@@ -534,7 +535,8 @@ const analytics = asyncHandler(async (req, res) => {
         { $match: range },
         {
           $group: {
-            _id: { $dateToString: { format: '%Y-%m-%d', date: '$createdAt' } },
+            // Pakistan days, not UTC: a booking at 02:00 PKT belongs to that day.
+            _id: { $dateToString: { format: '%Y-%m-%d', date: '$createdAt', timezone: DEFAULT_TIMEZONE } },
             count: { $sum: 1 },
           },
         },
@@ -594,14 +596,16 @@ const analytics = asyncHandler(async (req, res) => {
     byStatus: byStatus.map((x) => ({ status: x._id, count: x.count })),
     revenue,
     commission: Math.round(revenue * (settings.commissionPercent / 100)),
-    averageCompletionMinutes: Math.round((completionAgg[0] && completionAgg[0].avgMinutes) || 0),
-    cancellationRate: totalInRange ? Math.round((cancelled / totalInRange) * 100) : 0,
+    // null, not 0, when there is nothing to measure: "0 min" and "0 %" read as facts.
+    averageCompletionMinutes: completionAgg[0] ? Math.round(completionAgg[0].avgMinutes) : null,
+    cancellationRate: totalInRange ? Math.round((cancelled / totalInRange) * 100) : null,
+    timezone: DEFAULT_TIMEZONE,
     topProviders: topProviders.map((x) => ({
       id: String(x._id),
       name: x.name || 'Provider',
       jobs: x.jobs,
       gross: x.gross,
-      rating: x.rating || 0,
+      rating: typeof x.rating === 'number' ? x.rating : null,
     })),
   }, 'Analytics fetched');
 });
