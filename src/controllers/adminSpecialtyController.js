@@ -106,9 +106,25 @@ const updateSpecialty = asyncHandler(async (req, res) => {
   if (description !== undefined) specialty.description = description;
   if (commonConditions !== undefined) specialty.commonConditions = commonConditions;
 
+  // Reactivation. Deactivating goes through DELETE, which refuses while
+  // verified doctors still use the specialty; switching one back on is always
+  // safe. Before this existed the app "reactivated" locally and the next
+  // refresh showed the specialty inactive again.
+  const reactivate = req.body.isActive === true && specialty.isActive === false;
+  if (reactivate) specialty.isActive = true;
+
   await specialty.save();
   const changes = diff(before, snapshot(specialty));
-  await audit(req, 'specialty.update', specialty, changes);
+  if (Object.keys(changes.after || {}).length || !reactivate) {
+    await audit(req, 'specialty.update', specialty, changes);
+  }
+  if (reactivate) {
+    await audit(req, 'specialty.reactivate', specialty, {
+      before: { isActive: false },
+      after: { isActive: true },
+      reason: req.body.reason,
+    });
+  }
 
   ok(res, specialty);
 });
