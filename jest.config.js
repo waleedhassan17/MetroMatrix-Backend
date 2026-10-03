@@ -10,4 +10,9 @@ module.exports = {
   setupFiles: ['<rootDir>/test/setupEnv.js'],
   testPathIgnorePatterns: ['/node_modules/'],
   coveragePathIgnorePatterns: ['/node_modules/', '<rootDir>/test/'],
+  // Every suite shares one replica set and hashes real bcrypt passwords; with
+  // all suites in parallel the 5 s default timed out a different test on each
+  // run. Half the cores and a 30 s ceiling keep the run deterministic.
+  maxWorkers: '50%',
+  testTimeout: 30000,
 };

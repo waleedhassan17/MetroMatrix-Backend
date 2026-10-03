@@ -16,6 +16,7 @@ const mongoose = require('mongoose');
 const { connect, clear, disconnect } = require('../../test/helpers/db');
 const { createAdmin, createProvider, createUser } = require('../../test/helpers/factories');
 const { api, signIn } = require('../../test/helpers/agent');
+const { eventually } = require('../../test/helpers/eventually');
 const { monthWindows, growthPct } = require('../utils/time');
 const Provider = require('../models/Provider');
 const User = require('../models/User');
@@ -296,7 +297,10 @@ describe('notifications are per admin', () => {
 
   it('new customers notify the admins who manage users', async () => {
     await createUser();
-    expect(await Notification.countDocuments({ type: 'user_registration', requiredPermission: 'canManageUsers' })).toBe(1);
+    // Raised best-effort after the save (never blocks sign-up), so wait for it.
+    await eventually(async () =>
+      expect(await Notification.countDocuments({ type: 'user_registration', requiredPermission: 'canManageUsers' })).toBe(1)
+    );
   });
 });
 
