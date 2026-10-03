@@ -2,6 +2,7 @@ const crypto = require('crypto');
 const mongoose = require('mongoose');
 const Wallet = require('../models/Wallet');
 const WalletTransaction = require('../models/WalletTransaction');
+const WalletAdjustment = require('../models/WalletAdjustment');
 const { WALLET_CURRENCY, PKR_PER_USD, usdCentsToPkr } = require('../config/currency');
 
 // Fixed sentinel owner id for the singleton Platform commission ledger
@@ -1120,6 +1121,17 @@ class WalletService {
           ],
           { session }
         );
+        // Claim the adjustment inside the same transaction. The unique
+        // idempotency key already blocks a second ledger row, but only once
+        // its index exists; this conditional write does not depend on any
+        // index, and two concurrent applies conflict on it, so the loser
+        // aborts and nothing it did (balance, ledger row) is kept.
+        const claim = await WalletAdjustment.updateOne(
+          { _id: adjustment._id, transaction: null },
+          { $set: { transaction: transaction._id } },
+          { session }
+        );
+        if (claim.modifiedCount !== 1) throw new Error('This adjustment has already been applied');
         out = { wallet: updated, transaction, balanceBefore };
       });
       return out;

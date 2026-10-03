@@ -6,6 +6,7 @@ const ServiceCategory = require('../models/ServiceCategory');
 const ProviderReview = require('../models/ProviderReview');
 const User = require('../../../models/User');
 const WalletService = require('../../../services/walletService');
+const { refundBookingToCustomer, refundState } = require('../services/bookingRefunds');
 const { transition } = require('../services/bookingService');
 const { STATUS } = require('../services/statusMap');
 const {
@@ -122,9 +123,10 @@ const getBookingDetail = asyncHandler(async (req, res) => {
     res.status(404);
     throw new Error('Booking not found');
   }
-  const [dispute, review] = await Promise.all([
+  const [dispute, review, refund] = await Promise.all([
     Dispute.findOne({ booking: b._id }),
     ProviderReview.findOne({ booking: b._id }),
+    refundState(b),
   ]);
   ok(res, {
     ...bookingListItem(b),
@@ -151,6 +153,8 @@ const getBookingDetail = asyncHandler(async (req, res) => {
       ? { id: String(dispute._id), status: dispute.status, reason: dispute.reason }
       : null,
     review: review ? { rating: review.rating, comment: review.comment } : null,
+    // { paid, refunded, remaining } — what an admin refund can still return.
+    refund,
   }, 'Booking detail fetched');
 });
 
@@ -181,17 +185,10 @@ const refundBooking = asyncHandler(async (req, res) => {
     res.status(404);
     throw new Error('Booking not found');
   }
-  const refundAmount = Number(amount) || b.pricing.finalPrice || b.pricing.estimatedPrice;
-  if (refundAmount <= 0) {
-    res.status(400);
-    throw new Error('Refund amount must be positive');
-  }
-
-  const { transaction: tx } = await WalletService.refund({
-    ownerType: 'User',
-    ownerId: b.customer,
-    amount: refundAmount,
-    relatedTo: { kind: 'Booking', id: b._id },
+  // Capped at what the customer paid minus refunds already issued
+  // (services/bookingRefunds.js); omitting the amount refunds the remainder.
+  const { amount: refundAmount, transaction: tx, remainingAfter } = await refundBookingToCustomer(b, {
+    amount,
     description: `Admin refund — booking ${b._id}: ${reason}`,
     metadata: { bookingId: String(b._id), adminId: String(req.user._id) },
   });
@@ -200,7 +197,7 @@ const refundBooking = asyncHandler(async (req, res) => {
     { paymentStatus: b.payment.status },
     { refundAmount, transactionId: String(tx._id) }, reason);
 
-  ok(res, { refunded: true, amount: refundAmount, transactionId: String(tx._id) }, 'Refund issued');
+  ok(res, { refunded: true, amount: refundAmount, remainingRefundable: remainingAfter, transactionId: String(tx._id) }, 'Refund issued');
 });
 
 // ---------- 2. DISPUTES ----------
@@ -304,15 +301,14 @@ const resolveDispute = asyncHandler(async (req, res) => {
   }
 
   if (refundAmount && Number(refundAmount) > 0 && d.booking) {
-    await WalletService.refund({
-      ownerType: 'User',
-      ownerId: d.booking.customer,
+    // Same cap as the admin refund: a dispute refund on top of an earlier
+    // refund cannot pay out more than the customer paid.
+    await refundBookingToCustomer(d.booking, {
       amount: Number(refundAmount),
-      relatedTo: { kind: 'Booking', id: d.booking._id },
       description: `Dispute refund — booking ${d.booking._id}`,
       metadata: { disputeId: String(d._id), adminId: String(req.user._id) },
     });
-    d.refundAmount = Number(refundAmount);
+    d.refundAmount = (d.refundAmount || 0) + Number(refundAmount);
   }
 
   if (penalizeProvider && Number(penalizeProvider) > 0 && d.booking) {

@@ -84,6 +84,11 @@ const bookingSchema = new mongoose.Schema(
       // Set while a settlement (wallet payment or cash confirmation) is in
       // flight — see claimSettlement in services/paymentService.js.
       settlingSince: { type: Date, default: null },
+      // Total refunded to the customer (admin and dispute refunds). Claimed
+      // with a conditional update before any money moves, so two refunds can
+      // never both pass the "not more than was paid" check.
+      // See services/bookingRefunds.js.
+      refundedAmount: { type: Number, default: 0 },
     },
     cancellation: {
       // 'system' is the platform withdrawing a request nobody chose to drop:
