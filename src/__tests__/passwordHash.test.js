@@ -81,7 +81,7 @@ describe('password pre-save hook (P0 double-hash fix)', () => {
   });
 
   it('survives a re-save that does not touch the password (the actual bug)', async () => {
-    const doc = makeDoc({ email: 'waleedhassansfd@gmail.com', password: 'secret123' });
+    const doc = makeDoc({ email: 'admin@example.com', password: 'secret123' });
     await doc.save();
     const hashAfterCreate = doc.password;
 

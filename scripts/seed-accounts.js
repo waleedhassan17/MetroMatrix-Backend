@@ -1,53 +1,28 @@
 /**
- * Demo/production account seed — idempotent (upsert by email).
+ * Demo account seed — idempotent (upsert by email).
  *
  * Creates:
- *   - Super admin:        waleedhassansfd@gmail.com / Waleed@104
- *   - Outfitters vendor:  vendor.outfitters@metromatrix.pk / 123456 (approved)
- *   - 3 dummy customers:  user1|user2|user3@metromatrix.pk / 123456
+ *   - Outfitters vendor:  vendor.outfitters@metromatrix.pk (approved)
+ *   - 3 dummy customers:  user1|user2|user3@metromatrix.pk
+ *
+ * Every account gets SEED_DEMO_PASSWORD (never printed). Admins are NOT seeded
+ * here — use `npm run seed:admin`, which reads its credentials from the
+ * environment and forces a password change on first sign-in.
  *
  * Passwords are set through the models so the pre-save bcrypt hooks run.
- * Run: node scripts/seed-accounts.js
+ * Run: SEED_DEMO_PASSWORD=… node scripts/seed-accounts.js --confirm-db=<db name>
  */
 require('dotenv').config();
 const mongoose = require('mongoose');
 
-const Admin = require('../src/models/Admin');
 const User = require('../src/models/User');
 const Provider = require('../src/models/Provider');
 const WalletService = require('../src/services/walletService');
+const { assertSafeSeedTarget, demoPassword } = require('./lib/seedSafety');
 
 const log = (msg) => console.log(`  ${msg}`);
 
-async function upsertAdmin() {
-  const email = 'waleedhassansfd@gmail.com';
-  let admin = await Admin.findOne({ email }).select('+password');
-  if (!admin) {
-    admin = new Admin({
-      email,
-      fullName: 'Waleed Hassan',
-      role: 'super_admin',
-      isSuperAdmin: true,
-      isActive: true,
-    });
-    log(`admin created: ${email}`);
-  } else {
-    log(`admin exists: ${email} (password + permissions refreshed)`);
-  }
-  admin.password = 'Waleed@104'; // pre-save hook hashes it
-  admin.isSuperAdmin = true;
-  admin.isActive = true;
-  admin.permissions = {
-    ...(admin.permissions ? admin.permissions.toObject() : {}),
-    canManageShopping: true,
-    canManageSettings: true,
-    canApproveProviders: true,
-    canViewAnalytics: true,
-  };
-  await admin.save();
-}
-
-async function upsertVendor() {
+async function upsertVendor(password) {
   const email = 'vendor.outfitters@metromatrix.pk';
   let vendor = await Provider.findOne({ email }).select('+password');
   if (!vendor) {
@@ -62,7 +37,7 @@ async function upsertVendor() {
   } else {
     log(`vendor exists: ${email} (password refreshed)`);
   }
-  vendor.password = '123456';
+  vendor.password = password;
   vendor.providerType = 'vendor';
   vendor.emailVerified = 'active';
   vendor.adminVerified = 'active';
@@ -70,7 +45,7 @@ async function upsertVendor() {
   await vendor.save();
 }
 
-async function upsertUsers() {
+async function upsertUsers(password) {
   const USERS = [
     { email: 'user1@metromatrix.pk', fullName: 'Ali Hamza', phoneNumber: '03005550101' },
     { email: 'user2@metromatrix.pk', fullName: 'Zara Ahmed', phoneNumber: '03005550102' },
@@ -84,7 +59,7 @@ async function upsertUsers() {
     } else {
       log(`user exists: ${spec.email} (password refreshed)`);
     }
-    user.password = '123456';
+    user.password = password;
     user.isActive = true;
     await user.save();
 
@@ -105,16 +80,16 @@ async function upsertUsers() {
 }
 
 async function main() {
+  assertSafeSeedTarget();
+  const password = demoPassword();
   await mongoose.connect(process.env.MONGODB_URI);
   console.log('✓ MongoDB connected\n=== Account seed ===');
-  await upsertAdmin();
-  await upsertVendor();
-  await upsertUsers();
+  await upsertVendor(password);
+  await upsertUsers(password);
   console.log('=== Done ===');
-  console.log('Logins:');
-  console.log('  admin:  waleedhassansfd@gmail.com / Waleed@104');
-  console.log('  vendor: vendor.outfitters@metromatrix.pk / 123456');
-  console.log('  users:  user1|user2|user3@metromatrix.pk / 123456');
+  console.log('Logins (password: SEED_DEMO_PASSWORD):');
+  console.log('  vendor: vendor.outfitters@metromatrix.pk');
+  console.log('  users:  user1|user2|user3@metromatrix.pk');
   await mongoose.disconnect();
 }
 

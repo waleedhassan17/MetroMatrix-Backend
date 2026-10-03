@@ -1,5 +1,11 @@
 const mongoose = require('mongoose');
 
+// Only settings something actually reads belong here — the editable ones are
+// defined (with their consumers) in config/platformSettings.js. Fields that
+// were stored and editable but enforced nowhere (timezone, language,
+// autoApproveProviders, requireEmailVerification, pushNotifications,
+// weeklyReports, ipWhitelist, the whole appearance section) were removed; see
+// docs/ADMIN_SETTINGS.md and scripts/migrations/01-admin-auth-cleanup.js.
 const adminSettingsSchema = new mongoose.Schema(
   {
     // General Settings
@@ -8,43 +14,30 @@ const adminSettingsSchema = new mongoose.Schema(
         type: String,
         default: 'MetroMatrix',
       },
+      // No defaults: an unset contact is shown as unset, not as a personal
+      // address or a placeholder number.
       contactEmail: {
         type: String,
-        default: 'waleedhassansfd@gmail.com',
+        default: '',
       },
       supportPhone: {
         type: String,
-        default: '+92 42 1234567',
+        default: '',
       },
-      timezone: {
-        type: String,
-        default: 'Asia/Karachi',
-      },
-      language: {
-        type: String,
-        default: 'en',
-      },
-      autoApproveProviders: {
-        type: Boolean,
-        default: false,
-      },
-      requireEmailVerification: {
-        type: Boolean,
-        default: true,
-      },
+      // middleware/maintenance.js: non-admin API traffic gets 503 + this message.
       maintenanceMode: {
         type: Boolean,
         default: false,
+      },
+      maintenanceMessage: {
+        type: String,
+        default: '',
       },
     },
 
     // Notification Settings
     notifications: {
       emailNotifications: {
-        type: Boolean,
-        default: true,
-      },
-      pushNotifications: {
         type: Boolean,
         default: true,
       },
@@ -60,54 +53,42 @@ const adminSettingsSchema = new mongoose.Schema(
         type: Boolean,
         default: true,
       },
-      weeklyReports: {
-        type: Boolean,
-        default: false,
-      },
     },
 
-    // Security Settings
+    // Security Settings — all enforced by the admin auth flow (see
+    // config/platformSettings.js for the consumer of each).
     security: {
+      // Require TOTP two-factor sign-in for super admins.
       twoFactorEnabled: {
         type: Boolean,
         default: false,
       },
       sessionTimeout: {
         type: Number,
-        default: 30, // minutes
+        default: 30, // minutes of inactivity
       },
       maxLoginAttempts: {
         type: Number,
         default: 5,
       },
+      lockoutMinutes: {
+        type: Number,
+        default: 15,
+      },
       passwordExpiry: {
         type: Number,
-        default: 90, // days
-      },
-      ipWhitelist: {
-        type: [String],
-        default: [],
+        default: 90, // days; 0 = never
       },
     },
 
-    // Appearance Settings
-    appearance: {
-      theme: {
-        type: String,
-        enum: ['light', 'dark', 'auto'],
-        default: 'light',
-      },
-      primaryColor: {
-        type: String,
-        default: '#6366f1',
-      },
-      accentColor: {
-        type: String,
-        default: '#8b5cf6',
-      },
-      compactMode: {
-        type: Boolean,
-        default: false,
+    // Finance controls (super admin only).
+    finance: {
+      // Manual wallet adjustments above this amount (PKR) wait for a second,
+      // different super admin to approve them (maker-checker).
+      adjustmentApprovalThreshold: {
+        type: Number,
+        default: 10000,
+        min: 0,
       },
     },
 
@@ -197,20 +178,6 @@ const adminSettingsSchema = new mongoose.Schema(
         min: 0,
         max: 100,
       },
-      defaultSlotDurationMinutes: {
-        type: Number,
-        default: 30,
-        min: 5,
-      },
-      maxAdvanceBookingDays: {
-        type: Number,
-        default: 30,
-        min: 1,
-      },
-      autoApproveDoctors: {
-        type: Boolean,
-        default: false,
-      },
     },
 
     // Home Services Settings — the SAME values the booking payment (HS4) and
@@ -222,12 +189,6 @@ const adminSettingsSchema = new mongoose.Schema(
         default: 10,
         min: 0,
         max: 100,
-      },
-      // Customer may cancel free of dispute up to this long before the slot
-      cancellationWindowHours: {
-        type: Number,
-        default: 2,
-        min: 0,
       },
       defaultSearchRadiusKm: {
         type: Number,
@@ -294,7 +255,7 @@ adminSettingsSchema.statics.updateSettings = async function (category, data, adm
     if (data.general) settings.general = { ...settings.general.toObject(), ...data.general };
     if (data.notifications) settings.notifications = { ...settings.notifications.toObject(), ...data.notifications };
     if (data.security) settings.security = { ...settings.security.toObject(), ...data.security };
-    if (data.appearance) settings.appearance = { ...settings.appearance.toObject(), ...data.appearance };
+    if (data.finance) settings.finance = { ...settings.finance.toObject(), ...data.finance };
   } else {
     // Update specific category
     settings[category] = { ...settings[category].toObject(), ...data };

@@ -170,7 +170,9 @@ const requestReturn = asyncHandler(async (req, res) => {
     images: Array.isArray(req.body.images) ? req.body.images : [],
     refundAmount: items.reduce((s, it) => s + it.unitPrice * it.quantity, 0),
   });
+  // The vendor (inbox + push) and the admins with shopping permission.
   await require('../services/orderNotifications').announceReturnRequested(request, order);
+  await require('../../../services/notificationService').notifyReturnRequested(request);
   return ok(res, request, 201);
 });
 

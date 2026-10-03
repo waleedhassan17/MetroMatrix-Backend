@@ -6,6 +6,11 @@
  * reuse on every subsequent request in the same lambda instance.
  */
 const mongoose = require('mongoose');
+
+// Throws at cold start on missing or unsafe configuration (e.g. equal JWT and
+// refresh secrets), so a misconfigured deploy fails loudly instead of serving.
+require('../src/config/validateEnv')();
+
 const app = require('../src/app');
 
 let connPromise = null;

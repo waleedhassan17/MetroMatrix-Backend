@@ -698,19 +698,9 @@ const updateProviderProfileComplete = asyncHandler(async (req, res) => {
 
   // Send notification to admin
   try {
-    const { sendEmail } = require('../services/emailService');
-    await sendEmail({
-      email: process.env.ADMIN_EMAIL || 'waleedhassansfd@gmail.com',
-      subject: 'New Provider Profile Submitted - Review Required',
-      html: `
-        <h2>Provider Profile Submitted</h2>
-        <p><strong>Name:</strong> ${provider.fullName}</p>
-        <p><strong>Email:</strong> ${provider.email}</p>
-        <p><strong>Type:</strong> ${provider.providerType}</p>
-        <p><strong>City:</strong> ${provider.city}</p>
-        <p>Please review this provider's profile in the admin dashboard.</p>
-      `,
-    });
+    const { notifyProviderSubmitted } = require('../services/adminEmailService');
+    await require('../services/notificationService').notifyProviderSubmitted(provider);
+    await notifyProviderSubmitted(provider);
   } catch (emailError) {
     console.error('Error sending admin notification:', emailError);
   }

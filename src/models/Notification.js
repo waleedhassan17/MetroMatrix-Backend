@@ -1,124 +1,82 @@
 const mongoose = require('mongoose');
 
+/**
+ * Admin notification feed.
+ *
+ * Read and dismissed state is PER ADMIN (readBy / dismissedBy). It used to be
+ * one isRead flag on a broadcast document, so the first admin to open a
+ * notification marked it read for everyone, and "delete" removed it for all.
+ *
+ * `requiredPermission` scopes who sees it — an admin only gets notified about
+ * work they are allowed to do. `target` points at the record ({ type, id });
+ * the app decides which screen that is. `dedupeKey` (unique when set) stops a
+ * recurring condition from notifying twice, e.g. one reconciliation alert a day.
+ */
+const TYPES = [
+  // Legacy types — kept so existing documents stay valid.
+  'provider_registration',
+  'provider_approved',
+  'provider_rejected',
+  'user_registration',
+  'system_alert',
+  'report',
+  'doctor_verification',
+  'doctor_approved',
+  'doctor_rejected',
+  // Work arriving for admins.
+  'provider_submitted',
+  'brand_submitted',
+  'dispute_opened',
+  'payout_requested',
+  'return_requested',
+  'wallet_adjustment_pending',
+  'reconciliation_drift',
+  'payment_webhook_failed',
+];
+
 const notificationSchema = new mongoose.Schema(
   {
-    // Target Admin (null for broadcast to all admins)
-    adminId: {
-      type: mongoose.Schema.Types.ObjectId,
-      ref: 'Admin',
-      default: null,
-      index: true,
+    // A specific admin, or null for every admin who may see it.
+    adminId: { type: mongoose.Schema.Types.ObjectId, ref: 'Admin', default: null, index: true },
+    type: { type: String, enum: TYPES, required: true, index: true },
+    title: { type: String, required: true, trim: true },
+    message: { type: String, required: true, trim: true },
+    severity: { type: String, enum: ['info', 'success', 'warning', 'error'], default: 'info' },
+    target: {
+      type: { type: String, default: null },
+      id: { type: mongoose.Schema.Types.ObjectId, default: null },
     },
+    requiredPermission: { type: String, default: null },
+    dedupeKey: { type: String, default: undefined },
+    readBy: { type: [mongoose.Schema.Types.ObjectId], default: [] },
+    dismissedBy: { type: [mongoose.Schema.Types.ObjectId], default: [] },
 
-    // Notification Type
-    type: {
-      type: String,
-      enum: [
-        'provider_registration',
-        'provider_approved',
-        'provider_rejected',
-        'user_registration',
-        'system_alert',
-        'report',
-        // Healthcare admin notifications
-        'doctor_verification',
-        'doctor_approved',
-        'doctor_rejected',
-      ],
-      required: true,
-      index: true,
-    },
-
-    // Content
-    title: {
-      type: String,
-      required: true,
-      trim: true,
-    },
-    message: {
-      type: String,
-      required: true,
-      trim: true,
-    },
-
-    // Additional Data
-    data: {
-      providerId: {
-        type: mongoose.Schema.Types.ObjectId,
-        ref: 'Provider',
-      },
-      userId: {
-        type: mongoose.Schema.Types.ObjectId,
-        ref: 'User',
-      },
-      providerType: String,
-      actionUrl: String,
-      severity: {
-        type: String,
-        enum: ['info', 'warning', 'error', 'success'],
-        default: 'info',
-      },
-    },
-
-    // Status
-    isRead: {
-      type: Boolean,
-      default: false,
-      index: true,
-    },
-    readAt: {
-      type: Date,
-      default: null,
-    },
+    // Legacy payload (pre-B3 documents); new ones use `target` and `severity`.
+    data: { type: mongoose.Schema.Types.Mixed, default: undefined },
   },
-  {
-    timestamps: true, // Adds createdAt and updatedAt
-  }
+  { timestamps: true }
 );
 
-// Indexes for performance
 notificationSchema.index({ createdAt: -1 });
-notificationSchema.index({ adminId: 1, isRead: 1 });
-notificationSchema.index({ type: 1, createdAt: -1 });
+notificationSchema.index({ dedupeKey: 1 }, { unique: true, partialFilterExpression: { dedupeKey: { $type: 'string' } } });
 
-// Static method to create notification
-notificationSchema.statics.createNotification = async function (data) {
-  return await this.create(data);
+notificationSchema.statics.TYPES = TYPES;
+
+/**
+ * The query for "notifications this admin can see": addressed to them or to
+ * all admins, not dismissed by them, and within their permissions.
+ */
+notificationSchema.statics.visibleTo = function (admin) {
+  const permissions = Object.entries(admin.effectivePermissions())
+    .filter(([, allowed]) => allowed)
+    .map(([key]) => key);
+  return {
+    $and: [
+      { $or: [{ adminId: admin._id }, { adminId: null }] },
+      { dismissedBy: { $ne: admin._id } },
+      { $or: [{ requiredPermission: null }, { requiredPermission: { $exists: false } }, { requiredPermission: { $in: permissions } }] },
+    ],
+  };
 };
 
-// Static method to get unread count for admin
-notificationSchema.statics.getUnreadCount = async function (adminId = null) {
-  const query = { isRead: false };
-  if (adminId) {
-    query.$or = [{ adminId }, { adminId: null }]; // Include broadcast notifications
-  } else {
-    query.adminId = null; // Only broadcast
-  }
-  return await this.countDocuments(query);
-};
-
-// Static method to mark all as read for admin
-notificationSchema.statics.markAllAsRead = async function (adminId = null) {
-  const query = { isRead: false };
-  if (adminId) {
-    query.$or = [{ adminId }, { adminId: null }];
-  } else {
-    query.adminId = null;
-  }
-  
-  const result = await this.updateMany(
-    query,
-    { 
-      $set: { 
-        isRead: true, 
-        readAt: new Date() 
-      } 
-    }
-  );
-  
-  return result.modifiedCount;
-};
-
-const Notification = mongoose.model('Notification', notificationSchema);
-
-module.exports = Notification;
+module.exports = mongoose.model('Notification', notificationSchema);

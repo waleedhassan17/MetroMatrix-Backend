@@ -572,6 +572,9 @@ const stripeWebhook = asyncHandler(async (req, res) => {
     }
   } catch (err) {
     console.error('Error handling Stripe event', event.type, err.message);
+    // A verified event we couldn't apply means money may have moved without a
+    // ledger entry. Stripe retries, but an admin should know now.
+    await require('../services/notificationService').notifyPaymentWebhookFailed(event.id, `${event.type}: ${err.message}`);
     return res.status(500).json({ success: false, error: err.message });
   }
 

@@ -30,7 +30,8 @@ const Coupon = require('../src/modules/shopping/models/Coupon');
 const Cart = require('../src/modules/shopping/models/Cart');
 const User = require('../src/models/User');
 
-const CUSTOMER = { email: 'shopper1.qa@metromatrix.pk', password: 'Shopper@123' };
+const { demoPassword } = require('./lib/seedSafety');
+const CUSTOMER = { email: 'shopper1.qa@metromatrix.pk', password: demoPassword() };
 const COUPON_CODE = 'COUGAR15';
 
 let pass = 0;
@@ -50,6 +51,7 @@ const bal = async (owner, type) => {
 
 (async () => {
   console.log(`\n=== CUSTOMER PATH INTEGRITY GATE against ${BASE} ===\n`);
+  require('./lib/seedSafety').assertSafeSeedTarget();
   await mongoose.connect(process.env.MONGODB_URI);
 
   const lr = await api.post('/auth/login', CUSTOMER);
@@ -166,7 +168,7 @@ const bal = async (owner, type) => {
 
   // Vendor credit + commission happen at DELIVERY by design, so drive both
   // child orders there and then check the money landed correctly.
-  const vLogin = async (email) => (await api.post('/auth/provider/login', { email, password: 'Vendor@123' })).data?.accessToken;
+  const vLogin = async (email) => (await api.post('/auth/provider/login', { email, password: demoPassword() })).data?.accessToken;
   const tokC = await vLogin('vendor.cougar@metromatrix.pk');
   const tokO = await vLogin('vendor.outfitters@metromatrix.pk');
   for (const o of children) {

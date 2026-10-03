@@ -1,169 +1,162 @@
 const Notification = require('../models/Notification');
-const AdminSettings = require('../models/AdminSettings');
+const { getAdminSettings } = require('./settingsCache');
+const logger = require('../utils/logger');
 
 /**
- * Notification Service
- * Handles automatic notification creation for admin panel events
+ * Notifications to the admin feed.
+ *
+ * notifyAdmins() is the single producer. It never throws into the caller's
+ * request — a missed notification must not fail a booking or a sign-up.
+ *
+ *   settingKey          notifications.<key> in AdminSettings that can switch
+ *                       this kind off (providerRegistrations, userRegistrations,
+ *                       systemAlerts)
+ *   requiredPermission  only admins with it see the notification
+ *   dedupeKey           at most one notification per key
  */
-
-class NotificationService {
-  /**
-   * Create notification for provider registration
-   */
-  static async notifyProviderRegistration(provider) {
-    try {
-      const settings = await AdminSettings.getSettings();
-      
-      if (!settings.notifications.providerRegistrations) {
-        return; // Notifications disabled for this event
-      }
-      
-      await Notification.create({
-        adminId: null, // Broadcast to all admins
-        type: 'provider_registration',
-        title: 'New Provider Registration',
-        message: `${provider.fullName} has registered as a ${provider.providerType} and is awaiting approval.`,
-        data: {
-          providerId: provider._id,
-          providerType: provider.providerType,
-          actionUrl: `/admin/providers/${provider._id}`,
-          severity: 'info',
-        },
-      });
-      
-      console.log(`✅ Notification created: Provider registration - ${provider.fullName}`);
-    } catch (error) {
-      console.error('Error creating provider registration notification:', error);
+async function notifyAdmins({ type, title, message, severity = 'info', target, requiredPermission = null, dedupeKey, settingKey, adminId = null }) {
+  try {
+    if (settingKey) {
+      const settings = await getAdminSettings();
+      if (settings.notifications?.[settingKey] === false) return null;
     }
-  }
-  
-  /**
-   * Create notification for provider approval
-   */
-  static async notifyProviderApproved(provider, admin) {
-    try {
-      await Notification.create({
-        adminId: null, // Broadcast
-        type: 'provider_approved',
-        title: 'Provider Approved',
-        message: `${provider.fullName} (${provider.providerType}) has been approved by ${admin.fullName}.`,
-        data: {
-          providerId: provider._id,
-          providerType: provider.providerType,
-          actionUrl: `/admin/providers/${provider._id}`,
-          severity: 'success',
-        },
-      });
-      
-      console.log(`✅ Notification created: Provider approved - ${provider.fullName}`);
-    } catch (error) {
-      console.error('Error creating provider approval notification:', error);
-    }
-  }
-  
-  /**
-   * Create notification for provider rejection
-   */
-  static async notifyProviderRejected(provider, admin, reason) {
-    try {
-      await Notification.create({
-        adminId: null, // Broadcast
-        type: 'provider_rejected',
-        title: 'Provider Rejected',
-        message: `${provider.fullName} (${provider.providerType}) has been rejected by ${admin.fullName}. Reason: ${reason}`,
-        data: {
-          providerId: provider._id,
-          providerType: provider.providerType,
-          actionUrl: `/admin/providers/${provider._id}`,
-          severity: 'warning',
-        },
-      });
-      
-      console.log(`✅ Notification created: Provider rejected - ${provider.fullName}`);
-    } catch (error) {
-      console.error('Error creating provider rejection notification:', error);
-    }
-  }
-  
-  /**
-   * Create notification for user registration
-   */
-  static async notifyUserRegistration(user) {
-    try {
-      const settings = await AdminSettings.getSettings();
-      
-      if (!settings.notifications.userRegistrations) {
-        return; // Notifications disabled for this event
-      }
-      
-      await Notification.create({
-        adminId: null, // Broadcast
-        type: 'user_registration',
-        title: 'New User Registration',
-        message: `${user.fullName} has registered on the platform.`,
-        data: {
-          userId: user._id,
-          actionUrl: `/admin/users/${user._id}`,
-          severity: 'info',
-        },
-      });
-      
-      console.log(`✅ Notification created: User registration - ${user.fullName}`);
-    } catch (error) {
-      console.error('Error creating user registration notification:', error);
-    }
-  }
-  
-  /**
-   * Create system alert notification
-   */
-  static async notifySystemAlert(title, message, severity = 'warning') {
-    try {
-      const settings = await AdminSettings.getSettings();
-      
-      if (!settings.notifications.systemAlerts) {
-        return; // Notifications disabled for this event
-      }
-      
-      await Notification.create({
-        adminId: null, // Broadcast
-        type: 'system_alert',
-        title,
-        message,
-        data: {
-          severity,
-        },
-      });
-      
-      console.log(`✅ Notification created: System alert - ${title}`);
-    } catch (error) {
-      console.error('Error creating system alert notification:', error);
-    }
-  }
-  
-  /**
-   * Create report notification
-   */
-  static async notifyReport(reportType, reportedId, reportedBy, reason) {
-    try {
-      await Notification.create({
-        adminId: null, // Broadcast
-        type: 'report',
-        title: `New ${reportType} Report`,
-        message: `A ${reportType} has been reported. Reason: ${reason}`,
-        data: {
-          providerId: reportType === 'provider' ? reportedId : null,
-          userId: reportType === 'user' ? reportedId : null,
-          severity: 'error',
-          actionUrl: `/admin/${reportType}s/${reportedId}`,
-        },
-      });
-      
-      console.log(`✅ Notification created: Report - ${reportType}`);
-    } catch (error) {
-      console.error('Error creating report notification:', error);
-    }
+    return await Notification.create({
+      adminId,
+      type,
+      title,
+      message,
+      severity,
+      target: target ? { type: target.type, id: target.id } : undefined,
+      requiredPermission,
+      dedupeKey,
+    });
+  } catch (err) {
+    if (err.code === 11000) return null; // already notified (dedupeKey)
+    logger.error({ err, type }, 'admin notification failed');
+    return null;
   }
 }
+
+const dayKey = (d = new Date()) => d.toISOString().slice(0, 10);
+
+// ---- the events admins need to hear about ----
+
+const NotificationService = {
+  notifyAdmins,
+
+  notifyProviderRegistration: (provider) =>
+    notifyAdmins({
+      type: 'provider_registration',
+      title: 'New provider sign-up',
+      message: `${provider.fullName} signed up as ${provider.providerType}. They still have to submit their profile.`,
+      target: { type: 'Provider', id: provider._id },
+      requiredPermission: 'canApproveProviders',
+      settingKey: 'providerRegistrations',
+    }),
+
+  notifyProviderSubmitted: (provider) =>
+    notifyAdmins({
+      type: 'provider_submitted',
+      title: 'Provider application to review',
+      message: `${provider.fullName} submitted their ${provider.providerType} profile for approval.`,
+      severity: 'warning',
+      target: { type: 'Provider', id: provider._id },
+      requiredPermission: 'canApproveProviders',
+      settingKey: 'providerRegistrations',
+    }),
+
+  notifyUserRegistration: (user) =>
+    notifyAdmins({
+      type: 'user_registration',
+      title: 'New customer',
+      message: `${user.fullName} joined the platform.`,
+      target: { type: 'User', id: user._id },
+      requiredPermission: 'canManageUsers',
+      settingKey: 'userRegistrations',
+    }),
+
+  notifyDoctorSubmitted: (doctor, name) =>
+    notifyAdmins({
+      type: 'doctor_verification',
+      title: 'Doctor to verify',
+      message: `${name || 'A doctor'} submitted their credentials for verification.`,
+      severity: 'warning',
+      target: { type: 'Doctor', id: doctor._id },
+      requiredPermission: 'canManageHealthcare',
+    }),
+
+  notifyBrandSubmitted: (brand) =>
+    notifyAdmins({
+      type: 'brand_submitted',
+      title: 'Brand application to review',
+      message: `${brand.name} applied to sell on the platform.`,
+      severity: 'warning',
+      target: { type: 'Brand', id: brand._id },
+      requiredPermission: 'canManageShopping',
+    }),
+
+  notifyDisputeOpened: (dispute) =>
+    notifyAdmins({
+      type: 'dispute_opened',
+      title: 'New home-service dispute',
+      message: `The ${dispute.role} raised a dispute: ${dispute.reason}`,
+      severity: 'warning',
+      target: { type: 'Dispute', id: dispute._id },
+      requiredPermission: 'canManageHomeServices',
+    }),
+
+  notifyPayoutRequested: (payout, providerName) =>
+    notifyAdmins({
+      type: 'payout_requested',
+      title: 'Payout request',
+      message: `${providerName || 'A provider'} asked for a payout of PKR ${payout.amount}.`,
+      severity: 'warning',
+      target: { type: 'PayoutRequest', id: payout._id },
+      requiredPermission: 'canManageFinance',
+    }),
+
+  notifyReturnRequested: (ret) =>
+    notifyAdmins({
+      type: 'return_requested',
+      title: 'Return requested',
+      message: `A customer asked to return an order: ${ret.reason}`,
+      target: { type: 'ReturnRequest', id: ret._id },
+      requiredPermission: 'canManageShopping',
+    }),
+
+  notifyAdjustmentPending: (adjustment) =>
+    notifyAdmins({
+      type: 'wallet_adjustment_pending',
+      title: 'Wallet adjustment needs a second approver',
+      message: `${adjustment.direction === 'credit' ? 'Credit' : 'Debit'} of PKR ${adjustment.amount}: ${adjustment.reason}`,
+      severity: 'warning',
+      target: { type: 'WalletAdjustment', id: adjustment._id },
+      requiredPermission: 'canManageFinance',
+    }),
+
+  // One alert per day while the ledger is out of balance.
+  notifyReconciliationDrift: (result) =>
+    notifyAdmins({
+      type: 'reconciliation_drift',
+      title: 'Wallet ledger out of balance',
+      message: `Wallet balances differ from the ledger by PKR ${result.drift}.`,
+      severity: 'error',
+      requiredPermission: 'canManageFinance',
+      settingKey: 'systemAlerts',
+      dedupeKey: `reconciliation_drift:${dayKey()}`,
+    }),
+
+  // A verified Stripe event we failed to apply — money may be unrecorded.
+  notifyPaymentWebhookFailed: (eventId, reason) =>
+    notifyAdmins({
+      type: 'payment_webhook_failed',
+      title: 'Payment event failed to apply',
+      message: `Stripe event ${eventId} could not be applied: ${reason}`,
+      severity: 'error',
+      requiredPermission: 'canManageFinance',
+      settingKey: 'systemAlerts',
+      dedupeKey: eventId ? `payment_webhook_failed:${eventId}` : undefined,
+    }),
+};
 
 module.exports = NotificationService;

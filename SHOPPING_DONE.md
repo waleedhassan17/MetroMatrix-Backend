@@ -158,12 +158,15 @@ npx tsc --noEmit
 
 ### Log in as each role
 
-| Role | Email | Password | Route |
-|---|---|---|---|
-| Customer | `shopper1.qa@metromatrix.pk` | `Shopper@123` | `/api/auth/login` |
-| Vendor (Cougar) | `vendor.cougar@metromatrix.pk` | `Vendor@123` | `/api/auth/provider/login` |
-| Vendor (Outfitters) | `vendor.outfitters@metromatrix.pk` | `Vendor@123` | `/api/auth/provider/login` |
-| Admin | `waleedhassansfd@gmail.com` | `Waleed@104` | `/api/admin/auth/login` |
+Demo accounts use the `SEED_DEMO_PASSWORD` you seeded with; admins come from `npm run seed:admin`
+(credentials from env, never committed).
+
+| Role | Email | Route |
+|---|---|---|
+| Customer | `shopper1.qa@metromatrix.pk` | `/api/auth/login` |
+| Vendor (Cougar) | `vendor.cougar@metromatrix.pk` | `/api/auth/provider/login` |
+| Vendor (Outfitters) | `vendor.outfitters@metromatrix.pk` | `/api/auth/provider/login` |
+| Admin | your `ADMIN_SEED_EMAIL` | `/api/admin/auth/login` |
 
 > Providers use `/api/auth/provider/login`, **not** `/api/auth/login`. The wrong route returns
 > "Invalid email or password" with correct credentials — the most common false bug report here.

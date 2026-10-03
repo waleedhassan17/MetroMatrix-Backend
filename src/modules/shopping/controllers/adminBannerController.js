@@ -77,7 +77,7 @@ const createBanner = asyncHandler(async (req, res) => {
     validFrom: req.body.validFrom || null,
     validUntil: req.body.validUntil || null,
   });
-  await audit(req.user._id, 'create_banner', 'ShoppingBanner', banner._id, {
+  await audit(req, 'create_banner', 'ShoppingBanner', banner._id, {
     after: banner.toJSON(),
   });
   return ok(res, banner, 201);
@@ -107,7 +107,7 @@ const updateBanner = asyncHandler(async (req, res) => {
       else banner[f] = req.body[f];
     });
     await banner.save();
-    await audit(req.user._id, 'update_banner', 'ShoppingBanner', banner._id, {
+    await audit(req, 'update_banner', 'ShoppingBanner', banner._id, {
       before,
       after: banner.toJSON(),
     });
@@ -125,7 +125,7 @@ const deleteBanner = asyncHandler(async (req, res) => {
     if (!banner) return fail(res, 404, 'Banner not found');
     const before = banner.toJSON();
     await banner.deleteOne();
-    await audit(req.user._id, 'delete_banner', 'ShoppingBanner', req.params.bannerId, { before });
+    await audit(req, 'delete_banner', 'ShoppingBanner', req.params.bannerId, { before });
     return res.json({ success: true });
   } catch (e) {
     if (isCastError(e)) return fail(res, 400, 'Invalid banner ID');

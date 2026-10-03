@@ -1,73 +1,92 @@
-// Error handler middleware
-const errorHandler = (err, req, res, next) => {
-  let error = { ...err };
-  error.message = err.message;
+const logger = require('../utils/logger');
+const { isAdminRequest, pathOf } = require('../utils/adminScope');
+const { ERROR_CODES } = require('../utils/errorCodes');
 
-  // Log to console for dev
-  if (process.env.NODE_ENV === 'development') {
-    console.error(err.stack.red);
+// Code for an error that only set an HTTP status (res.status(403); throw …).
+const CODE_FOR_STATUS = {
+  400: ERROR_CODES.VALIDATION_FAILED,
+  401: ERROR_CODES.UNAUTHENTICATED,
+  403: ERROR_CODES.FORBIDDEN,
+  404: ERROR_CODES.NOT_FOUND,
+  409: ERROR_CODES.CONFLICT,
+  429: ERROR_CODES.TOO_MANY_ATTEMPTS,
+  503: ERROR_CODES.MAINTENANCE,
+};
+
+// Normalise any thrown error into { status, code, message, details }.
+function classify(err, res) {
+  if (err.name === 'AppError') {
+    return { status: err.statusCode, code: err.code, message: err.message, details: err.details };
   }
-
-  // Mongoose bad ObjectId
   if (err.name === 'CastError') {
-    const message = 'Resource not found';
-    error = { message, statusCode: 404 };
+    return { status: 404, code: ERROR_CODES.NOT_FOUND, message: 'Resource not found' };
   }
-
-  // Mongoose duplicate key
   if (err.code === 11000) {
-    const field = Object.keys(err.keyValue)[0];
-    const message = `${field} already exists`;
-    error = { message, statusCode: 400 };
+    const field = Object.keys(err.keyValue || {})[0] || 'value';
+    return { status: 400, code: ERROR_CODES.CONFLICT, message: `${field} already exists` };
   }
-
-  // Mongoose validation error
   if (err.name === 'ValidationError') {
-    const message = Object.values(err.errors)
+    const message = Object.values(err.errors || {})
       .map((val) => val.message)
       .join(', ');
-    error = { message, statusCode: 400 };
+    return { status: 400, code: ERROR_CODES.VALIDATION_FAILED, message };
   }
-
-  // JWT errors
   if (err.name === 'JsonWebTokenError') {
-    const message = 'Invalid token';
-    error = { message, statusCode: 401 };
+    return { status: 401, code: ERROR_CODES.TOKEN_INVALID, message: 'Invalid token' };
   }
-
-  // JWT expired error
   if (err.name === 'TokenExpiredError') {
-    const message = 'Token expired';
-    error = { message, statusCode: 401 };
+    return { status: 401, code: ERROR_CODES.TOKEN_INVALID, message: 'Token expired' };
   }
-
-  // Multer errors
   if (err.name === 'MulterError') {
-    let message = 'File upload error';
-    if (err.code === 'LIMIT_FILE_SIZE') {
-      message = 'File size too large';
-    }
-    if (err.code === 'LIMIT_FILE_COUNT') {
-      message = 'Too many files';
-    }
-    if (err.code === 'LIMIT_UNEXPECTED_FILE') {
-      message = 'Unexpected file field';
-    }
-    error = { message, statusCode: 400 };
+    const messages = {
+      LIMIT_FILE_SIZE: 'File size too large',
+      LIMIT_FILE_COUNT: 'Too many files',
+      LIMIT_UNEXPECTED_FILE: 'Unexpected file field',
+    };
+    return { status: 400, code: ERROR_CODES.VALIDATION_FAILED, message: messages[err.code] || 'File upload error' };
   }
 
   const resStatus = res.statusCode && res.statusCode !== 200 ? res.statusCode : null;
-  const status = error.statusCode || err.statusCode || resStatus || 500;
-  if (status >= 500 && process.env.NODE_ENV !== 'test') {
-    // One line that ties the failure to the request's access-log entry.
-    console.error(
-      JSON.stringify({ t: 'err', id: req.id, p: (req.originalUrl || '').split('?')[0], msg: err.message })
-    );
+  const status = err.statusCode || resStatus || 500;
+  return {
+    status,
+    code: CODE_FOR_STATUS[status] || (status >= 500 ? ERROR_CODES.INTERNAL_ERROR : ERROR_CODES.VALIDATION_FAILED),
+    message: err.message,
+  };
+}
+
+// Error handler middleware
+const errorHandler = (err, req, res, next) => {
+  const { status, code, message, details } = classify(err, res);
+
+  // Server faults are errors; client faults are routine and only worth a
+  // debug line. Either way the request id ties the log to the response.
+  const log = req.log || logger;
+  const context = { err, status, code, method: req.method, path: pathOf(req) };
+  if (status >= 500) log.error(context, 'request failed');
+  else log.debug(context, 'request rejected');
+
+  if (err.headers) res.set(err.headers);
+
+  if (isAdminRequest(req)) {
+    const body = {
+      success: false,
+      error: {
+        code,
+        // Internal failure details stay in the log; the request id finds them.
+        message: status >= 500 ? 'Something went wrong on our side. Please try again.' : message || code,
+      },
+      requestId: req.id,
+    };
+    if (details !== undefined && status < 500) body.error.details = details;
+    return res.status(status).json(body);
   }
+
+  // Legacy shape for the user/provider apps, plus the request id to quote
+  // when reporting a problem (it finds the request in the logs).
   res.status(status).json({
     success: false,
-    error: error.message || 'Server Error',
-    // Quote this when reporting a problem: it finds the request in the logs.
+    error: message || 'Server Error',
     ...(req.id && { requestId: req.id }),
     ...(process.env.NODE_ENV === 'development' && { stack: err.stack }),
   });
@@ -89,4 +108,5 @@ module.exports = {
   errorHandler,
   notFound,
   asyncHandler,
+  classify,
 };

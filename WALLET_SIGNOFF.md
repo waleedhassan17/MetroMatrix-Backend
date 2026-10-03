@@ -151,14 +151,16 @@ npx tsc --noEmit                       # expect zero errors
 
 **Seeded logins used by the gate**
 
-| Role | Email | Password | Login route |
-|---|---|---|---|
-| Customer | `shopper1.qa@metromatrix.pk` | `Shopper@123` | `/api/auth/login` |
-| Customer 2 | `shopper2.qa@metromatrix.pk` | `Shopper@123` | `/api/auth/login` |
-| Vendor (Cougar) | `vendor.cougar@metromatrix.pk` | `Vendor@123` | `/api/auth/provider/login` |
-| Vendor (Outfitters) | `vendor.outfitters@metromatrix.pk` | `Vendor@123` | `/api/auth/provider/login` |
-| Doctor | `doctor1.hc@metromatrix.pk` | `Doctor@123` | `/api/auth/provider/login` |
-| Home-service provider | `provider1.hs@metromatrix.pk` | `Provider@123` | `/api/auth/provider/login` |
+Every account below uses the `SEED_DEMO_PASSWORD` you seeded with.
+
+| Role | Email | Login route |
+|---|---|---|
+| Customer | `shopper1.qa@metromatrix.pk` | `/api/auth/login` |
+| Customer 2 | `shopper2.qa@metromatrix.pk` | `/api/auth/login` |
+| Vendor (Cougar) | `vendor.cougar@metromatrix.pk` | `/api/auth/provider/login` |
+| Vendor (Outfitters) | `vendor.outfitters@metromatrix.pk` | `/api/auth/provider/login` |
+| Doctor | `doctor1.hc@metromatrix.pk` | `/api/auth/provider/login` |
+| Home-service provider | `provider1.hs@metromatrix.pk` | `/api/auth/provider/login` |
 
 > Providers use `/api/auth/provider/login`, **not** `/api/auth/login`. Worth knowing before a viva.
 

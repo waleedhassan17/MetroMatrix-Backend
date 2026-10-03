@@ -160,6 +160,7 @@ npm run smoke:shopping   # 14-step critical path (needs API_URL env or localhost
 > same Atlas cluster the deployed API serves, running it destroys live order history. `seed:banners`
 > is additive and safe.
 
-Logins created by `brands.seed.js`: customers `shopper1-3.qa@metromatrix.pk` / `Shopper@123`,
-vendors `vendor.cougar@metromatrix.pk` and `vendor.outfitters@metromatrix.pk` / `Vendor@123`.
-`seed-accounts.js` additionally creates the super admin and `user1-3@metromatrix.pk` / `123456`.
+Logins created by `brands.seed.js`: customers `shopper1-3.qa@metromatrix.pk`, vendors
+`vendor.cougar@metromatrix.pk` and `vendor.outfitters@metromatrix.pk`. `seed-accounts.js` additionally
+creates `user1-3@metromatrix.pk`. All use the `SEED_DEMO_PASSWORD` you seeded with; admins come only
+from `npm run seed:admin`.

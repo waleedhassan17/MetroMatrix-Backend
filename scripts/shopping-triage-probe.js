@@ -14,10 +14,11 @@ const axios = require('axios');
 const BASE = process.env.API_URL || 'http://localhost:5000';
 const api = axios.create({ baseURL: `${BASE}/api`, validateStatus: () => true, timeout: 45000 });
 
-const CUSTOMER = { email: 'shopper1.qa@metromatrix.pk', password: 'Shopper@123' };
-const VENDOR_COUGAR = { email: 'vendor.cougar@metromatrix.pk', password: 'Vendor@123' };
-const VENDOR_OUTFITTERS = { email: 'vendor.outfitters@metromatrix.pk', password: 'Vendor@123' };
-const ADMIN = { email: 'waleedhassansfd@gmail.com', password: 'Waleed@104' };
+const { demoPassword, qaAdminCredentials } = require('./lib/seedSafety');
+const CUSTOMER = { email: 'shopper1.qa@metromatrix.pk', password: demoPassword() };
+const VENDOR_COUGAR = { email: 'vendor.cougar@metromatrix.pk', password: demoPassword() };
+const VENDOR_OUTFITTERS = { email: 'vendor.outfitters@metromatrix.pk', password: demoPassword() };
+const ADMIN = qaAdminCredentials();
 
 const findings = [];
 let ok = 0;

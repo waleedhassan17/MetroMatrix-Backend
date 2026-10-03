@@ -1,0 +1,5331 @@
+[
+  {
+    "method": "GET",
+    "path": "/",
+    "middleware": [
+      "anonymous"
+    ]
+  },
+  {
+    "method": "GET",
+    "path": "/api/admin/admins/",
+    "middleware": [
+      "apiRateLimit",
+      "protect",
+      "adminOnly",
+      "requirePermission(canManageAdmins)",
+      "asyncHandler"
+    ]
+  },
+  {
+    "method": "POST",
+    "path": "/api/admin/admins/",
+    "middleware": [
+      "apiRateLimit",
+      "protect",
+      "adminOnly",
+      "requireSuperAdmin",
+      "asyncHandler"
+    ]
+  },
+  {
+    "method": "GET",
+    "path": "/api/admin/admins/:adminId",
+    "middleware": [
+      "apiRateLimit",
+      "protect",
+      "adminOnly",
+      "requirePermission(canManageAdmins)",
+      "middleware",
+      "validate",
+      "asyncHandler"
+    ]
+  },
+  {
+    "method": "PATCH",
+    "path": "/api/admin/admins/:adminId",
+    "middleware": [
+      "apiRateLimit",
+      "protect",
+      "adminOnly",
+      "requirePermission(canManageAdmins)",
+      "middleware",
+      "validate",
+      "asyncHandler"
+    ]
+  },
+  {
+    "method": "POST",
+    "path": "/api/admin/admins/:adminId/reset-2fa",
+    "middleware": [
+      "apiRateLimit",
+      "protect",
+      "adminOnly",
+      "requireSuperAdmin",
+      "middleware",
+      "validate",
+      "asyncHandler"
+    ]
+  },
+  {
+    "method": "POST",
+    "path": "/api/admin/admins/:adminId/reset-password",
+    "middleware": [
+      "apiRateLimit",
+      "protect",
+      "adminOnly",
+      "requirePermission(canManageAdmins)",
+      "middleware",
+      "validate",
+      "asyncHandler"
+    ]
+  },
+  {
+    "method": "GET",
+    "path": "/api/admin/admins/:adminId/sessions",
+    "middleware": [
+      "apiRateLimit",
+      "protect",
+      "adminOnly",
+      "requirePermission(canManageAdmins)",
+      "middleware",
+      "validate",
+      "asyncHandler"
+    ]
+  },
+  {
+    "method": "DELETE",
+    "path": "/api/admin/admins/:adminId/sessions/:sessionId",
+    "middleware": [
+      "apiRateLimit",
+      "protect",
+      "adminOnly",
+      "requirePermission(canManageAdmins)",
+      "middleware",
+      "validate",
+      "middleware",
+      "validate",
+      "asyncHandler"
+    ]
+  },
+  {
+    "method": "GET",
+    "path": "/api/admin/analytics",
+    "middleware": [
+      "apiRateLimit",
+      "protect",
+      "adminOnly",
+      "requirePermission(canViewAnalytics)",
+      "asyncHandler"
+    ]
+  },
+  {
+    "method": "POST",
+    "path": "/api/admin/auth/2fa/disable",
+    "middleware": [
+      "apiRateLimit",
+      "protect",
+      "adminOnly",
+      "selfScoped",
+      "middleware",
+      "validate",
+      "asyncHandler"
+    ]
+  },
+  {
+    "method": "POST",
+    "path": "/api/admin/auth/2fa/enrol",
+    "middleware": [
+      "apiRateLimit",
+      "protect",
+      "adminOnly",
+      "selfScoped",
+      "middleware",
+      "validate",
+      "asyncHandler"
+    ]
+  },
+  {
+    "method": "POST",
+    "path": "/api/admin/auth/2fa/verify",
+    "middleware": [
+      "apiRateLimit",
+      "protect",
+      "adminOnly",
+      "selfScoped",
+      "middleware",
+      "validate",
+      "asyncHandler"
+    ]
+  },
+  {
+    "method": "POST",
+    "path": "/api/admin/auth/login",
+    "middleware": [
+      "apiRateLimit",
+      "middleware",
+      "middleware",
+      "validate",
+      "asyncHandler"
+    ]
+  },
+  {
+    "method": "POST",
+    "path": "/api/admin/auth/login/totp",
+    "middleware": [
+      "apiRateLimit",
+      "middleware",
+      "middleware",
+      "validate",
+      "asyncHandler"
+    ]
+  },
+  {
+    "method": "POST",
+    "path": "/api/admin/auth/logout",
+    "middleware": [
+      "apiRateLimit",
+      "protect",
+      "adminOnly",
+      "selfScoped",
+      "asyncHandler"
+    ]
+  },
+  {
+    "method": "POST",
+    "path": "/api/admin/auth/logout-all",
+    "middleware": [
+      "apiRateLimit",
+      "protect",
+      "adminOnly",
+      "selfScoped",
+      "asyncHandler"
+    ]
+  },
+  {
+    "method": "POST",
+    "path": "/api/admin/auth/refresh-token",
+    "middleware": [
+      "apiRateLimit",
+      "middleware",
+      "validate",
+      "asyncHandler"
+    ]
+  },
+  {
+    "method": "GET",
+    "path": "/api/admin/bookings",
+    "middleware": [
+      "apiRateLimit",
+      "protect",
+      "adminOnly",
+      "requirePermission(canManageHomeServices)",
+      "asyncHandler"
+    ]
+  },
+  {
+    "method": "GET",
+    "path": "/api/admin/bookings/:id",
+    "middleware": [
+      "apiRateLimit",
+      "protect",
+      "adminOnly",
+      "requirePermission(canManageHomeServices)",
+      "asyncHandler"
+    ]
+  },
+  {
+    "method": "POST",
+    "path": "/api/admin/bookings/:id/refund",
+    "middleware": [
+      "apiRateLimit",
+      "protect",
+      "adminOnly",
+      "requirePermission(canManageHomeServices+canManageFinance)",
+      "asyncHandler"
+    ]
+  },
+  {
+    "method": "PATCH",
+    "path": "/api/admin/bookings/:id/status",
+    "middleware": [
+      "apiRateLimit",
+      "protect",
+      "adminOnly",
+      "requirePermission(canManageHomeServices)",
+      "asyncHandler"
+    ]
+  },
+  {
+    "method": "PUT",
+    "path": "/api/admin/change-password",
+    "middleware": [
+      "apiRateLimit",
+      "protect",
+      "adminOnly",
+      "selfScoped",
+      "middleware",
+      "middleware",
+      "validate",
+      "asyncHandler"
+    ]
+  },
+  {
+    "method": "GET",
+    "path": "/api/admin/disputes",
+    "middleware": [
+      "apiRateLimit",
+      "protect",
+      "adminOnly",
+      "requirePermission(canManageHomeServices)",
+      "asyncHandler"
+    ]
+  },
+  {
+    "method": "PATCH",
+    "path": "/api/admin/disputes/:id",
+    "middleware": [
+      "apiRateLimit",
+      "protect",
+      "adminOnly",
+      "requirePermission(canManageHomeServices)",
+      "asyncHandler"
+    ]
+  },
+  {
+    "method": "GET",
+    "path": "/api/admin/homeservice/analytics",
+    "middleware": [
+      "apiRateLimit",
+      "protect",
+      "adminOnly",
+      "requirePermission(canManageHomeServices)",
+      "asyncHandler"
+    ]
+  },
+  {
+    "method": "GET",
+    "path": "/api/admin/homeservice/dashboard",
+    "middleware": [
+      "apiRateLimit",
+      "protect",
+      "adminOnly",
+      "requirePermission(canManageHomeServices)",
+      "asyncHandler"
+    ]
+  },
+  {
+    "method": "GET",
+    "path": "/api/admin/homeservice/settings",
+    "middleware": [
+      "apiRateLimit",
+      "protect",
+      "adminOnly",
+      "requirePermission(canManageHomeServices)",
+      "asyncHandler"
+    ]
+  },
+  {
+    "method": "PATCH",
+    "path": "/api/admin/homeservice/settings",
+    "middleware": [
+      "apiRateLimit",
+      "protect",
+      "adminOnly",
+      "requirePermission(canManageHomeServices)",
+      "asyncHandler"
+    ]
+  },
+  {
+    "method": "POST",
+    "path": "/api/admin/login",
+    "middleware": [
+      "apiRateLimit",
+      "middleware",
+      "middleware",
+      "validate",
+      "asyncHandler"
+    ]
+  },
+  {
+    "method": "GET",
+    "path": "/api/admin/meta",
+    "middleware": [
+      "apiRateLimit",
+      "protect",
+      "adminOnly",
+      "asyncHandler"
+    ]
+  },
+  {
+    "method": "GET",
+    "path": "/api/admin/ml/models",
+    "middleware": [
+      "apiRateLimit",
+      "protect",
+      "adminOnly",
+      "requirePermission(canViewAnalytics)",
+      "asyncHandler"
+    ]
+  },
+  {
+    "method": "POST",
+    "path": "/api/admin/ml/models/:id/activate",
+    "middleware": [
+      "apiRateLimit",
+      "protect",
+      "adminOnly",
+      "requirePermission(canManageSettings)",
+      "asyncHandler"
+    ]
+  },
+  {
+    "method": "POST",
+    "path": "/api/admin/ml/models/:id/archive",
+    "middleware": [
+      "apiRateLimit",
+      "protect",
+      "adminOnly",
+      "requirePermission(canManageSettings)",
+      "asyncHandler"
+    ]
+  },
+  {
+    "method": "GET",
+    "path": "/api/admin/ml/runs",
+    "middleware": [
+      "apiRateLimit",
+      "protect",
+      "adminOnly",
+      "requirePermission(canViewAnalytics)",
+      "asyncHandler"
+    ]
+  },
+  {
+    "method": "GET",
+    "path": "/api/admin/notifications",
+    "middleware": [
+      "apiRateLimit",
+      "protect",
+      "adminOnly",
+      "selfScoped",
+      "asyncHandler"
+    ]
+  },
+  {
+    "method": "DELETE",
+    "path": "/api/admin/notifications/:notificationId",
+    "middleware": [
+      "apiRateLimit",
+      "protect",
+      "adminOnly",
+      "selfScoped",
+      "middleware",
+      "validate",
+      "asyncHandler"
+    ]
+  },
+  {
+    "method": "PUT",
+    "path": "/api/admin/notifications/:notificationId/read",
+    "middleware": [
+      "apiRateLimit",
+      "protect",
+      "adminOnly",
+      "selfScoped",
+      "middleware",
+      "validate",
+      "asyncHandler"
+    ]
+  },
+  {
+    "method": "DELETE",
+    "path": "/api/admin/notifications/clear-all",
+    "middleware": [
+      "apiRateLimit",
+      "protect",
+      "adminOnly",
+      "selfScoped",
+      "asyncHandler"
+    ]
+  },
+  {
+    "method": "DELETE",
+    "path": "/api/admin/notifications/purge",
+    "middleware": [
+      "apiRateLimit",
+      "protect",
+      "adminOnly",
+      "requirePermission(canManageNotifications)",
+      "asyncHandler"
+    ]
+  },
+  {
+    "method": "PUT",
+    "path": "/api/admin/notifications/read-all",
+    "middleware": [
+      "apiRateLimit",
+      "protect",
+      "adminOnly",
+      "selfScoped",
+      "asyncHandler"
+    ]
+  },
+  {
+    "method": "GET",
+    "path": "/api/admin/notifications/unread-count",
+    "middleware": [
+      "apiRateLimit",
+      "protect",
+      "adminOnly",
+      "selfScoped",
+      "asyncHandler"
+    ]
+  },
+  {
+    "method": "GET",
+    "path": "/api/admin/overview",
+    "middleware": [
+      "apiRateLimit",
+      "protect",
+      "adminOnly",
+      "asyncHandler"
+    ]
+  },
+  {
+    "method": "GET",
+    "path": "/api/admin/payout-requests",
+    "middleware": [
+      "apiRateLimit",
+      "protect",
+      "adminOnly",
+      "requirePermission(canManageFinance)",
+      "asyncHandler"
+    ]
+  },
+  {
+    "method": "PATCH",
+    "path": "/api/admin/payout-requests/:id",
+    "middleware": [
+      "apiRateLimit",
+      "protect",
+      "adminOnly",
+      "requirePermission(canManageFinance)",
+      "asyncHandler"
+    ]
+  },
+  {
+    "method": "GET",
+    "path": "/api/admin/platform/demand",
+    "middleware": [
+      "apiRateLimit",
+      "protect",
+      "adminOnly",
+      "requirePermission(canViewAnalytics)",
+      "asyncHandler"
+    ]
+  },
+  {
+    "method": "GET",
+    "path": "/api/admin/platform/performance",
+    "middleware": [
+      "apiRateLimit",
+      "protect",
+      "adminOnly",
+      "requirePermission(canViewAnalytics)",
+      "asyncHandler"
+    ]
+  },
+  {
+    "method": "GET",
+    "path": "/api/admin/platform/realtime",
+    "middleware": [
+      "apiRateLimit",
+      "protect",
+      "adminOnly",
+      "requirePermission(canViewAnalytics)",
+      "asyncHandler"
+    ]
+  },
+  {
+    "method": "DELETE",
+    "path": "/api/admin/posts/:id",
+    "middleware": [
+      "apiRateLimit",
+      "protect",
+      "adminOnly",
+      "requirePermission(canManagePosts)",
+      "middleware",
+      "validate",
+      "asyncHandler"
+    ]
+  },
+  {
+    "method": "GET",
+    "path": "/api/admin/profile",
+    "middleware": [
+      "apiRateLimit",
+      "protect",
+      "adminOnly",
+      "selfScoped",
+      "asyncHandler"
+    ]
+  },
+  {
+    "method": "PUT",
+    "path": "/api/admin/profile",
+    "middleware": [
+      "apiRateLimit",
+      "protect",
+      "adminOnly",
+      "selfScoped",
+      "asyncHandler"
+    ]
+  },
+  {
+    "method": "POST",
+    "path": "/api/admin/provider-submissions",
+    "middleware": [
+      "apiRateLimit",
+      "anonymous",
+      "asyncHandler"
+    ]
+  },
+  {
+    "method": "GET",
+    "path": "/api/admin/provider-submissions/check-status",
+    "middleware": [
+      "apiRateLimit",
+      "asyncHandler"
+    ]
+  },
+  {
+    "method": "GET",
+    "path": "/api/admin/providers",
+    "middleware": [
+      "apiRateLimit",
+      "protect",
+      "adminOnly",
+      "requirePermission(canApproveProviders)",
+      "asyncHandler"
+    ]
+  },
+  {
+    "method": "GET",
+    "path": "/api/admin/providers/:providerId",
+    "middleware": [
+      "apiRateLimit",
+      "protect",
+      "adminOnly",
+      "requirePermission(canApproveProviders)",
+      "middleware",
+      "validate",
+      "asyncHandler"
+    ]
+  },
+  {
+    "method": "DELETE",
+    "path": "/api/admin/providers/:providerId",
+    "middleware": [
+      "apiRateLimit",
+      "protect",
+      "adminOnly",
+      "requirePermission(canApproveProviders)",
+      "middleware",
+      "validate",
+      "asyncHandler"
+    ]
+  },
+  {
+    "method": "PUT",
+    "path": "/api/admin/providers/:providerId/approve",
+    "middleware": [
+      "apiRateLimit",
+      "protect",
+      "adminOnly",
+      "requirePermission(canApproveProviders)",
+      "middleware",
+      "validate",
+      "asyncHandler"
+    ]
+  },
+  {
+    "method": "PUT",
+    "path": "/api/admin/providers/:providerId/reject",
+    "middleware": [
+      "apiRateLimit",
+      "protect",
+      "adminOnly",
+      "requirePermission(canApproveProviders)",
+      "middleware",
+      "validate",
+      "middleware",
+      "validate",
+      "asyncHandler"
+    ]
+  },
+  {
+    "method": "POST",
+    "path": "/api/admin/providers/:providerId/restore",
+    "middleware": [
+      "apiRateLimit",
+      "protect",
+      "adminOnly",
+      "requireSuperAdmin",
+      "middleware",
+      "validate",
+      "asyncHandler"
+    ]
+  },
+  {
+    "method": "PUT",
+    "path": "/api/admin/providers/:providerId/suspend",
+    "middleware": [
+      "apiRateLimit",
+      "protect",
+      "adminOnly",
+      "requirePermission(canApproveProviders)",
+      "middleware",
+      "validate",
+      "middleware",
+      "validate",
+      "asyncHandler"
+    ]
+  },
+  {
+    "method": "PUT",
+    "path": "/api/admin/providers/:providerId/unsuspend",
+    "middleware": [
+      "apiRateLimit",
+      "protect",
+      "adminOnly",
+      "requirePermission(canApproveProviders)",
+      "middleware",
+      "validate",
+      "asyncHandler"
+    ]
+  },
+  {
+    "method": "GET",
+    "path": "/api/admin/queue",
+    "middleware": [
+      "apiRateLimit",
+      "protect",
+      "adminOnly",
+      "asyncHandler"
+    ]
+  },
+  {
+    "method": "GET",
+    "path": "/api/admin/service-categories",
+    "middleware": [
+      "apiRateLimit",
+      "protect",
+      "adminOnly",
+      "requirePermission(canManageHomeServices)",
+      "asyncHandler"
+    ]
+  },
+  {
+    "method": "POST",
+    "path": "/api/admin/service-categories",
+    "middleware": [
+      "apiRateLimit",
+      "protect",
+      "adminOnly",
+      "requirePermission(canManageHomeServices)",
+      "asyncHandler"
+    ]
+  },
+  {
+    "method": "PATCH",
+    "path": "/api/admin/service-categories/:id",
+    "middleware": [
+      "apiRateLimit",
+      "protect",
+      "adminOnly",
+      "requirePermission(canManageHomeServices)",
+      "asyncHandler"
+    ]
+  },
+  {
+    "method": "DELETE",
+    "path": "/api/admin/service-categories/:id",
+    "middleware": [
+      "apiRateLimit",
+      "protect",
+      "adminOnly",
+      "requirePermission(canManageHomeServices)",
+      "asyncHandler"
+    ]
+  },
+  {
+    "method": "GET",
+    "path": "/api/admin/sessions",
+    "middleware": [
+      "apiRateLimit",
+      "protect",
+      "adminOnly",
+      "selfScoped",
+      "asyncHandler"
+    ]
+  },
+  {
+    "method": "DELETE",
+    "path": "/api/admin/sessions/:sessionId",
+    "middleware": [
+      "apiRateLimit",
+      "protect",
+      "adminOnly",
+      "selfScoped",
+      "middleware",
+      "validate",
+      "asyncHandler"
+    ]
+  },
+  {
+    "method": "GET",
+    "path": "/api/admin/settings",
+    "middleware": [
+      "apiRateLimit",
+      "protect",
+      "adminOnly",
+      "asyncHandler"
+    ]
+  },
+  {
+    "method": "PUT",
+    "path": "/api/admin/settings/finance",
+    "middleware": [
+      "apiRateLimit",
+      "protect",
+      "adminOnly",
+      "requireSuperAdmin",
+      "asyncHandler"
+    ]
+  },
+  {
+    "method": "PUT",
+    "path": "/api/admin/settings/general",
+    "middleware": [
+      "apiRateLimit",
+      "protect",
+      "adminOnly",
+      "requirePermission(canManageSettings)",
+      "asyncHandler"
+    ]
+  },
+  {
+    "method": "PUT",
+    "path": "/api/admin/settings/notifications",
+    "middleware": [
+      "apiRateLimit",
+      "protect",
+      "adminOnly",
+      "requirePermission(canManageSettings)",
+      "asyncHandler"
+    ]
+  },
+  {
+    "method": "PUT",
+    "path": "/api/admin/settings/security",
+    "middleware": [
+      "apiRateLimit",
+      "protect",
+      "adminOnly",
+      "requireSuperAdmin",
+      "asyncHandler"
+    ]
+  },
+  {
+    "method": "GET",
+    "path": "/api/admin/users",
+    "middleware": [
+      "apiRateLimit",
+      "protect",
+      "adminOnly",
+      "requirePermission(canManageUsers)",
+      "asyncHandler"
+    ]
+  },
+  {
+    "method": "GET",
+    "path": "/api/admin/users/:userId",
+    "middleware": [
+      "apiRateLimit",
+      "protect",
+      "adminOnly",
+      "requirePermission(canManageUsers)",
+      "middleware",
+      "validate",
+      "asyncHandler"
+    ]
+  },
+  {
+    "method": "DELETE",
+    "path": "/api/admin/users/:userId",
+    "middleware": [
+      "apiRateLimit",
+      "protect",
+      "adminOnly",
+      "requirePermission(canManageUsers)",
+      "middleware",
+      "validate",
+      "asyncHandler"
+    ]
+  },
+  {
+    "method": "PUT",
+    "path": "/api/admin/users/:userId/activate",
+    "middleware": [
+      "apiRateLimit",
+      "protect",
+      "adminOnly",
+      "requirePermission(canManageUsers)",
+      "middleware",
+      "validate",
+      "asyncHandler"
+    ]
+  },
+  {
+    "method": "PUT",
+    "path": "/api/admin/users/:userId/deactivate",
+    "middleware": [
+      "apiRateLimit",
+      "protect",
+      "adminOnly",
+      "requirePermission(canManageUsers)",
+      "middleware",
+      "validate",
+      "middleware",
+      "validate",
+      "asyncHandler"
+    ]
+  },
+  {
+    "method": "POST",
+    "path": "/api/admin/users/:userId/restore",
+    "middleware": [
+      "apiRateLimit",
+      "protect",
+      "adminOnly",
+      "requireSuperAdmin",
+      "middleware",
+      "validate",
+      "asyncHandler"
+    ]
+  },
+  {
+    "method": "GET",
+    "path": "/api/admin/wallets/",
+    "middleware": [
+      "apiRateLimit",
+      "protect",
+      "adminOnly",
+      "requirePermission(canManageFinance)",
+      "asyncHandler"
+    ]
+  },
+  {
+    "method": "POST",
+    "path": "/api/admin/wallets/:id/adjust",
+    "middleware": [
+      "apiRateLimit",
+      "protect",
+      "adminOnly",
+      "requirePermission(canManageFinance)",
+      "asyncHandler"
+    ]
+  },
+  {
+    "method": "GET",
+    "path": "/api/admin/wallets/:id/transactions",
+    "middleware": [
+      "apiRateLimit",
+      "protect",
+      "adminOnly",
+      "requirePermission(canManageFinance)",
+      "asyncHandler"
+    ]
+  },
+  {
+    "method": "GET",
+    "path": "/api/admin/wallets/adjustments",
+    "middleware": [
+      "apiRateLimit",
+      "protect",
+      "adminOnly",
+      "requirePermission(canManageFinance)",
+      "asyncHandler"
+    ]
+  },
+  {
+    "method": "POST",
+    "path": "/api/admin/wallets/adjustments/:adjustmentId/approve",
+    "middleware": [
+      "apiRateLimit",
+      "protect",
+      "adminOnly",
+      "requirePermission(canManageFinance)",
+      "requireSuperAdmin",
+      "asyncHandler"
+    ]
+  },
+  {
+    "method": "POST",
+    "path": "/api/admin/wallets/adjustments/:adjustmentId/reject",
+    "middleware": [
+      "apiRateLimit",
+      "protect",
+      "adminOnly",
+      "requirePermission(canManageFinance)",
+      "requireSuperAdmin",
+      "asyncHandler"
+    ]
+  },
+  {
+    "method": "GET",
+    "path": "/api/admin/wallets/reconciliation",
+    "middleware": [
+      "apiRateLimit",
+      "protect",
+      "adminOnly",
+      "requirePermission(canManageFinance)",
+      "asyncHandler"
+    ]
+  },
+  {
+    "method": "POST",
+    "path": "/api/auth/check-verification-status",
+    "middleware": [
+      "apiRateLimit",
+      "authRateLimit",
+      "anonymous",
+      "asyncHandler"
+    ]
+  },
+  {
+    "method": "GET",
+    "path": "/api/auth/error",
+    "middleware": [
+      "apiRateLimit",
+      "authRateLimit",
+      "anonymous",
+      "anonymous"
+    ]
+  },
+  {
+    "method": "GET",
+    "path": "/api/auth/facebook",
+    "middleware": [
+      "apiRateLimit",
+      "authRateLimit",
+      "anonymous",
+      "anonymous"
+    ]
+  },
+  {
+    "method": "POST",
+    "path": "/api/auth/facebook-login",
+    "middleware": [
+      "apiRateLimit",
+      "authRateLimit",
+      "anonymous",
+      "middleware",
+      "middleware",
+      "validate",
+      "asyncHandler"
+    ]
+  },
+  {
+    "method": "POST",
+    "path": "/api/auth/facebook-signup",
+    "middleware": [
+      "apiRateLimit",
+      "authRateLimit",
+      "anonymous",
+      "middleware",
+      "middleware",
+      "validate",
+      "asyncHandler"
+    ]
+  },
+  {
+    "method": "GET",
+    "path": "/api/auth/facebook/callback",
+    "middleware": [
+      "apiRateLimit",
+      "authRateLimit",
+      "anonymous",
+      "anonymous",
+      "asyncHandler"
+    ]
+  },
+  {
+    "method": "POST",
+    "path": "/api/auth/forgot-password",
+    "middleware": [
+      "apiRateLimit",
+      "authRateLimit",
+      "anonymous",
+      "middleware",
+      "middleware",
+      "validate",
+      "asyncHandler"
+    ]
+  },
+  {
+    "method": "GET",
+    "path": "/api/auth/google",
+    "middleware": [
+      "apiRateLimit",
+      "authRateLimit",
+      "anonymous",
+      "anonymous"
+    ]
+  },
+  {
+    "method": "POST",
+    "path": "/api/auth/google-login",
+    "middleware": [
+      "apiRateLimit",
+      "authRateLimit",
+      "anonymous",
+      "middleware",
+      "middleware",
+      "validate",
+      "asyncHandler"
+    ]
+  },
+  {
+    "method": "POST",
+    "path": "/api/auth/google-signup",
+    "middleware": [
+      "apiRateLimit",
+      "authRateLimit",
+      "anonymous",
+      "middleware",
+      "middleware",
+      "validate",
+      "asyncHandler"
+    ]
+  },
+  {
+    "method": "GET",
+    "path": "/api/auth/google/callback",
+    "middleware": [
+      "apiRateLimit",
+      "authRateLimit",
+      "anonymous",
+      "anonymous",
+      "asyncHandler"
+    ]
+  },
+  {
+    "method": "GET",
+    "path": "/api/auth/health",
+    "middleware": [
+      "apiRateLimit",
+      "authRateLimit",
+      "anonymous",
+      "anonymous"
+    ]
+  },
+  {
+    "method": "POST",
+    "path": "/api/auth/login",
+    "middleware": [
+      "apiRateLimit",
+      "authRateLimit",
+      "anonymous",
+      "middleware",
+      "middleware",
+      "validate",
+      "asyncHandler"
+    ]
+  },
+  {
+    "method": "POST",
+    "path": "/api/auth/logout",
+    "middleware": [
+      "apiRateLimit",
+      "authRateLimit",
+      "anonymous",
+      "protect",
+      "asyncHandler"
+    ]
+  },
+  {
+    "method": "POST",
+    "path": "/api/auth/manual-verify",
+    "middleware": [
+      "apiRateLimit",
+      "authRateLimit",
+      "anonymous",
+      "debugRouteOnly",
+      "protect",
+      "adminOnly",
+      "asyncHandler"
+    ]
+  },
+  {
+    "method": "POST",
+    "path": "/api/auth/provider/check-verification-status",
+    "middleware": [
+      "apiRateLimit",
+      "authRateLimit",
+      "anonymous",
+      "asyncHandler"
+    ]
+  },
+  {
+    "method": "POST",
+    "path": "/api/auth/provider/login",
+    "middleware": [
+      "apiRateLimit",
+      "authRateLimit",
+      "anonymous",
+      "middleware",
+      "middleware",
+      "validate",
+      "asyncHandler"
+    ]
+  },
+  {
+    "method": "POST",
+    "path": "/api/auth/provider/register",
+    "middleware": [
+      "apiRateLimit",
+      "authRateLimit",
+      "anonymous",
+      "middleware",
+      "middleware",
+      "middleware",
+      "middleware",
+      "validate",
+      "asyncHandler"
+    ]
+  },
+  {
+    "method": "POST",
+    "path": "/api/auth/provider/resend-verification",
+    "middleware": [
+      "apiRateLimit",
+      "authRateLimit",
+      "anonymous",
+      "middleware",
+      "validate",
+      "asyncHandler"
+    ]
+  },
+  {
+    "method": "POST",
+    "path": "/api/auth/provider/send-verification-email",
+    "middleware": [
+      "apiRateLimit",
+      "authRateLimit",
+      "anonymous",
+      "middleware",
+      "validate",
+      "asyncHandler"
+    ]
+  },
+  {
+    "method": "POST",
+    "path": "/api/auth/provider/verify-email",
+    "middleware": [
+      "apiRateLimit",
+      "authRateLimit",
+      "anonymous",
+      "middleware",
+      "validate",
+      "asyncHandler"
+    ]
+  },
+  {
+    "method": "POST",
+    "path": "/api/auth/refresh",
+    "middleware": [
+      "apiRateLimit",
+      "authRateLimit",
+      "anonymous",
+      "asyncHandler"
+    ]
+  },
+  {
+    "method": "POST",
+    "path": "/api/auth/register",
+    "middleware": [
+      "apiRateLimit",
+      "authRateLimit",
+      "anonymous",
+      "middleware",
+      "middleware",
+      "middleware",
+      "middleware",
+      "validate",
+      "asyncHandler"
+    ]
+  },
+  {
+    "method": "POST",
+    "path": "/api/auth/resend-reset-otp",
+    "middleware": [
+      "apiRateLimit",
+      "authRateLimit",
+      "anonymous",
+      "middleware",
+      "validate",
+      "asyncHandler"
+    ]
+  },
+  {
+    "method": "POST",
+    "path": "/api/auth/reset-password",
+    "middleware": [
+      "apiRateLimit",
+      "authRateLimit",
+      "anonymous",
+      "middleware",
+      "middleware",
+      "validate",
+      "asyncHandler"
+    ]
+  },
+  {
+    "method": "POST",
+    "path": "/api/auth/reset-verification-limit",
+    "middleware": [
+      "apiRateLimit",
+      "authRateLimit",
+      "anonymous",
+      "debugRouteOnly",
+      "protect",
+      "adminOnly",
+      "asyncHandler"
+    ]
+  },
+  {
+    "method": "POST",
+    "path": "/api/auth/send-verification-email",
+    "middleware": [
+      "apiRateLimit",
+      "authRateLimit",
+      "anonymous",
+      "asyncHandler"
+    ]
+  },
+  {
+    "method": "GET",
+    "path": "/api/auth/success",
+    "middleware": [
+      "apiRateLimit",
+      "authRateLimit",
+      "anonymous",
+      "anonymous"
+    ]
+  },
+  {
+    "method": "POST",
+    "path": "/api/auth/user/check-verification-status",
+    "middleware": [
+      "apiRateLimit",
+      "authRateLimit",
+      "anonymous",
+      "asyncHandler"
+    ]
+  },
+  {
+    "method": "POST",
+    "path": "/api/auth/user/verify-email",
+    "middleware": [
+      "apiRateLimit",
+      "authRateLimit",
+      "anonymous",
+      "middleware",
+      "validate",
+      "asyncHandler"
+    ]
+  },
+  {
+    "method": "GET",
+    "path": "/api/auth/verification-status/:email",
+    "middleware": [
+      "apiRateLimit",
+      "authRateLimit",
+      "anonymous",
+      "debugRouteOnly",
+      "protect",
+      "adminOnly",
+      "asyncHandler"
+    ]
+  },
+  {
+    "method": "POST",
+    "path": "/api/auth/verify-email-token",
+    "middleware": [
+      "apiRateLimit",
+      "authRateLimit",
+      "anonymous",
+      "asyncHandler"
+    ]
+  },
+  {
+    "method": "POST",
+    "path": "/api/auth/verify-reset-otp",
+    "middleware": [
+      "apiRateLimit",
+      "authRateLimit",
+      "anonymous",
+      "middleware",
+      "middleware",
+      "validate",
+      "asyncHandler"
+    ]
+  },
+  {
+    "method": "POST",
+    "path": "/api/bookings",
+    "middleware": [
+      "apiRateLimit",
+      "protect",
+      "userOnly",
+      "asyncHandler"
+    ]
+  },
+  {
+    "method": "GET",
+    "path": "/api/bookings/:bookingId/tracking",
+    "middleware": [
+      "apiRateLimit",
+      "protect",
+      "asyncHandler",
+      "asyncHandler"
+    ]
+  },
+  {
+    "method": "GET",
+    "path": "/api/bookings/:id",
+    "middleware": [
+      "apiRateLimit",
+      "protect",
+      "asyncHandler",
+      "asyncHandler"
+    ]
+  },
+  {
+    "method": "POST",
+    "path": "/api/bookings/:id/cancel",
+    "middleware": [
+      "apiRateLimit",
+      "protect",
+      "asyncHandler",
+      "asyncHandler"
+    ]
+  },
+  {
+    "method": "POST",
+    "path": "/api/bookings/:id/complete",
+    "middleware": [
+      "apiRateLimit",
+      "protect",
+      "asyncHandler",
+      "asyncHandler"
+    ]
+  },
+  {
+    "method": "POST",
+    "path": "/api/bookings/:id/dispute",
+    "middleware": [
+      "apiRateLimit",
+      "protect",
+      "asyncHandler",
+      "asyncHandler"
+    ]
+  },
+  {
+    "method": "GET",
+    "path": "/api/bookings/:id/service-status",
+    "middleware": [
+      "apiRateLimit",
+      "protect",
+      "asyncHandler",
+      "asyncHandler"
+    ]
+  },
+  {
+    "method": "PATCH",
+    "path": "/api/bookings/:id/status",
+    "middleware": [
+      "apiRateLimit",
+      "protect",
+      "asyncHandler",
+      "asyncHandler"
+    ]
+  },
+  {
+    "method": "POST",
+    "path": "/api/bookings/:id/verify-identity",
+    "middleware": [
+      "apiRateLimit",
+      "protect",
+      "userOnly",
+      "asyncHandler",
+      "asyncHandler"
+    ]
+  },
+  {
+    "method": "GET",
+    "path": "/api/bookings/active",
+    "middleware": [
+      "apiRateLimit",
+      "protect",
+      "userOnly",
+      "asyncHandler"
+    ]
+  },
+  {
+    "method": "GET",
+    "path": "/api/bookings/init/:providerId",
+    "middleware": [
+      "apiRateLimit",
+      "protect",
+      "userOnly",
+      "asyncHandler"
+    ]
+  },
+  {
+    "method": "POST",
+    "path": "/api/events",
+    "middleware": [
+      "apiRateLimit",
+      "optionalAuth",
+      "asyncHandler"
+    ]
+  },
+  {
+    "method": "GET",
+    "path": "/api/insights/demand/mine",
+    "middleware": [
+      "apiRateLimit",
+      "protect",
+      "asyncHandler"
+    ]
+  },
+  {
+    "method": "POST",
+    "path": "/api/internal/homeservice/bookings/:bookingId/nearby",
+    "middleware": [
+      "apiRateLimit",
+      "requireInternalKey",
+      "asyncHandler"
+    ]
+  },
+  {
+    "method": "GET",
+    "path": "/api/internal/homeservice/expire",
+    "middleware": [
+      "apiRateLimit",
+      "asyncHandler"
+    ]
+  },
+  {
+    "method": "POST",
+    "path": "/api/internal/homeservice/expire",
+    "middleware": [
+      "apiRateLimit",
+      "asyncHandler"
+    ]
+  },
+  {
+    "method": "POST",
+    "path": "/api/internal/ml/refresh",
+    "middleware": [
+      "apiRateLimit",
+      "requireInternalKey",
+      "asyncHandler"
+    ]
+  },
+  {
+    "method": "GET",
+    "path": "/api/internal/scheduler/tick",
+    "middleware": [
+      "apiRateLimit",
+      "requireInternalKey",
+      "asyncHandler"
+    ]
+  },
+  {
+    "method": "POST",
+    "path": "/api/internal/scheduler/tick",
+    "middleware": [
+      "apiRateLimit",
+      "requireInternalKey",
+      "asyncHandler"
+    ]
+  },
+  {
+    "method": "GET",
+    "path": "/api/internal/slots/refresh-horizon",
+    "middleware": [
+      "apiRateLimit",
+      "asyncHandler"
+    ]
+  },
+  {
+    "method": "POST",
+    "path": "/api/internal/slots/refresh-horizon",
+    "middleware": [
+      "apiRateLimit",
+      "asyncHandler"
+    ]
+  },
+  {
+    "method": "GET",
+    "path": "/api/notifications",
+    "middleware": [
+      "apiRateLimit",
+      "protect",
+      "asyncHandler"
+    ]
+  },
+  {
+    "method": "PATCH",
+    "path": "/api/notifications/:notificationId/read",
+    "middleware": [
+      "apiRateLimit",
+      "protect",
+      "asyncHandler"
+    ]
+  },
+  {
+    "method": "PATCH",
+    "path": "/api/notifications/read-all",
+    "middleware": [
+      "apiRateLimit",
+      "protect",
+      "asyncHandler"
+    ]
+  },
+  {
+    "method": "GET",
+    "path": "/api/notifications/unread-count",
+    "middleware": [
+      "apiRateLimit",
+      "protect",
+      "asyncHandler"
+    ]
+  },
+  {
+    "method": "GET",
+    "path": "/api/payments/:bookingId/init",
+    "middleware": [
+      "apiRateLimit",
+      "protect",
+      "userOnly",
+      "asyncHandler",
+      "asyncHandler"
+    ]
+  },
+  {
+    "method": "POST",
+    "path": "/api/payments/process",
+    "middleware": [
+      "apiRateLimit",
+      "protect",
+      "userOnly",
+      "asyncHandler"
+    ]
+  },
+  {
+    "method": "GET",
+    "path": "/api/posts/",
+    "middleware": [
+      "apiRateLimit",
+      "optionalAuth",
+      "asyncHandler"
+    ]
+  },
+  {
+    "method": "POST",
+    "path": "/api/posts/",
+    "middleware": [
+      "apiRateLimit",
+      "protect",
+      "anonymous",
+      "middleware",
+      "middleware",
+      "middleware",
+      "validate",
+      "asyncHandler"
+    ]
+  },
+  {
+    "method": "GET",
+    "path": "/api/posts/:id",
+    "middleware": [
+      "apiRateLimit",
+      "optionalAuth",
+      "asyncHandler"
+    ]
+  },
+  {
+    "method": "PUT",
+    "path": "/api/posts/:id",
+    "middleware": [
+      "apiRateLimit",
+      "protect",
+      "middleware",
+      "middleware",
+      "middleware",
+      "validate",
+      "asyncHandler"
+    ]
+  },
+  {
+    "method": "DELETE",
+    "path": "/api/posts/:id",
+    "middleware": [
+      "apiRateLimit",
+      "protect",
+      "asyncHandler"
+    ]
+  },
+  {
+    "method": "POST",
+    "path": "/api/posts/:id/comment",
+    "middleware": [
+      "apiRateLimit",
+      "protect",
+      "middleware",
+      "middleware",
+      "validate",
+      "asyncHandler"
+    ]
+  },
+  {
+    "method": "POST",
+    "path": "/api/posts/:id/like",
+    "middleware": [
+      "apiRateLimit",
+      "protect",
+      "asyncHandler"
+    ]
+  },
+  {
+    "method": "POST",
+    "path": "/api/posts/:id/report",
+    "middleware": [
+      "apiRateLimit",
+      "protect",
+      "middleware",
+      "middleware",
+      "validate",
+      "asyncHandler"
+    ]
+  },
+  {
+    "method": "DELETE",
+    "path": "/api/posts/comments/:id",
+    "middleware": [
+      "apiRateLimit",
+      "protect",
+      "asyncHandler"
+    ]
+  },
+  {
+    "method": "GET",
+    "path": "/api/posts/my-posts",
+    "middleware": [
+      "apiRateLimit",
+      "protect",
+      "asyncHandler"
+    ]
+  },
+  {
+    "method": "GET",
+    "path": "/api/posts/search",
+    "middleware": [
+      "apiRateLimit",
+      "optionalAuth",
+      "asyncHandler"
+    ]
+  },
+  {
+    "method": "GET",
+    "path": "/api/provider/approval-status",
+    "middleware": [
+      "apiRateLimit",
+      "asyncHandler"
+    ]
+  },
+  {
+    "method": "GET",
+    "path": "/api/provider/dashboard",
+    "middleware": [
+      "apiRateLimit",
+      "protect",
+      "providerOnly",
+      "asyncHandler"
+    ]
+  },
+  {
+    "method": "GET",
+    "path": "/api/provider/earnings",
+    "middleware": [
+      "apiRateLimit",
+      "protect",
+      "providerOnly",
+      "asyncHandler"
+    ]
+  },
+  {
+    "method": "POST",
+    "path": "/api/provider/earnings/payout",
+    "middleware": [
+      "apiRateLimit",
+      "protect",
+      "providerOnly",
+      "asyncHandler"
+    ]
+  },
+  {
+    "method": "POST",
+    "path": "/api/provider/heartbeat",
+    "middleware": [
+      "apiRateLimit",
+      "protect",
+      "providerOnly",
+      "asyncHandler"
+    ]
+  },
+  {
+    "method": "GET",
+    "path": "/api/provider/jobs",
+    "middleware": [
+      "apiRateLimit",
+      "protect",
+      "providerOnly",
+      "asyncHandler"
+    ]
+  },
+  {
+    "method": "GET",
+    "path": "/api/provider/jobs/:jobId",
+    "middleware": [
+      "apiRateLimit",
+      "protect",
+      "providerOnly",
+      "asyncHandler",
+      "asyncHandler"
+    ]
+  },
+  {
+    "method": "POST",
+    "path": "/api/provider/jobs/:jobId/accept",
+    "middleware": [
+      "apiRateLimit",
+      "protect",
+      "providerOnly",
+      "asyncHandler",
+      "asyncHandler"
+    ]
+  },
+  {
+    "method": "GET",
+    "path": "/api/provider/jobs/:jobId/approval-status",
+    "middleware": [
+      "apiRateLimit",
+      "protect",
+      "providerOnly",
+      "asyncHandler",
+      "asyncHandler"
+    ]
+  },
+  {
+    "method": "POST",
+    "path": "/api/provider/jobs/:jobId/arrived",
+    "middleware": [
+      "apiRateLimit",
+      "protect",
+      "providerOnly",
+      "asyncHandler",
+      "asyncHandler"
+    ]
+  },
+  {
+    "method": "GET",
+    "path": "/api/provider/jobs/:jobId/awaiting-approval",
+    "middleware": [
+      "apiRateLimit",
+      "protect",
+      "providerOnly",
+      "asyncHandler",
+      "asyncHandler"
+    ]
+  },
+  {
+    "method": "POST",
+    "path": "/api/provider/jobs/:jobId/complete",
+    "middleware": [
+      "apiRateLimit",
+      "protect",
+      "providerOnly",
+      "asyncHandler",
+      "asyncHandler"
+    ]
+  },
+  {
+    "method": "POST",
+    "path": "/api/provider/jobs/:jobId/complete-work",
+    "middleware": [
+      "apiRateLimit",
+      "protect",
+      "providerOnly",
+      "asyncHandler",
+      "asyncHandler"
+    ]
+  },
+  {
+    "method": "GET",
+    "path": "/api/provider/jobs/:jobId/completion",
+    "middleware": [
+      "apiRateLimit",
+      "protect",
+      "providerOnly",
+      "asyncHandler",
+      "asyncHandler"
+    ]
+  },
+  {
+    "method": "POST",
+    "path": "/api/provider/jobs/:jobId/confirm-cash",
+    "middleware": [
+      "apiRateLimit",
+      "protect",
+      "providerOnly",
+      "asyncHandler",
+      "asyncHandler"
+    ]
+  },
+  {
+    "method": "POST",
+    "path": "/api/provider/jobs/:jobId/confirm-payment",
+    "middleware": [
+      "apiRateLimit",
+      "protect",
+      "providerOnly",
+      "asyncHandler",
+      "asyncHandler"
+    ]
+  },
+  {
+    "method": "POST",
+    "path": "/api/provider/jobs/:jobId/finalize",
+    "middleware": [
+      "apiRateLimit",
+      "protect",
+      "providerOnly",
+      "asyncHandler",
+      "asyncHandler"
+    ]
+  },
+  {
+    "method": "POST",
+    "path": "/api/provider/jobs/:jobId/identity-token",
+    "middleware": [
+      "apiRateLimit",
+      "protect",
+      "providerOnly",
+      "asyncHandler",
+      "asyncHandler"
+    ]
+  },
+  {
+    "method": "GET",
+    "path": "/api/provider/jobs/:jobId/in-progress",
+    "middleware": [
+      "apiRateLimit",
+      "protect",
+      "providerOnly",
+      "asyncHandler",
+      "asyncHandler"
+    ]
+  },
+  {
+    "method": "GET",
+    "path": "/api/provider/jobs/:jobId/navigation",
+    "middleware": [
+      "apiRateLimit",
+      "protect",
+      "providerOnly",
+      "asyncHandler",
+      "asyncHandler"
+    ]
+  },
+  {
+    "method": "GET",
+    "path": "/api/provider/jobs/:jobId/payment",
+    "middleware": [
+      "apiRateLimit",
+      "protect",
+      "providerOnly",
+      "asyncHandler",
+      "asyncHandler"
+    ]
+  },
+  {
+    "method": "POST",
+    "path": "/api/provider/jobs/:jobId/reject",
+    "middleware": [
+      "apiRateLimit",
+      "protect",
+      "providerOnly",
+      "asyncHandler",
+      "asyncHandler"
+    ]
+  },
+  {
+    "method": "POST",
+    "path": "/api/provider/jobs/:jobId/request-payment",
+    "middleware": [
+      "apiRateLimit",
+      "protect",
+      "providerOnly",
+      "asyncHandler",
+      "asyncHandler"
+    ]
+  },
+  {
+    "method": "POST",
+    "path": "/api/provider/jobs/:jobId/start",
+    "middleware": [
+      "apiRateLimit",
+      "protect",
+      "providerOnly",
+      "asyncHandler",
+      "asyncHandler"
+    ]
+  },
+  {
+    "method": "POST",
+    "path": "/api/provider/jobs/:jobId/start-work",
+    "middleware": [
+      "apiRateLimit",
+      "protect",
+      "providerOnly",
+      "asyncHandler",
+      "asyncHandler"
+    ]
+  },
+  {
+    "method": "POST",
+    "path": "/api/provider/location",
+    "middleware": [
+      "apiRateLimit",
+      "protect",
+      "providerOnly",
+      "asyncHandler"
+    ]
+  },
+  {
+    "method": "PUT",
+    "path": "/api/provider/location/base",
+    "middleware": [
+      "apiRateLimit",
+      "protect",
+      "providerOnly",
+      "asyncHandler"
+    ]
+  },
+  {
+    "method": "PATCH",
+    "path": "/api/provider/online-status",
+    "middleware": [
+      "apiRateLimit",
+      "protect",
+      "providerOnly",
+      "asyncHandler"
+    ]
+  },
+  {
+    "method": "POST",
+    "path": "/api/provider/payout-request",
+    "middleware": [
+      "apiRateLimit",
+      "protect",
+      "providerOnly",
+      "asyncHandler"
+    ]
+  },
+  {
+    "method": "GET",
+    "path": "/api/provider/profile",
+    "middleware": [
+      "apiRateLimit",
+      "protect",
+      "providerOnly",
+      "asyncHandler"
+    ]
+  },
+  {
+    "method": "PUT",
+    "path": "/api/provider/profile",
+    "middleware": [
+      "apiRateLimit",
+      "protect",
+      "anonymous",
+      "asyncHandler"
+    ]
+  },
+  {
+    "method": "PATCH",
+    "path": "/api/provider/profile",
+    "middleware": [
+      "apiRateLimit",
+      "protect",
+      "providerOnly",
+      "asyncHandler"
+    ]
+  },
+  {
+    "method": "PATCH",
+    "path": "/api/provider/status",
+    "middleware": [
+      "apiRateLimit",
+      "protect",
+      "providerOnly",
+      "asyncHandler"
+    ]
+  },
+  {
+    "method": "GET",
+    "path": "/api/providers",
+    "middleware": [
+      "apiRateLimit",
+      "optionalAuth",
+      "asyncHandler"
+    ]
+  },
+  {
+    "method": "GET",
+    "path": "/api/providers/",
+    "middleware": [
+      "apiRateLimit",
+      "optionalAuth",
+      "asyncHandler"
+    ]
+  },
+  {
+    "method": "GET",
+    "path": "/api/providers/:id",
+    "middleware": [
+      "apiRateLimit",
+      "optionalAuth",
+      "asyncHandler"
+    ]
+  },
+  {
+    "method": "POST",
+    "path": "/api/providers/:id/rate",
+    "middleware": [
+      "apiRateLimit",
+      "protect",
+      "middleware",
+      "middleware",
+      "validate",
+      "asyncHandler"
+    ]
+  },
+  {
+    "method": "GET",
+    "path": "/api/providers/:providerId",
+    "middleware": [
+      "apiRateLimit",
+      "asyncHandler"
+    ]
+  },
+  {
+    "method": "GET",
+    "path": "/api/providers/:providerId/reviews",
+    "middleware": [
+      "apiRateLimit",
+      "asyncHandler"
+    ]
+  },
+  {
+    "method": "GET",
+    "path": "/api/providers/approval-status",
+    "middleware": [
+      "apiRateLimit",
+      "asyncHandler"
+    ]
+  },
+  {
+    "method": "PUT",
+    "path": "/api/providers/availability",
+    "middleware": [
+      "apiRateLimit",
+      "protect",
+      "providerOnly",
+      "asyncHandler",
+      "middleware",
+      "validate",
+      "asyncHandler"
+    ]
+  },
+  {
+    "method": "GET",
+    "path": "/api/providers/by-type/:type",
+    "middleware": [
+      "apiRateLimit",
+      "optionalAuth",
+      "asyncHandler"
+    ]
+  },
+  {
+    "method": "POST",
+    "path": "/api/providers/personal-info",
+    "middleware": [
+      "apiRateLimit",
+      "protect",
+      "asyncHandler",
+      "anonymous",
+      "middleware",
+      "middleware",
+      "middleware",
+      "middleware",
+      "middleware",
+      "middleware",
+      "middleware",
+      "validate",
+      "asyncHandler"
+    ]
+  },
+  {
+    "method": "GET",
+    "path": "/api/providers/profile",
+    "middleware": [
+      "apiRateLimit",
+      "protect",
+      "providerOnly",
+      "asyncHandler",
+      "asyncHandler"
+    ]
+  },
+  {
+    "method": "PUT",
+    "path": "/api/providers/profile",
+    "middleware": [
+      "apiRateLimit",
+      "protect",
+      "providerOnly",
+      "asyncHandler",
+      "asyncHandler"
+    ]
+  },
+  {
+    "method": "GET",
+    "path": "/api/providers/search",
+    "middleware": [
+      "apiRateLimit",
+      "optionalAuth",
+      "asyncHandler"
+    ]
+  },
+  {
+    "method": "POST",
+    "path": "/api/providers/upload-document",
+    "middleware": [
+      "apiRateLimit",
+      "protect",
+      "providerOnly",
+      "asyncHandler",
+      "anonymous",
+      "asyncHandler"
+    ]
+  },
+  {
+    "method": "GET",
+    "path": "/api/providers/verification",
+    "middleware": [
+      "apiRateLimit",
+      "protect",
+      "providerOnly",
+      "asyncHandler",
+      "asyncHandler"
+    ]
+  },
+  {
+    "method": "GET",
+    "path": "/api/recommendations/healthcare",
+    "middleware": [
+      "apiRateLimit",
+      "protect",
+      "userOnly",
+      "asyncHandler"
+    ]
+  },
+  {
+    "method": "GET",
+    "path": "/api/recommendations/homeservice",
+    "middleware": [
+      "apiRateLimit",
+      "protect",
+      "userOnly",
+      "asyncHandler"
+    ]
+  },
+  {
+    "method": "GET",
+    "path": "/api/recommendations/shopping",
+    "middleware": [
+      "apiRateLimit",
+      "optionalAuth",
+      "asyncHandler"
+    ]
+  },
+  {
+    "method": "GET",
+    "path": "/api/recommendations/shopping/similar/:productId",
+    "middleware": [
+      "apiRateLimit",
+      "asyncHandler"
+    ]
+  },
+  {
+    "method": "GET",
+    "path": "/api/recommendations/shopping/trending",
+    "middleware": [
+      "apiRateLimit",
+      "asyncHandler"
+    ]
+  },
+  {
+    "method": "GET",
+    "path": "/api/reset-password",
+    "middleware": [
+      "apiRateLimit",
+      "anonymous"
+    ]
+  },
+  {
+    "method": "POST",
+    "path": "/api/reviews",
+    "middleware": [
+      "apiRateLimit",
+      "protect",
+      "userOnly",
+      "asyncHandler"
+    ]
+  },
+  {
+    "method": "GET",
+    "path": "/api/reviews/:bookingId/init",
+    "middleware": [
+      "apiRateLimit",
+      "protect",
+      "userOnly",
+      "asyncHandler",
+      "asyncHandler"
+    ]
+  },
+  {
+    "method": "GET",
+    "path": "/api/search/services",
+    "middleware": [
+      "apiRateLimit",
+      "anonymous",
+      "asyncHandler"
+    ]
+  },
+  {
+    "method": "GET",
+    "path": "/api/service-categories",
+    "middleware": [
+      "apiRateLimit",
+      "asyncHandler"
+    ]
+  },
+  {
+    "method": "GET",
+    "path": "/api/shopping/addresses",
+    "middleware": [
+      "apiRateLimit",
+      "protect",
+      "userOnly",
+      "asyncHandler"
+    ]
+  },
+  {
+    "method": "POST",
+    "path": "/api/shopping/addresses",
+    "middleware": [
+      "apiRateLimit",
+      "protect",
+      "userOnly",
+      "asyncHandler"
+    ]
+  },
+  {
+    "method": "PATCH",
+    "path": "/api/shopping/addresses/:addressId",
+    "middleware": [
+      "apiRateLimit",
+      "protect",
+      "userOnly",
+      "asyncHandler"
+    ]
+  },
+  {
+    "method": "DELETE",
+    "path": "/api/shopping/addresses/:addressId",
+    "middleware": [
+      "apiRateLimit",
+      "protect",
+      "userOnly",
+      "asyncHandler"
+    ]
+  },
+  {
+    "method": "GET",
+    "path": "/api/shopping/admin/analytics",
+    "middleware": [
+      "apiRateLimit",
+      "protect",
+      "requirePermission(canManageShopping)",
+      "asyncHandler"
+    ]
+  },
+  {
+    "method": "GET",
+    "path": "/api/shopping/admin/banners",
+    "middleware": [
+      "apiRateLimit",
+      "protect",
+      "requirePermission(canManageShopping)",
+      "asyncHandler"
+    ]
+  },
+  {
+    "method": "POST",
+    "path": "/api/shopping/admin/banners",
+    "middleware": [
+      "apiRateLimit",
+      "protect",
+      "requirePermission(canManageShopping)",
+      "asyncHandler"
+    ]
+  },
+  {
+    "method": "PATCH",
+    "path": "/api/shopping/admin/banners/:bannerId",
+    "middleware": [
+      "apiRateLimit",
+      "protect",
+      "requirePermission(canManageShopping)",
+      "asyncHandler"
+    ]
+  },
+  {
+    "method": "DELETE",
+    "path": "/api/shopping/admin/banners/:bannerId",
+    "middleware": [
+      "apiRateLimit",
+      "protect",
+      "requirePermission(canManageShopping)",
+      "asyncHandler"
+    ]
+  },
+  {
+    "method": "POST",
+    "path": "/api/shopping/admin/banners/:bannerId/image",
+    "middleware": [
+      "apiRateLimit",
+      "protect",
+      "requirePermission(canManageShopping)",
+      "asyncHandler"
+    ]
+  },
+  {
+    "method": "GET",
+    "path": "/api/shopping/admin/brands",
+    "middleware": [
+      "apiRateLimit",
+      "protect",
+      "requirePermission(canManageShopping)",
+      "asyncHandler"
+    ]
+  },
+  {
+    "method": "POST",
+    "path": "/api/shopping/admin/brands",
+    "middleware": [
+      "apiRateLimit",
+      "protect",
+      "requirePermission(canManageShopping)",
+      "asyncHandler"
+    ]
+  },
+  {
+    "method": "GET",
+    "path": "/api/shopping/admin/brands/:brandId",
+    "middleware": [
+      "apiRateLimit",
+      "protect",
+      "requirePermission(canManageShopping)",
+      "asyncHandler"
+    ]
+  },
+  {
+    "method": "PATCH",
+    "path": "/api/shopping/admin/brands/:brandId",
+    "middleware": [
+      "apiRateLimit",
+      "protect",
+      "requirePermission(canManageShopping)",
+      "asyncHandler"
+    ]
+  },
+  {
+    "method": "DELETE",
+    "path": "/api/shopping/admin/brands/:brandId",
+    "middleware": [
+      "apiRateLimit",
+      "protect",
+      "requirePermission(canManageShopping)",
+      "asyncHandler"
+    ]
+  },
+  {
+    "method": "PATCH",
+    "path": "/api/shopping/admin/brands/:brandId/status",
+    "middleware": [
+      "apiRateLimit",
+      "protect",
+      "requirePermission(canManageShopping)",
+      "asyncHandler"
+    ]
+  },
+  {
+    "method": "GET",
+    "path": "/api/shopping/admin/dashboard",
+    "middleware": [
+      "apiRateLimit",
+      "protect",
+      "requirePermission(canManageShopping)",
+      "asyncHandler"
+    ]
+  },
+  {
+    "method": "GET",
+    "path": "/api/shopping/admin/orders",
+    "middleware": [
+      "apiRateLimit",
+      "protect",
+      "requirePermission(canManageShopping)",
+      "asyncHandler"
+    ]
+  },
+  {
+    "method": "GET",
+    "path": "/api/shopping/admin/orders/:orderId",
+    "middleware": [
+      "apiRateLimit",
+      "protect",
+      "requirePermission(canManageShopping)",
+      "asyncHandler"
+    ]
+  },
+  {
+    "method": "POST",
+    "path": "/api/shopping/admin/orders/:orderId/refund",
+    "middleware": [
+      "apiRateLimit",
+      "protect",
+      "requirePermission(canManageShopping)",
+      "requirePermission(canManageFinance)",
+      "asyncHandler"
+    ]
+  },
+  {
+    "method": "PATCH",
+    "path": "/api/shopping/admin/orders/:orderId/status",
+    "middleware": [
+      "apiRateLimit",
+      "protect",
+      "requirePermission(canManageShopping)",
+      "asyncHandler"
+    ]
+  },
+  {
+    "method": "GET",
+    "path": "/api/shopping/admin/outlets",
+    "middleware": [
+      "apiRateLimit",
+      "protect",
+      "requirePermission(canManageShopping)",
+      "asyncHandler"
+    ]
+  },
+  {
+    "method": "POST",
+    "path": "/api/shopping/admin/outlets",
+    "middleware": [
+      "apiRateLimit",
+      "protect",
+      "requirePermission(canManageShopping)",
+      "asyncHandler"
+    ]
+  },
+  {
+    "method": "GET",
+    "path": "/api/shopping/admin/outlets/:outletId",
+    "middleware": [
+      "apiRateLimit",
+      "protect",
+      "requirePermission(canManageShopping)",
+      "asyncHandler"
+    ]
+  },
+  {
+    "method": "PUT",
+    "path": "/api/shopping/admin/outlets/:outletId",
+    "middleware": [
+      "apiRateLimit",
+      "protect",
+      "requirePermission(canManageShopping)",
+      "asyncHandler"
+    ]
+  },
+  {
+    "method": "DELETE",
+    "path": "/api/shopping/admin/outlets/:outletId",
+    "middleware": [
+      "apiRateLimit",
+      "protect",
+      "requirePermission(canManageShopping)",
+      "asyncHandler"
+    ]
+  },
+  {
+    "method": "PATCH",
+    "path": "/api/shopping/admin/outlets/:outletId/assign-brand",
+    "middleware": [
+      "apiRateLimit",
+      "protect",
+      "requirePermission(canManageShopping)",
+      "asyncHandler"
+    ]
+  },
+  {
+    "method": "PATCH",
+    "path": "/api/shopping/admin/outlets/:outletId/color-scheme",
+    "middleware": [
+      "apiRateLimit",
+      "protect",
+      "requirePermission(canManageShopping)",
+      "asyncHandler"
+    ]
+  },
+  {
+    "method": "PATCH",
+    "path": "/api/shopping/admin/outlets/:outletId/toggle-status",
+    "middleware": [
+      "apiRateLimit",
+      "protect",
+      "requirePermission(canManageShopping)",
+      "asyncHandler"
+    ]
+  },
+  {
+    "method": "GET",
+    "path": "/api/shopping/admin/products",
+    "middleware": [
+      "apiRateLimit",
+      "protect",
+      "requirePermission(canManageShopping)",
+      "asyncHandler"
+    ]
+  },
+  {
+    "method": "PATCH",
+    "path": "/api/shopping/admin/products/:productId/moderation",
+    "middleware": [
+      "apiRateLimit",
+      "protect",
+      "requirePermission(canManageShopping)",
+      "asyncHandler"
+    ]
+  },
+  {
+    "method": "GET",
+    "path": "/api/shopping/admin/settings",
+    "middleware": [
+      "apiRateLimit",
+      "protect",
+      "requirePermission(canManageShopping)",
+      "asyncHandler"
+    ]
+  },
+  {
+    "method": "PATCH",
+    "path": "/api/shopping/admin/settings",
+    "middleware": [
+      "apiRateLimit",
+      "protect",
+      "requirePermission(canManageShopping)",
+      "asyncHandler"
+    ]
+  },
+  {
+    "method": "GET",
+    "path": "/api/shopping/banners",
+    "middleware": [
+      "apiRateLimit",
+      "asyncHandler"
+    ]
+  },
+  {
+    "method": "GET",
+    "path": "/api/shopping/brands",
+    "middleware": [
+      "apiRateLimit",
+      "asyncHandler"
+    ]
+  },
+  {
+    "method": "GET",
+    "path": "/api/shopping/brands/:brandId",
+    "middleware": [
+      "apiRateLimit",
+      "asyncHandler"
+    ]
+  },
+  {
+    "method": "GET",
+    "path": "/api/shopping/brands/:brandId/categories",
+    "middleware": [
+      "apiRateLimit",
+      "asyncHandler"
+    ]
+  },
+  {
+    "method": "GET",
+    "path": "/api/shopping/brands/slug/:slug",
+    "middleware": [
+      "apiRateLimit",
+      "asyncHandler"
+    ]
+  },
+  {
+    "method": "GET",
+    "path": "/api/shopping/cart",
+    "middleware": [
+      "apiRateLimit",
+      "protect",
+      "userOnly",
+      "asyncHandler"
+    ]
+  },
+  {
+    "method": "DELETE",
+    "path": "/api/shopping/cart",
+    "middleware": [
+      "apiRateLimit",
+      "protect",
+      "userOnly",
+      "asyncHandler"
+    ]
+  },
+  {
+    "method": "POST",
+    "path": "/api/shopping/cart/coupon",
+    "middleware": [
+      "apiRateLimit",
+      "protect",
+      "userOnly",
+      "asyncHandler"
+    ]
+  },
+  {
+    "method": "DELETE",
+    "path": "/api/shopping/cart/coupon",
+    "middleware": [
+      "apiRateLimit",
+      "protect",
+      "userOnly",
+      "asyncHandler"
+    ]
+  },
+  {
+    "method": "POST",
+    "path": "/api/shopping/cart/items",
+    "middleware": [
+      "apiRateLimit",
+      "protect",
+      "userOnly",
+      "asyncHandler"
+    ]
+  },
+  {
+    "method": "PATCH",
+    "path": "/api/shopping/cart/items/:itemId",
+    "middleware": [
+      "apiRateLimit",
+      "protect",
+      "userOnly",
+      "asyncHandler"
+    ]
+  },
+  {
+    "method": "DELETE",
+    "path": "/api/shopping/cart/items/:itemId",
+    "middleware": [
+      "apiRateLimit",
+      "protect",
+      "userOnly",
+      "asyncHandler"
+    ]
+  },
+  {
+    "method": "GET",
+    "path": "/api/shopping/categories/:categoryId",
+    "middleware": [
+      "apiRateLimit",
+      "asyncHandler"
+    ]
+  },
+  {
+    "method": "POST",
+    "path": "/api/shopping/checkout",
+    "middleware": [
+      "apiRateLimit",
+      "protect",
+      "userOnly",
+      "asyncHandler"
+    ]
+  },
+  {
+    "method": "GET",
+    "path": "/api/shopping/coupons",
+    "middleware": [
+      "apiRateLimit",
+      "protect",
+      "userOnly",
+      "asyncHandler"
+    ]
+  },
+  {
+    "method": "GET",
+    "path": "/api/shopping/delivery-options",
+    "middleware": [
+      "apiRateLimit",
+      "protect",
+      "userOnly",
+      "asyncHandler"
+    ]
+  },
+  {
+    "method": "GET",
+    "path": "/api/shopping/notifications",
+    "middleware": [
+      "apiRateLimit",
+      "protect",
+      "asyncHandler"
+    ]
+  },
+  {
+    "method": "PATCH",
+    "path": "/api/shopping/notifications/:id/read",
+    "middleware": [
+      "apiRateLimit",
+      "protect",
+      "asyncHandler"
+    ]
+  },
+  {
+    "method": "PATCH",
+    "path": "/api/shopping/notifications/read-all",
+    "middleware": [
+      "apiRateLimit",
+      "protect",
+      "asyncHandler"
+    ]
+  },
+  {
+    "method": "GET",
+    "path": "/api/shopping/notifications/unread-count",
+    "middleware": [
+      "apiRateLimit",
+      "protect",
+      "asyncHandler"
+    ]
+  },
+  {
+    "method": "GET",
+    "path": "/api/shopping/orders",
+    "middleware": [
+      "apiRateLimit",
+      "protect",
+      "userOnly",
+      "asyncHandler"
+    ]
+  },
+  {
+    "method": "GET",
+    "path": "/api/shopping/orders/:id",
+    "middleware": [
+      "apiRateLimit",
+      "protect",
+      "userOnly",
+      "asyncHandler"
+    ]
+  },
+  {
+    "method": "POST",
+    "path": "/api/shopping/orders/:orderId/cancel",
+    "middleware": [
+      "apiRateLimit",
+      "protect",
+      "userOnly",
+      "asyncHandler"
+    ]
+  },
+  {
+    "method": "POST",
+    "path": "/api/shopping/orders/:orderId/return",
+    "middleware": [
+      "apiRateLimit",
+      "protect",
+      "userOnly",
+      "asyncHandler"
+    ]
+  },
+  {
+    "method": "GET",
+    "path": "/api/shopping/orders/:orderId/tracking",
+    "middleware": [
+      "apiRateLimit",
+      "protect",
+      "userOnly",
+      "asyncHandler"
+    ]
+  },
+  {
+    "method": "GET",
+    "path": "/api/shopping/outlets",
+    "middleware": [
+      "apiRateLimit",
+      "asyncHandler"
+    ]
+  },
+  {
+    "method": "GET",
+    "path": "/api/shopping/outlets/:outletId",
+    "middleware": [
+      "apiRateLimit",
+      "asyncHandler"
+    ]
+  },
+  {
+    "method": "GET",
+    "path": "/api/shopping/products",
+    "middleware": [
+      "apiRateLimit",
+      "nlqBudget",
+      "asyncHandler"
+    ]
+  },
+  {
+    "method": "GET",
+    "path": "/api/shopping/products/:productId",
+    "middleware": [
+      "apiRateLimit",
+      "asyncHandler"
+    ]
+  },
+  {
+    "method": "POST",
+    "path": "/api/shopping/products/:productId/review",
+    "middleware": [
+      "apiRateLimit",
+      "protect",
+      "userOnly",
+      "asyncHandler"
+    ]
+  },
+  {
+    "method": "GET",
+    "path": "/api/shopping/products/:productId/reviews",
+    "middleware": [
+      "apiRateLimit",
+      "asyncHandler"
+    ]
+  },
+  {
+    "method": "GET",
+    "path": "/api/shopping/returns",
+    "middleware": [
+      "apiRateLimit",
+      "protect",
+      "userOnly",
+      "asyncHandler"
+    ]
+  },
+  {
+    "method": "GET",
+    "path": "/api/shopping/vendor/analytics",
+    "middleware": [
+      "apiRateLimit",
+      "protect",
+      "requireVendor",
+      "asyncHandler",
+      "asyncHandler"
+    ]
+  },
+  {
+    "method": "GET",
+    "path": "/api/shopping/vendor/brand",
+    "middleware": [
+      "apiRateLimit",
+      "protect",
+      "requireVendor",
+      "asyncHandler",
+      "asyncHandler"
+    ]
+  },
+  {
+    "method": "POST",
+    "path": "/api/shopping/vendor/brand",
+    "middleware": [
+      "apiRateLimit",
+      "protect",
+      "requireVendor",
+      "asyncHandler"
+    ]
+  },
+  {
+    "method": "PATCH",
+    "path": "/api/shopping/vendor/brand",
+    "middleware": [
+      "apiRateLimit",
+      "protect",
+      "requireVendor",
+      "asyncHandler",
+      "asyncHandler"
+    ]
+  },
+  {
+    "method": "POST",
+    "path": "/api/shopping/vendor/brand/banner",
+    "middleware": [
+      "apiRateLimit",
+      "protect",
+      "requireVendor",
+      "asyncHandler",
+      "asyncHandler"
+    ]
+  },
+  {
+    "method": "POST",
+    "path": "/api/shopping/vendor/brand/logo",
+    "middleware": [
+      "apiRateLimit",
+      "protect",
+      "requireVendor",
+      "asyncHandler",
+      "asyncHandler"
+    ]
+  },
+  {
+    "method": "GET",
+    "path": "/api/shopping/vendor/categories",
+    "middleware": [
+      "apiRateLimit",
+      "protect",
+      "requireVendor",
+      "asyncHandler",
+      "asyncHandler"
+    ]
+  },
+  {
+    "method": "POST",
+    "path": "/api/shopping/vendor/categories",
+    "middleware": [
+      "apiRateLimit",
+      "protect",
+      "requireVendor",
+      "asyncHandler",
+      "asyncHandler"
+    ]
+  },
+  {
+    "method": "PATCH",
+    "path": "/api/shopping/vendor/categories/:categoryId",
+    "middleware": [
+      "apiRateLimit",
+      "protect",
+      "requireVendor",
+      "asyncHandler",
+      "asyncHandler"
+    ]
+  },
+  {
+    "method": "DELETE",
+    "path": "/api/shopping/vendor/categories/:categoryId",
+    "middleware": [
+      "apiRateLimit",
+      "protect",
+      "requireVendor",
+      "asyncHandler",
+      "asyncHandler"
+    ]
+  },
+  {
+    "method": "GET",
+    "path": "/api/shopping/vendor/coupons",
+    "middleware": [
+      "apiRateLimit",
+      "protect",
+      "requireVendor",
+      "asyncHandler",
+      "asyncHandler"
+    ]
+  },
+  {
+    "method": "POST",
+    "path": "/api/shopping/vendor/coupons",
+    "middleware": [
+      "apiRateLimit",
+      "protect",
+      "requireVendor",
+      "asyncHandler",
+      "asyncHandler"
+    ]
+  },
+  {
+    "method": "PATCH",
+    "path": "/api/shopping/vendor/coupons/:couponCode",
+    "middleware": [
+      "apiRateLimit",
+      "protect",
+      "requireVendor",
+      "asyncHandler",
+      "asyncHandler"
+    ]
+  },
+  {
+    "method": "GET",
+    "path": "/api/shopping/vendor/dashboard",
+    "middleware": [
+      "apiRateLimit",
+      "protect",
+      "requireVendor",
+      "asyncHandler",
+      "asyncHandler"
+    ]
+  },
+  {
+    "method": "GET",
+    "path": "/api/shopping/vendor/inventory",
+    "middleware": [
+      "apiRateLimit",
+      "protect",
+      "requireVendor",
+      "asyncHandler",
+      "asyncHandler"
+    ]
+  },
+  {
+    "method": "PATCH",
+    "path": "/api/shopping/vendor/inventory/:variantId",
+    "middleware": [
+      "apiRateLimit",
+      "protect",
+      "requireVendor",
+      "asyncHandler",
+      "asyncHandler"
+    ]
+  },
+  {
+    "method": "POST",
+    "path": "/api/shopping/vendor/inventory/bulk",
+    "middleware": [
+      "apiRateLimit",
+      "protect",
+      "requireVendor",
+      "asyncHandler",
+      "asyncHandler"
+    ]
+  },
+  {
+    "method": "GET",
+    "path": "/api/shopping/vendor/orders",
+    "middleware": [
+      "apiRateLimit",
+      "protect",
+      "requireVendor",
+      "asyncHandler",
+      "asyncHandler"
+    ]
+  },
+  {
+    "method": "GET",
+    "path": "/api/shopping/vendor/orders/:orderId",
+    "middleware": [
+      "apiRateLimit",
+      "protect",
+      "requireVendor",
+      "asyncHandler",
+      "asyncHandler"
+    ]
+  },
+  {
+    "method": "PATCH",
+    "path": "/api/shopping/vendor/orders/:orderId/shipping",
+    "middleware": [
+      "apiRateLimit",
+      "protect",
+      "requireVendor",
+      "asyncHandler",
+      "asyncHandler"
+    ]
+  },
+  {
+    "method": "PATCH",
+    "path": "/api/shopping/vendor/orders/:orderId/status",
+    "middleware": [
+      "apiRateLimit",
+      "protect",
+      "requireVendor",
+      "asyncHandler",
+      "asyncHandler"
+    ]
+  },
+  {
+    "method": "GET",
+    "path": "/api/shopping/vendor/products",
+    "middleware": [
+      "apiRateLimit",
+      "protect",
+      "requireVendor",
+      "asyncHandler",
+      "asyncHandler"
+    ]
+  },
+  {
+    "method": "POST",
+    "path": "/api/shopping/vendor/products",
+    "middleware": [
+      "apiRateLimit",
+      "protect",
+      "requireVendor",
+      "asyncHandler",
+      "asyncHandler"
+    ]
+  },
+  {
+    "method": "PATCH",
+    "path": "/api/shopping/vendor/products/:productId",
+    "middleware": [
+      "apiRateLimit",
+      "protect",
+      "requireVendor",
+      "asyncHandler",
+      "asyncHandler"
+    ]
+  },
+  {
+    "method": "DELETE",
+    "path": "/api/shopping/vendor/products/:productId",
+    "middleware": [
+      "apiRateLimit",
+      "protect",
+      "requireVendor",
+      "asyncHandler",
+      "asyncHandler"
+    ]
+  },
+  {
+    "method": "POST",
+    "path": "/api/shopping/vendor/products/:productId/images",
+    "middleware": [
+      "apiRateLimit",
+      "protect",
+      "requireVendor",
+      "asyncHandler",
+      "asyncHandler"
+    ]
+  },
+  {
+    "method": "PATCH",
+    "path": "/api/shopping/vendor/products/:productId/model3d",
+    "middleware": [
+      "apiRateLimit",
+      "protect",
+      "requireVendor",
+      "asyncHandler",
+      "asyncHandler"
+    ]
+  },
+  {
+    "method": "DELETE",
+    "path": "/api/shopping/vendor/products/:productId/model3d",
+    "middleware": [
+      "apiRateLimit",
+      "protect",
+      "requireVendor",
+      "asyncHandler",
+      "asyncHandler"
+    ]
+  },
+  {
+    "method": "GET",
+    "path": "/api/shopping/vendor/returns",
+    "middleware": [
+      "apiRateLimit",
+      "protect",
+      "requireVendor",
+      "asyncHandler",
+      "asyncHandler"
+    ]
+  },
+  {
+    "method": "PATCH",
+    "path": "/api/shopping/vendor/returns/:returnId",
+    "middleware": [
+      "apiRateLimit",
+      "protect",
+      "requireVendor",
+      "asyncHandler",
+      "asyncHandler"
+    ]
+  },
+  {
+    "method": "GET",
+    "path": "/api/shopping/vendor/reviews",
+    "middleware": [
+      "apiRateLimit",
+      "protect",
+      "requireVendor",
+      "asyncHandler",
+      "asyncHandler"
+    ]
+  },
+  {
+    "method": "POST",
+    "path": "/api/shopping/vendor/reviews/:reviewId/respond",
+    "middleware": [
+      "apiRateLimit",
+      "protect",
+      "requireVendor",
+      "asyncHandler",
+      "asyncHandler"
+    ]
+  },
+  {
+    "method": "GET",
+    "path": "/api/shopping/wishlist",
+    "middleware": [
+      "apiRateLimit",
+      "protect",
+      "userOnly",
+      "asyncHandler"
+    ]
+  },
+  {
+    "method": "POST",
+    "path": "/api/shopping/wishlist/:productId",
+    "middleware": [
+      "apiRateLimit",
+      "protect",
+      "userOnly",
+      "asyncHandler"
+    ]
+  },
+  {
+    "method": "DELETE",
+    "path": "/api/shopping/wishlist/:productId",
+    "middleware": [
+      "apiRateLimit",
+      "protect",
+      "userOnly",
+      "asyncHandler"
+    ]
+  },
+  {
+    "method": "POST",
+    "path": "/api/uploads/sign",
+    "middleware": [
+      "apiRateLimit",
+      "protect",
+      "anonymous",
+      "asyncHandler"
+    ]
+  },
+  {
+    "method": "GET",
+    "path": "/api/user/addresses",
+    "middleware": [
+      "apiRateLimit",
+      "protect",
+      "userOnly",
+      "asyncHandler"
+    ]
+  },
+  {
+    "method": "POST",
+    "path": "/api/user/addresses",
+    "middleware": [
+      "apiRateLimit",
+      "protect",
+      "userOnly",
+      "asyncHandler"
+    ]
+  },
+  {
+    "method": "PATCH",
+    "path": "/api/user/addresses/:addressId",
+    "middleware": [
+      "apiRateLimit",
+      "protect",
+      "userOnly",
+      "asyncHandler"
+    ]
+  },
+  {
+    "method": "DELETE",
+    "path": "/api/user/addresses/:addressId",
+    "middleware": [
+      "apiRateLimit",
+      "protect",
+      "userOnly",
+      "asyncHandler"
+    ]
+  },
+  {
+    "method": "GET",
+    "path": "/api/user/bookings",
+    "middleware": [
+      "apiRateLimit",
+      "protect",
+      "userOnly",
+      "asyncHandler"
+    ]
+  },
+  {
+    "method": "POST",
+    "path": "/api/user/bookings/:bookingId/cancel",
+    "middleware": [
+      "apiRateLimit",
+      "protect",
+      "asyncHandler",
+      "asyncHandler"
+    ]
+  },
+  {
+    "method": "POST",
+    "path": "/api/user/bookings/:bookingId/rate",
+    "middleware": [
+      "apiRateLimit",
+      "protect",
+      "asyncHandler",
+      "anonymous"
+    ]
+  },
+  {
+    "method": "PATCH",
+    "path": "/api/user/bookings/:bookingId/status",
+    "middleware": [
+      "apiRateLimit",
+      "protect",
+      "asyncHandler",
+      "asyncHandler"
+    ]
+  },
+  {
+    "method": "GET",
+    "path": "/api/user/favorites",
+    "middleware": [
+      "apiRateLimit",
+      "protect",
+      "userOnly",
+      "asyncHandler"
+    ]
+  },
+  {
+    "method": "POST",
+    "path": "/api/user/favorites/:providerId",
+    "middleware": [
+      "apiRateLimit",
+      "protect",
+      "userOnly",
+      "asyncHandler"
+    ]
+  },
+  {
+    "method": "DELETE",
+    "path": "/api/user/favorites/:providerId",
+    "middleware": [
+      "apiRateLimit",
+      "protect",
+      "userOnly",
+      "asyncHandler"
+    ]
+  },
+  {
+    "method": "GET",
+    "path": "/api/user/home",
+    "middleware": [
+      "apiRateLimit",
+      "protect",
+      "userOnly",
+      "asyncHandler"
+    ]
+  },
+  {
+    "method": "GET",
+    "path": "/api/user/notifications",
+    "middleware": [
+      "apiRateLimit",
+      "protect",
+      "userOnly",
+      "asyncHandler"
+    ]
+  },
+  {
+    "method": "GET",
+    "path": "/api/user/profile",
+    "middleware": [
+      "apiRateLimit",
+      "protect",
+      "userOnly",
+      "asyncHandler"
+    ]
+  },
+  {
+    "method": "PATCH",
+    "path": "/api/user/profile",
+    "middleware": [
+      "apiRateLimit",
+      "protect",
+      "userOnly",
+      "asyncHandler"
+    ]
+  },
+  {
+    "method": "POST",
+    "path": "/api/user/profile/avatar",
+    "middleware": [
+      "apiRateLimit",
+      "protect",
+      "userOnly",
+      "asyncHandler"
+    ]
+  },
+  {
+    "method": "GET",
+    "path": "/api/users/",
+    "middleware": [
+      "apiRateLimit",
+      "protect",
+      "asyncHandler"
+    ]
+  },
+  {
+    "method": "GET",
+    "path": "/api/users/:id",
+    "middleware": [
+      "apiRateLimit",
+      "protect",
+      "asyncHandler"
+    ]
+  },
+  {
+    "method": "DELETE",
+    "path": "/api/users/account",
+    "middleware": [
+      "apiRateLimit",
+      "protect",
+      "userOnly",
+      "asyncHandler"
+    ]
+  },
+  {
+    "method": "POST",
+    "path": "/api/users/complete-profile",
+    "middleware": [
+      "apiRateLimit",
+      "protect",
+      "userOnly",
+      "middleware",
+      "middleware",
+      "validate",
+      "asyncHandler"
+    ]
+  },
+  {
+    "method": "PUT",
+    "path": "/api/users/preferences",
+    "middleware": [
+      "apiRateLimit",
+      "protect",
+      "userOnly",
+      "asyncHandler"
+    ]
+  },
+  {
+    "method": "GET",
+    "path": "/api/users/profile",
+    "middleware": [
+      "apiRateLimit",
+      "protect",
+      "userOnly",
+      "asyncHandler"
+    ]
+  },
+  {
+    "method": "PUT",
+    "path": "/api/users/profile",
+    "middleware": [
+      "apiRateLimit",
+      "protect",
+      "userOnly",
+      "middleware",
+      "middleware",
+      "middleware",
+      "middleware",
+      "validate",
+      "asyncHandler"
+    ]
+  },
+  {
+    "method": "POST",
+    "path": "/api/users/upload-photo",
+    "middleware": [
+      "apiRateLimit",
+      "protect",
+      "userOnly",
+      "anonymous",
+      "asyncHandler"
+    ]
+  },
+  {
+    "method": "GET",
+    "path": "/api/v1/admin/analytics/appointments",
+    "middleware": [
+      "apiRateLimit",
+      "protect",
+      "adminOnly",
+      "requirePermission(canViewAnalytics)",
+      "asyncHandler"
+    ]
+  },
+  {
+    "method": "GET",
+    "path": "/api/v1/admin/analytics/revenue",
+    "middleware": [
+      "apiRateLimit",
+      "protect",
+      "adminOnly",
+      "requirePermission(canViewAnalytics)",
+      "asyncHandler"
+    ]
+  },
+  {
+    "method": "GET",
+    "path": "/api/v1/admin/analytics/stats",
+    "middleware": [
+      "apiRateLimit",
+      "protect",
+      "adminOnly",
+      "requirePermission(canViewAnalytics)",
+      "asyncHandler"
+    ]
+  },
+  {
+    "method": "GET",
+    "path": "/api/v1/admin/appointments",
+    "middleware": [
+      "apiRateLimit",
+      "protect",
+      "adminOnly",
+      "requirePermission(canManageHealthcare)",
+      "asyncHandler"
+    ]
+  },
+  {
+    "method": "GET",
+    "path": "/api/v1/admin/appointments/:id",
+    "middleware": [
+      "apiRateLimit",
+      "protect",
+      "adminOnly",
+      "requirePermission(canManageHealthcare)",
+      "asyncHandler"
+    ]
+  },
+  {
+    "method": "POST",
+    "path": "/api/v1/admin/appointments/:id/refund",
+    "middleware": [
+      "apiRateLimit",
+      "protect",
+      "adminOnly",
+      "requirePermission(canManageHealthcare)",
+      "requirePermission(canManageFinance)",
+      "asyncHandler"
+    ]
+  },
+  {
+    "method": "PATCH",
+    "path": "/api/v1/admin/appointments/:id/status",
+    "middleware": [
+      "apiRateLimit",
+      "protect",
+      "adminOnly",
+      "requirePermission(canManageHealthcare)",
+      "asyncHandler"
+    ]
+  },
+  {
+    "method": "GET",
+    "path": "/api/v1/admin/clinics",
+    "middleware": [
+      "apiRateLimit",
+      "protect",
+      "adminOnly",
+      "requirePermission(canManageHealthcare)",
+      "asyncHandler"
+    ]
+  },
+  {
+    "method": "GET",
+    "path": "/api/v1/admin/clinics/:id",
+    "middleware": [
+      "apiRateLimit",
+      "protect",
+      "adminOnly",
+      "requirePermission(canManageHealthcare)",
+      "asyncHandler"
+    ]
+  },
+  {
+    "method": "PATCH",
+    "path": "/api/v1/admin/clinics/:id/status",
+    "middleware": [
+      "apiRateLimit",
+      "protect",
+      "adminOnly",
+      "requirePermission(canManageHealthcare)",
+      "asyncHandler"
+    ]
+  },
+  {
+    "method": "GET",
+    "path": "/api/v1/admin/doctors",
+    "middleware": [
+      "apiRateLimit",
+      "protect",
+      "adminOnly",
+      "requirePermission(canManageHealthcare)",
+      "asyncHandler"
+    ]
+  },
+  {
+    "method": "GET",
+    "path": "/api/v1/admin/doctors/:doctorId",
+    "middleware": [
+      "apiRateLimit",
+      "protect",
+      "adminOnly",
+      "requirePermission(canManageHealthcare)",
+      "asyncHandler"
+    ]
+  },
+  {
+    "method": "PATCH",
+    "path": "/api/v1/admin/doctors/:doctorId",
+    "middleware": [
+      "apiRateLimit",
+      "protect",
+      "adminOnly",
+      "requirePermission(canManageHealthcare)",
+      "asyncHandler"
+    ]
+  },
+  {
+    "method": "PATCH",
+    "path": "/api/v1/admin/doctors/:doctorId/approve",
+    "middleware": [
+      "apiRateLimit",
+      "protect",
+      "adminOnly",
+      "requirePermission(canManageHealthcare)",
+      "asyncHandler"
+    ]
+  },
+  {
+    "method": "GET",
+    "path": "/api/v1/admin/doctors/:doctorId/documents",
+    "middleware": [
+      "apiRateLimit",
+      "protect",
+      "adminOnly",
+      "requirePermission(canManageHealthcare)",
+      "asyncHandler"
+    ]
+  },
+  {
+    "method": "PATCH",
+    "path": "/api/v1/admin/doctors/:doctorId/reject",
+    "middleware": [
+      "apiRateLimit",
+      "protect",
+      "adminOnly",
+      "requirePermission(canManageHealthcare)",
+      "asyncHandler"
+    ]
+  },
+  {
+    "method": "PATCH",
+    "path": "/api/v1/admin/doctors/:doctorId/status",
+    "middleware": [
+      "apiRateLimit",
+      "protect",
+      "adminOnly",
+      "requirePermission(canManageHealthcare)",
+      "asyncHandler"
+    ]
+  },
+  {
+    "method": "GET",
+    "path": "/api/v1/admin/doctors/pending",
+    "middleware": [
+      "apiRateLimit",
+      "protect",
+      "adminOnly",
+      "requirePermission(canManageHealthcare)",
+      "asyncHandler"
+    ]
+  },
+  {
+    "method": "GET",
+    "path": "/api/v1/admin/healthcare/dashboard",
+    "middleware": [
+      "apiRateLimit",
+      "protect",
+      "adminOnly",
+      "requirePermission(canManageHealthcare)",
+      "asyncHandler"
+    ]
+  },
+  {
+    "method": "GET",
+    "path": "/api/v1/admin/healthcare/reviews",
+    "middleware": [
+      "apiRateLimit",
+      "protect",
+      "adminOnly",
+      "requirePermission(canManageHealthcare)",
+      "asyncHandler"
+    ]
+  },
+  {
+    "method": "DELETE",
+    "path": "/api/v1/admin/healthcare/reviews/:id",
+    "middleware": [
+      "apiRateLimit",
+      "protect",
+      "adminOnly",
+      "requirePermission(canManageHealthcare)",
+      "asyncHandler"
+    ]
+  },
+  {
+    "method": "GET",
+    "path": "/api/v1/admin/healthcare/settings",
+    "middleware": [
+      "apiRateLimit",
+      "protect",
+      "adminOnly",
+      "requirePermission(canManageHealthcare)",
+      "asyncHandler"
+    ]
+  },
+  {
+    "method": "PATCH",
+    "path": "/api/v1/admin/healthcare/settings",
+    "middleware": [
+      "apiRateLimit",
+      "protect",
+      "adminOnly",
+      "requirePermission(canManageHealthcare)",
+      "asyncHandler"
+    ]
+  },
+  {
+    "method": "GET",
+    "path": "/api/v1/admin/specialties",
+    "middleware": [
+      "apiRateLimit",
+      "protect",
+      "adminOnly",
+      "asyncHandler"
+    ]
+  },
+  {
+    "method": "POST",
+    "path": "/api/v1/admin/specialties",
+    "middleware": [
+      "apiRateLimit",
+      "protect",
+      "adminOnly",
+      "requirePermission(canManageHealthcare)",
+      "asyncHandler"
+    ]
+  },
+  {
+    "method": "PATCH",
+    "path": "/api/v1/admin/specialties/:id",
+    "middleware": [
+      "apiRateLimit",
+      "protect",
+      "adminOnly",
+      "requirePermission(canManageHealthcare)",
+      "asyncHandler"
+    ]
+  },
+  {
+    "method": "DELETE",
+    "path": "/api/v1/admin/specialties/:id",
+    "middleware": [
+      "apiRateLimit",
+      "protect",
+      "adminOnly",
+      "requirePermission(canManageHealthcare)",
+      "asyncHandler"
+    ]
+  },
+  {
+    "method": "GET",
+    "path": "/api/v1/healthcare/appointments/",
+    "middleware": [
+      "apiRateLimit",
+      "protect",
+      "anonymous",
+      "getAppointments"
+    ]
+  },
+  {
+    "method": "POST",
+    "path": "/api/v1/healthcare/appointments/",
+    "middleware": [
+      "apiRateLimit",
+      "protect",
+      "anonymous",
+      "middleware",
+      "middleware",
+      "middleware",
+      "middleware",
+      "middleware",
+      "middleware",
+      "middleware",
+      "middleware",
+      "middleware",
+      "middleware",
+      "middleware",
+      "handleValidationErrors",
+      "bookAppointment"
+    ]
+  },
+  {
+    "method": "GET",
+    "path": "/api/v1/healthcare/appointments/:appointmentId",
+    "middleware": [
+      "apiRateLimit",
+      "protect",
+      "anonymous",
+      "getAppointmentDetail"
+    ]
+  },
+  {
+    "method": "PATCH",
+    "path": "/api/v1/healthcare/appointments/:appointmentId/cancel",
+    "middleware": [
+      "apiRateLimit",
+      "protect",
+      "anonymous",
+      "middleware",
+      "handleValidationErrors",
+      "cancelAppointment"
+    ]
+  },
+  {
+    "method": "GET",
+    "path": "/api/v1/healthcare/appointments/:appointmentId/invoice",
+    "middleware": [
+      "apiRateLimit",
+      "protect",
+      "anonymous",
+      "requireAppointmentParticipant",
+      "downloadAppointmentInvoice"
+    ]
+  },
+  {
+    "method": "POST",
+    "path": "/api/v1/healthcare/appointments/:appointmentId/pay",
+    "middleware": [
+      "apiRateLimit",
+      "protect",
+      "anonymous",
+      "requireAppointmentParticipant",
+      "payAppointment"
+    ]
+  },
+  {
+    "method": "GET",
+    "path": "/api/v1/healthcare/appointments/:appointmentId/payment",
+    "middleware": [
+      "apiRateLimit",
+      "protect",
+      "anonymous",
+      "requireAppointmentParticipant",
+      "getPaymentState"
+    ]
+  },
+  {
+    "method": "GET",
+    "path": "/api/v1/healthcare/appointments/:appointmentId/prescription",
+    "middleware": [
+      "apiRateLimit",
+      "protect",
+      "anonymous",
+      "getAppointmentPrescription"
+    ]
+  },
+  {
+    "method": "PATCH",
+    "path": "/api/v1/healthcare/appointments/:appointmentId/reschedule",
+    "middleware": [
+      "apiRateLimit",
+      "protect",
+      "anonymous",
+      "middleware",
+      "handleValidationErrors",
+      "rescheduleAppointment"
+    ]
+  },
+  {
+    "method": "PUT",
+    "path": "/api/v1/healthcare/appointments/:id/cancel",
+    "middleware": [
+      "apiRateLimit",
+      "protect",
+      "anonymous",
+      "middleware",
+      "handleValidationErrors",
+      "cancelAppointment"
+    ]
+  },
+  {
+    "method": "PUT",
+    "path": "/api/v1/healthcare/appointments/:id/status",
+    "middleware": [
+      "apiRateLimit",
+      "protect",
+      "anonymous",
+      "requireDoctor",
+      "updateAppointmentStatus"
+    ]
+  },
+  {
+    "method": "GET",
+    "path": "/api/v1/healthcare/appointments/doctor",
+    "middleware": [
+      "apiRateLimit",
+      "protect",
+      "anonymous",
+      "requireDoctor",
+      "getDoctorAppointments"
+    ]
+  },
+  {
+    "method": "GET",
+    "path": "/api/v1/healthcare/appointments/my",
+    "middleware": [
+      "apiRateLimit",
+      "protect",
+      "anonymous",
+      "getAppointments"
+    ]
+  },
+  {
+    "method": "GET",
+    "path": "/api/v1/healthcare/doctors/",
+    "middleware": [
+      "apiRateLimit",
+      "getDoctors"
+    ]
+  },
+  {
+    "method": "GET",
+    "path": "/api/v1/healthcare/doctors/:doctorId",
+    "middleware": [
+      "apiRateLimit",
+      "getDoctor"
+    ]
+  },
+  {
+    "method": "GET",
+    "path": "/api/v1/healthcare/doctors/:doctorId/availability-summary",
+    "middleware": [
+      "apiRateLimit",
+      "getAvailabilitySummary"
+    ]
+  },
+  {
+    "method": "GET",
+    "path": "/api/v1/healthcare/doctors/:doctorId/clinics",
+    "middleware": [
+      "apiRateLimit",
+      "getDoctorClinics"
+    ]
+  },
+  {
+    "method": "GET",
+    "path": "/api/v1/healthcare/doctors/:doctorId/next-available",
+    "middleware": [
+      "apiRateLimit",
+      "getNextAvailable"
+    ]
+  },
+  {
+    "method": "GET",
+    "path": "/api/v1/healthcare/doctors/:doctorId/reviews",
+    "middleware": [
+      "apiRateLimit",
+      "getDoctorReviews"
+    ]
+  },
+  {
+    "method": "GET",
+    "path": "/api/v1/healthcare/doctors/:doctorId/slots",
+    "middleware": [
+      "apiRateLimit",
+      "getDoctorSlots"
+    ]
+  },
+  {
+    "method": "POST",
+    "path": "/api/v1/healthcare/doctors/clinics",
+    "middleware": [
+      "apiRateLimit",
+      "protect",
+      "anonymous",
+      "requireDoctor",
+      "addClinic"
+    ]
+  },
+  {
+    "method": "PUT",
+    "path": "/api/v1/healthcare/doctors/clinics/:clinicId",
+    "middleware": [
+      "apiRateLimit",
+      "protect",
+      "anonymous",
+      "requireDoctor",
+      "updateClinic"
+    ]
+  },
+  {
+    "method": "PUT",
+    "path": "/api/v1/healthcare/doctors/clinics/:clinicId/timings",
+    "middleware": [
+      "apiRateLimit",
+      "protect",
+      "anonymous",
+      "requireDoctor",
+      "setClinicTimings"
+    ]
+  },
+  {
+    "method": "GET",
+    "path": "/api/v1/healthcare/doctors/featured",
+    "middleware": [
+      "apiRateLimit",
+      "getFeaturedDoctors"
+    ]
+  },
+  {
+    "method": "GET",
+    "path": "/api/v1/healthcare/doctors/me",
+    "middleware": [
+      "apiRateLimit",
+      "protect",
+      "providerOnly",
+      "asyncHandler"
+    ]
+  },
+  {
+    "method": "PATCH",
+    "path": "/api/v1/healthcare/doctors/me",
+    "middleware": [
+      "apiRateLimit",
+      "protect",
+      "providerOnly",
+      "asyncHandler"
+    ]
+  },
+  {
+    "method": "GET",
+    "path": "/api/v1/healthcare/doctors/me/appointments",
+    "middleware": [
+      "apiRateLimit",
+      "protect",
+      "providerOnly",
+      "anonymous",
+      "asyncHandler"
+    ]
+  },
+  {
+    "method": "GET",
+    "path": "/api/v1/healthcare/doctors/me/appointments/:appointmentId",
+    "middleware": [
+      "apiRateLimit",
+      "protect",
+      "providerOnly",
+      "anonymous",
+      "asyncHandler"
+    ]
+  },
+  {
+    "method": "PATCH",
+    "path": "/api/v1/healthcare/doctors/me/appointments/:id/cancel",
+    "middleware": [
+      "apiRateLimit",
+      "protect",
+      "providerOnly",
+      "anonymous",
+      "asyncHandler"
+    ]
+  },
+  {
+    "method": "PATCH",
+    "path": "/api/v1/healthcare/doctors/me/appointments/:id/complete",
+    "middleware": [
+      "apiRateLimit",
+      "protect",
+      "providerOnly",
+      "anonymous",
+      "asyncHandler"
+    ]
+  },
+  {
+    "method": "PATCH",
+    "path": "/api/v1/healthcare/doctors/me/appointments/:id/confirm",
+    "middleware": [
+      "apiRateLimit",
+      "protect",
+      "providerOnly",
+      "anonymous",
+      "asyncHandler"
+    ]
+  },
+  {
+    "method": "GET",
+    "path": "/api/v1/healthcare/doctors/me/availability",
+    "middleware": [
+      "apiRateLimit",
+      "protect",
+      "providerOnly",
+      "anonymous",
+      "asyncHandler"
+    ]
+  },
+  {
+    "method": "PUT",
+    "path": "/api/v1/healthcare/doctors/me/availability",
+    "middleware": [
+      "apiRateLimit",
+      "protect",
+      "providerOnly",
+      "anonymous",
+      "asyncHandler"
+    ]
+  },
+  {
+    "method": "PATCH",
+    "path": "/api/v1/healthcare/doctors/me/availability",
+    "middleware": [
+      "apiRateLimit",
+      "protect",
+      "providerOnly",
+      "anonymous",
+      "asyncHandler"
+    ]
+  },
+  {
+    "method": "POST",
+    "path": "/api/v1/healthcare/doctors/me/availability/preview",
+    "middleware": [
+      "apiRateLimit",
+      "protect",
+      "providerOnly",
+      "anonymous",
+      "asyncHandler"
+    ]
+  },
+  {
+    "method": "PATCH",
+    "path": "/api/v1/healthcare/doctors/me/availability/settings",
+    "middleware": [
+      "apiRateLimit",
+      "protect",
+      "providerOnly",
+      "anonymous",
+      "asyncHandler"
+    ]
+  },
+  {
+    "method": "GET",
+    "path": "/api/v1/healthcare/doctors/me/availability/status",
+    "middleware": [
+      "apiRateLimit",
+      "protect",
+      "providerOnly",
+      "anonymous",
+      "asyncHandler"
+    ]
+  },
+  {
+    "method": "GET",
+    "path": "/api/v1/healthcare/doctors/me/clinics",
+    "middleware": [
+      "apiRateLimit",
+      "protect",
+      "providerOnly",
+      "anonymous",
+      "asyncHandler"
+    ]
+  },
+  {
+    "method": "POST",
+    "path": "/api/v1/healthcare/doctors/me/clinics",
+    "middleware": [
+      "apiRateLimit",
+      "protect",
+      "providerOnly",
+      "anonymous",
+      "asyncHandler"
+    ]
+  },
+  {
+    "method": "PATCH",
+    "path": "/api/v1/healthcare/doctors/me/clinics/:clinicId",
+    "middleware": [
+      "apiRateLimit",
+      "protect",
+      "providerOnly",
+      "anonymous",
+      "asyncHandler"
+    ]
+  },
+  {
+    "method": "DELETE",
+    "path": "/api/v1/healthcare/doctors/me/clinics/:clinicId",
+    "middleware": [
+      "apiRateLimit",
+      "protect",
+      "providerOnly",
+      "anonymous",
+      "asyncHandler"
+    ]
+  },
+  {
+    "method": "GET",
+    "path": "/api/v1/healthcare/doctors/me/dashboard",
+    "middleware": [
+      "apiRateLimit",
+      "protect",
+      "providerOnly",
+      "anonymous",
+      "asyncHandler"
+    ]
+  },
+  {
+    "method": "GET",
+    "path": "/api/v1/healthcare/doctors/me/earnings",
+    "middleware": [
+      "apiRateLimit",
+      "protect",
+      "providerOnly",
+      "anonymous",
+      "asyncHandler"
+    ]
+  },
+  {
+    "method": "POST",
+    "path": "/api/v1/healthcare/doctors/me/image",
+    "middleware": [
+      "apiRateLimit",
+      "protect",
+      "providerOnly",
+      "anonymous",
+      "asyncHandler"
+    ]
+  },
+  {
+    "method": "POST",
+    "path": "/api/v1/healthcare/doctors/me/notes",
+    "middleware": [
+      "apiRateLimit",
+      "protect",
+      "providerOnly",
+      "anonymous",
+      "requireTreatingDoctor",
+      "asyncHandler"
+    ]
+  },
+  {
+    "method": "PATCH",
+    "path": "/api/v1/healthcare/doctors/me/notes/:noteId",
+    "middleware": [
+      "apiRateLimit",
+      "protect",
+      "providerOnly",
+      "anonymous",
+      "asyncHandler"
+    ]
+  },
+  {
+    "method": "DELETE",
+    "path": "/api/v1/healthcare/doctors/me/notes/:noteId",
+    "middleware": [
+      "apiRateLimit",
+      "protect",
+      "providerOnly",
+      "anonymous",
+      "asyncHandler"
+    ]
+  },
+  {
+    "method": "GET",
+    "path": "/api/v1/healthcare/doctors/me/patients",
+    "middleware": [
+      "apiRateLimit",
+      "protect",
+      "providerOnly",
+      "anonymous",
+      "asyncHandler"
+    ]
+  },
+  {
+    "method": "GET",
+    "path": "/api/v1/healthcare/doctors/me/patients/:patientId/history",
+    "middleware": [
+      "apiRateLimit",
+      "protect",
+      "providerOnly",
+      "anonymous",
+      "requireTreatingDoctor",
+      "asyncHandler"
+    ]
+  },
+  {
+    "method": "GET",
+    "path": "/api/v1/healthcare/doctors/me/patients/:patientId/notes",
+    "middleware": [
+      "apiRateLimit",
+      "protect",
+      "providerOnly",
+      "anonymous",
+      "requireTreatingDoctor",
+      "asyncHandler"
+    ]
+  },
+  {
+    "method": "GET",
+    "path": "/api/v1/healthcare/doctors/me/patients/:patientId/vitals",
+    "middleware": [
+      "apiRateLimit",
+      "protect",
+      "providerOnly",
+      "anonymous",
+      "requireTreatingDoctor",
+      "asyncHandler"
+    ]
+  },
+  {
+    "method": "GET",
+    "path": "/api/v1/healthcare/doctors/me/prescriptions",
+    "middleware": [
+      "apiRateLimit",
+      "protect",
+      "providerOnly",
+      "anonymous",
+      "asyncHandler"
+    ]
+  },
+  {
+    "method": "POST",
+    "path": "/api/v1/healthcare/doctors/me/prescriptions",
+    "middleware": [
+      "apiRateLimit",
+      "protect",
+      "providerOnly",
+      "anonymous",
+      "asyncHandler"
+    ]
+  },
+  {
+    "method": "PATCH",
+    "path": "/api/v1/healthcare/doctors/me/prescriptions/:id",
+    "middleware": [
+      "apiRateLimit",
+      "protect",
+      "providerOnly",
+      "anonymous",
+      "asyncHandler"
+    ]
+  },
+  {
+    "method": "GET",
+    "path": "/api/v1/healthcare/doctors/me/reviews",
+    "middleware": [
+      "apiRateLimit",
+      "protect",
+      "providerOnly",
+      "anonymous",
+      "asyncHandler"
+    ]
+  },
+  {
+    "method": "GET",
+    "path": "/api/v1/healthcare/doctors/me/schedule",
+    "middleware": [
+      "apiRateLimit",
+      "protect",
+      "providerOnly",
+      "anonymous",
+      "anonymous"
+    ]
+  },
+  {
+    "method": "POST",
+    "path": "/api/v1/healthcare/doctors/me/slots",
+    "middleware": [
+      "apiRateLimit",
+      "protect",
+      "providerOnly",
+      "anonymous",
+      "asyncHandler"
+    ]
+  },
+  {
+    "method": "PATCH",
+    "path": "/api/v1/healthcare/doctors/me/slots/:slotId",
+    "middleware": [
+      "apiRateLimit",
+      "protect",
+      "providerOnly",
+      "anonymous",
+      "asyncHandler"
+    ]
+  },
+  {
+    "method": "DELETE",
+    "path": "/api/v1/healthcare/doctors/me/slots/:slotId",
+    "middleware": [
+      "apiRateLimit",
+      "protect",
+      "providerOnly",
+      "anonymous",
+      "asyncHandler"
+    ]
+  },
+  {
+    "method": "POST",
+    "path": "/api/v1/healthcare/doctors/me/slots/block",
+    "middleware": [
+      "apiRateLimit",
+      "protect",
+      "providerOnly",
+      "anonymous",
+      "anonymous"
+    ]
+  },
+  {
+    "method": "DELETE",
+    "path": "/api/v1/healthcare/doctors/me/slots/block/:slotId",
+    "middleware": [
+      "apiRateLimit",
+      "protect",
+      "providerOnly",
+      "anonymous",
+      "anonymous"
+    ]
+  },
+  {
+    "method": "GET",
+    "path": "/api/v1/healthcare/doctors/me/slots/day",
+    "middleware": [
+      "apiRateLimit",
+      "protect",
+      "providerOnly",
+      "anonymous",
+      "asyncHandler"
+    ]
+  },
+  {
+    "method": "POST",
+    "path": "/api/v1/healthcare/doctors/me/slots/day/block",
+    "middleware": [
+      "apiRateLimit",
+      "protect",
+      "providerOnly",
+      "anonymous",
+      "asyncHandler"
+    ]
+  },
+  {
+    "method": "POST",
+    "path": "/api/v1/healthcare/doctors/me/slots/day/unblock",
+    "middleware": [
+      "apiRateLimit",
+      "protect",
+      "providerOnly",
+      "anonymous",
+      "asyncHandler"
+    ]
+  },
+  {
+    "method": "POST",
+    "path": "/api/v1/healthcare/doctors/me/slots/generate",
+    "middleware": [
+      "apiRateLimit",
+      "protect",
+      "providerOnly",
+      "anonymous",
+      "asyncHandler"
+    ]
+  },
+  {
+    "method": "POST",
+    "path": "/api/v1/healthcare/doctors/me/slots/refresh",
+    "middleware": [
+      "apiRateLimit",
+      "protect",
+      "providerOnly",
+      "anonymous",
+      "asyncHandler"
+    ]
+  },
+  {
+    "method": "GET",
+    "path": "/api/v1/healthcare/doctors/me/slots/summary",
+    "middleware": [
+      "apiRateLimit",
+      "protect",
+      "providerOnly",
+      "anonymous",
+      "asyncHandler"
+    ]
+  },
+  {
+    "method": "GET",
+    "path": "/api/v1/healthcare/doctors/me/time-off",
+    "middleware": [
+      "apiRateLimit",
+      "protect",
+      "providerOnly",
+      "anonymous",
+      "asyncHandler"
+    ]
+  },
+  {
+    "method": "POST",
+    "path": "/api/v1/healthcare/doctors/me/time-off",
+    "middleware": [
+      "apiRateLimit",
+      "protect",
+      "providerOnly",
+      "anonymous",
+      "asyncHandler"
+    ]
+  },
+  {
+    "method": "PATCH",
+    "path": "/api/v1/healthcare/doctors/me/time-off/:timeOffId",
+    "middleware": [
+      "apiRateLimit",
+      "protect",
+      "providerOnly",
+      "anonymous",
+      "asyncHandler"
+    ]
+  },
+  {
+    "method": "DELETE",
+    "path": "/api/v1/healthcare/doctors/me/time-off/:timeOffId",
+    "middleware": [
+      "apiRateLimit",
+      "protect",
+      "providerOnly",
+      "anonymous",
+      "asyncHandler"
+    ]
+  },
+  {
+    "method": "POST",
+    "path": "/api/v1/healthcare/doctors/me/time-off/preview",
+    "middleware": [
+      "apiRateLimit",
+      "protect",
+      "providerOnly",
+      "anonymous",
+      "asyncHandler"
+    ]
+  },
+  {
+    "method": "GET",
+    "path": "/api/v1/healthcare/doctors/me/transactions",
+    "middleware": [
+      "apiRateLimit",
+      "protect",
+      "providerOnly",
+      "anonymous",
+      "asyncHandler"
+    ]
+  },
+  {
+    "method": "PUT",
+    "path": "/api/v1/healthcare/doctors/profile",
+    "middleware": [
+      "apiRateLimit",
+      "protect",
+      "anonymous",
+      "requireDoctor",
+      "updateDoctorProfile"
+    ]
+  },
+  {
+    "method": "POST",
+    "path": "/api/v1/healthcare/doctors/register",
+    "middleware": [
+      "apiRateLimit",
+      "asyncHandler"
+    ]
+  },
+  {
+    "method": "GET",
+    "path": "/api/v1/healthcare/doctors/search",
+    "middleware": [
+      "apiRateLimit",
+      "searchDoctors"
+    ]
+  },
+  {
+    "method": "POST",
+    "path": "/api/v1/healthcare/doctors/signin",
+    "middleware": [
+      "apiRateLimit",
+      "asyncHandler"
+    ]
+  },
+  {
+    "method": "POST",
+    "path": "/api/v1/healthcare/doctors/verification",
+    "middleware": [
+      "apiRateLimit",
+      "protect",
+      "providerOnly",
+      "anonymous",
+      "asyncHandler"
+    ]
+  },
+  {
+    "method": "GET",
+    "path": "/api/v1/healthcare/health-records/",
+    "middleware": [
+      "apiRateLimit",
+      "protect",
+      "anonymous",
+      "getMyRecords"
+    ]
+  },
+  {
+    "method": "POST",
+    "path": "/api/v1/healthcare/health-records/",
+    "middleware": [
+      "apiRateLimit",
+      "protect",
+      "anonymous",
+      "multerMiddleware",
+      "createRecord"
+    ]
+  },
+  {
+    "method": "PUT",
+    "path": "/api/v1/healthcare/health-records/:id",
+    "middleware": [
+      "apiRateLimit",
+      "protect",
+      "anonymous",
+      "updateRecord"
+    ]
+  },
+  {
+    "method": "DELETE",
+    "path": "/api/v1/healthcare/health-records/:recordId",
+    "middleware": [
+      "apiRateLimit",
+      "protect",
+      "anonymous",
+      "deleteRecord"
+    ]
+  },
+  {
+    "method": "GET",
+    "path": "/api/v1/healthcare/notifications/",
+    "middleware": [
+      "apiRateLimit",
+      "protect",
+      "anonymous",
+      "getNotifications"
+    ]
+  },
+  {
+    "method": "DELETE",
+    "path": "/api/v1/healthcare/notifications/:notificationId",
+    "middleware": [
+      "apiRateLimit",
+      "protect",
+      "anonymous",
+      "deleteNotification"
+    ]
+  },
+  {
+    "method": "PATCH",
+    "path": "/api/v1/healthcare/notifications/:notificationId/read",
+    "middleware": [
+      "apiRateLimit",
+      "protect",
+      "anonymous",
+      "markAsRead"
+    ]
+  },
+  {
+    "method": "PATCH",
+    "path": "/api/v1/healthcare/notifications/read-all",
+    "middleware": [
+      "apiRateLimit",
+      "protect",
+      "anonymous",
+      "markAllAsRead"
+    ]
+  },
+  {
+    "method": "POST",
+    "path": "/api/v1/healthcare/prescriptions/",
+    "middleware": [
+      "apiRateLimit",
+      "protect",
+      "anonymous",
+      "requireDoctor",
+      "createPrescription"
+    ]
+  },
+  {
+    "method": "GET",
+    "path": "/api/v1/healthcare/prescriptions/:prescriptionId",
+    "middleware": [
+      "apiRateLimit",
+      "protect",
+      "anonymous",
+      "getPrescriptionById"
+    ]
+  },
+  {
+    "method": "GET",
+    "path": "/api/v1/healthcare/prescriptions/:prescriptionId/pdf",
+    "middleware": [
+      "apiRateLimit",
+      "protect",
+      "anonymous",
+      "downloadPrescriptionPDF"
+    ]
+  },
+  {
+    "method": "GET",
+    "path": "/api/v1/healthcare/prescriptions/my",
+    "middleware": [
+      "apiRateLimit",
+      "protect",
+      "anonymous",
+      "getMyPrescriptions"
+    ]
+  },
+  {
+    "method": "POST",
+    "path": "/api/v1/healthcare/reviews/",
+    "middleware": [
+      "apiRateLimit",
+      "protect",
+      "anonymous",
+      "middleware",
+      "middleware",
+      "middleware",
+      "handleValidationErrors",
+      "createReview"
+    ]
+  },
+  {
+    "method": "GET",
+    "path": "/api/v1/healthcare/reviews/doctor/:doctorId",
+    "middleware": [
+      "apiRateLimit",
+      "getDoctorReviews"
+    ]
+  },
+  {
+    "method": "POST",
+    "path": "/api/v1/healthcare/slots/",
+    "middleware": [
+      "apiRateLimit",
+      "protect",
+      "anonymous",
+      "requireDoctor",
+      "createSlots"
+    ]
+  },
+  {
+    "method": "GET",
+    "path": "/api/v1/healthcare/slots/:doctorId",
+    "middleware": [
+      "apiRateLimit",
+      "getSlots"
+    ]
+  },
+  {
+    "method": "PUT",
+    "path": "/api/v1/healthcare/slots/:id",
+    "middleware": [
+      "apiRateLimit",
+      "protect",
+      "anonymous",
+      "requireDoctor",
+      "updateSlot"
+    ]
+  },
+  {
+    "method": "DELETE",
+    "path": "/api/v1/healthcare/slots/:id",
+    "middleware": [
+      "apiRateLimit",
+      "protect",
+      "anonymous",
+      "requireDoctor",
+      "deleteSlot"
+    ]
+  },
+  {
+    "method": "GET",
+    "path": "/api/v1/healthcare/slots/my-slots",
+    "middleware": [
+      "apiRateLimit",
+      "protect",
+      "anonymous",
+      "requireDoctor",
+      "getMySlots"
+    ]
+  },
+  {
+    "method": "GET",
+    "path": "/api/v1/healthcare/specialties/",
+    "middleware": [
+      "apiRateLimit",
+      "getSpecialties"
+    ]
+  },
+  {
+    "method": "POST",
+    "path": "/api/v1/healthcare/specialties/",
+    "middleware": [
+      "apiRateLimit",
+      "protect",
+      "anonymous",
+      "createSpecialty"
+    ]
+  },
+  {
+    "method": "GET",
+    "path": "/api/v1/healthcare/specialties/:id",
+    "middleware": [
+      "apiRateLimit",
+      "getSpecialty"
+    ]
+  },
+  {
+    "method": "PUT",
+    "path": "/api/v1/healthcare/specialties/:id",
+    "middleware": [
+      "apiRateLimit",
+      "protect",
+      "anonymous",
+      "updateSpecialty"
+    ]
+  },
+  {
+    "method": "DELETE",
+    "path": "/api/v1/healthcare/specialties/:id",
+    "middleware": [
+      "apiRateLimit",
+      "protect",
+      "anonymous",
+      "deleteSpecialty"
+    ]
+  },
+  {
+    "method": "POST",
+    "path": "/api/v1/healthcare/symptom-checker/",
+    "middleware": [
+      "apiRateLimit",
+      "protect",
+      "anonymous",
+      "checkSymptoms"
+    ]
+  },
+  {
+    "method": "POST",
+    "path": "/api/v1/healthcare/symptom-checker/chat",
+    "middleware": [
+      "apiRateLimit",
+      "protect",
+      "anonymous",
+      "chatCheckSymptoms"
+    ]
+  },
+  {
+    "method": "POST",
+    "path": "/api/v1/healthcare/video-calls/:callId/end",
+    "middleware": [
+      "apiRateLimit",
+      "protect",
+      "anonymous",
+      "endVideoCall"
+    ]
+  },
+  {
+    "method": "GET",
+    "path": "/api/v1/healthcare/video-calls/:callId/status",
+    "middleware": [
+      "apiRateLimit",
+      "protect",
+      "anonymous",
+      "getCallStatus"
+    ]
+  },
+  {
+    "method": "POST",
+    "path": "/api/v1/healthcare/video-calls/join/:appointmentId",
+    "middleware": [
+      "apiRateLimit",
+      "protect",
+      "anonymous",
+      "joinVideoCall"
+    ]
+  },
+  {
+    "method": "GET",
+    "path": "/api/v1/healthcare/vitals/",
+    "middleware": [
+      "apiRateLimit",
+      "protect",
+      "anonymous",
+      "userOnly",
+      "asyncHandler"
+    ]
+  },
+  {
+    "method": "POST",
+    "path": "/api/v1/healthcare/vitals/",
+    "middleware": [
+      "apiRateLimit",
+      "protect",
+      "anonymous",
+      "userOnly",
+      "asyncHandler"
+    ]
+  },
+  {
+    "method": "DELETE",
+    "path": "/api/v1/healthcare/vitals/:id",
+    "middleware": [
+      "apiRateLimit",
+      "protect",
+      "anonymous",
+      "userOnly",
+      "asyncHandler"
+    ]
+  },
+  {
+    "method": "GET",
+    "path": "/api/verify-email",
+    "middleware": [
+      "apiRateLimit",
+      "anonymous"
+    ]
+  },
+  {
+    "method": "POST",
+    "path": "/api/wallet/connect/onboard",
+    "middleware": [
+      "apiRateLimit",
+      "protect",
+      "asyncHandler"
+    ]
+  },
+  {
+    "method": "GET",
+    "path": "/api/wallet/connect/refresh",
+    "middleware": [
+      "apiRateLimit",
+      "asyncHandler"
+    ]
+  },
+  {
+    "method": "GET",
+    "path": "/api/wallet/connect/return",
+    "middleware": [
+      "apiRateLimit",
+      "asyncHandler"
+    ]
+  },
+  {
+    "method": "GET",
+    "path": "/api/wallet/connect/status",
+    "middleware": [
+      "apiRateLimit",
+      "protect",
+      "asyncHandler"
+    ]
+  },
+  {
+    "method": "GET",
+    "path": "/api/wallet/me",
+    "middleware": [
+      "apiRateLimit",
+      "protect",
+      "asyncHandler"
+    ]
+  },
+  {
+    "method": "POST",
+    "path": "/api/wallet/payout",
+    "middleware": [
+      "apiRateLimit",
+      "protect",
+      "middleware",
+      "middleware",
+      "middleware",
+      "validate",
+      "asyncHandler"
+    ]
+  },
+  {
+    "method": "GET",
+    "path": "/api/wallet/topup/cancel",
+    "middleware": [
+      "apiRateLimit",
+      "asyncHandler"
+    ]
+  },
+  {
+    "method": "POST",
+    "path": "/api/wallet/topup/checkout",
+    "middleware": [
+      "apiRateLimit",
+      "protect",
+      "middleware",
+      "validate",
+      "asyncHandler"
+    ]
+  },
+  {
+    "method": "GET",
+    "path": "/api/wallet/topup/success",
+    "middleware": [
+      "apiRateLimit",
+      "asyncHandler"
+    ]
+  },
+  {
+    "method": "GET",
+    "path": "/api/wallet/transactions",
+    "middleware": [
+      "apiRateLimit",
+      "protect",
+      "asyncHandler"
+    ]
+  },
+  {
+    "method": "POST",
+    "path": "/api/wallet/transfer",
+    "middleware": [
+      "apiRateLimit",
+      "protect",
+      "middleware",
+      "middleware",
+      "middleware",
+      "middleware",
+      "middleware",
+      "validate",
+      "asyncHandler"
+    ]
+  },
+  {
+    "method": "POST",
+    "path": "/api/wallet/webhook",
+    "middleware": [
+      "rawParser",
+      "asyncHandler"
+    ]
+  },
+  {
+    "method": "GET",
+    "path": "/health",
+    "middleware": [
+      "anonymous"
+    ]
+  },
+  {
+    "method": "GET",
+    "path": "/health/ready",
+    "middleware": [
+      "anonymous"
+    ]
+  },
+  {
+    "method": "GET",
+    "path": "/privacy-policy",
+    "middleware": [
+      "anonymous"
+    ]
+  },
+  {
+    "method": "GET",
+    "path": "/reset-password",
+    "middleware": [
+      "anonymous"
+    ]
+  },
+  {
+    "method": "GET",
+    "path": "/terms-of-service",
+    "middleware": [
+      "anonymous"
+    ]
+  },
+  {
+    "method": "GET",
+    "path": "/uploads/metadata/*",
+    "middleware": [
+      "anonymous"
+    ]
+  },
+  {
+    "method": "GET",
+    "path": "/uploads/posts/images/:filename",
+    "middleware": [
+      "serveUpload"
+    ]
+  },
+  {
+    "method": "GET",
+    "path": "/uploads/providers/doctors/degree-certificates/:filename",
+    "middleware": [
+      "optionalAuth",
+      "serveUpload"
+    ]
+  },
+  {
+    "method": "GET",
+    "path": "/uploads/providers/doctors/medical-licenses/:filename",
+    "middleware": [
+      "optionalAuth",
+      "serveUpload"
+    ]
+  },
+  {
+    "method": "GET",
+    "path": "/uploads/providers/doctors/national-ids/:filename",
+    "middleware": [
+      "optionalAuth",
+      "serveUpload"
+    ]
+  },
+  {
+    "method": "GET",
+    "path": "/uploads/providers/home-services/national-ids/:filename",
+    "middleware": [
+      "optionalAuth",
+      "serveUpload"
+    ]
+  },
+  {
+    "method": "GET",
+    "path": "/uploads/providers/home-services/professional-certificates/:filename",
+    "middleware": [
+      "optionalAuth",
+      "serveUpload"
+    ]
+  },
+  {
+    "method": "GET",
+    "path": "/uploads/providers/profiles/:filename",
+    "middleware": [
+      "serveUpload"
+    ]
+  },
+  {
+    "method": "GET",
+    "path": "/uploads/providers/vendors/business-licenses/:filename",
+    "middleware": [
+      "optionalAuth",
+      "serveUpload"
+    ]
+  },
+  {
+    "method": "GET",
+    "path": "/uploads/providers/vendors/national-ids/:filename",
+    "middleware": [
+      "optionalAuth",
+      "serveUpload"
+    ]
+  },
+  {
+    "method": "GET",
+    "path": "/uploads/temp/:filename",
+    "middleware": [
+      "optionalAuth",
+      "serveUpload"
+    ]
+  },
+  {
+    "method": "GET",
+    "path": "/uploads/users/profiles/:filename",
+    "middleware": [
+      "optionalAuth",
+      "serveUpload"
+    ]
+  },
+  {
+    "method": "GET",
+    "path": "/verify-email",
+    "middleware": [
+      "anonymous"
+    ]
+  }
+]

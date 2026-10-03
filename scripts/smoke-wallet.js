@@ -4,9 +4,11 @@ const WalletService = require('../src/services/walletService');
 const WalletTransaction = require('../src/models/WalletTransaction');
 const User = require('../src/models/User');
 const Provider = require('../src/models/Provider');
+const { assertSafeSeedTarget, demoPassword } = require('./lib/seedSafety');
 
 // Connect to MongoDB
 const connectDB = async () => {
+  assertSafeSeedTarget();
   try {
     await mongoose.connect(process.env.MONGODB_URI, {
       useNewUrlParser: true,
@@ -29,7 +31,7 @@ const runSmokeTest = async () => {
     console.log('Creating test user...');
     user = await User.create({
       email: 'smoke-test@example.com',
-      password: 'password123',
+      password: demoPassword(),
       fullName: 'Smoke Test User',
       phoneNumber: '1234567890',
       isActive: true,
@@ -45,7 +47,7 @@ const runSmokeTest = async () => {
     console.log('Creating test provider...');
     provider = await Provider.create({
       email: 'smoke-provider@example.com',
-      password: 'password123',
+      password: demoPassword(),
       fullName: 'Smoke Test Provider',
       phoneNumber: '0987654321',
       providerType: 'home_service',

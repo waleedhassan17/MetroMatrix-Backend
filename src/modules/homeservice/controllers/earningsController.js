@@ -301,6 +301,7 @@ const requestPayout = asyncHandler(async (req, res) => {
     method: method || 'bank',
     accountDetails: accountDetails || {},
   });
+  await require('../../../services/notificationService').notifyPayoutRequested(payout, req.user.fullName);
 
   ok(res, { payoutId: String(payout._id), status: 'processing' }, 'Payout requested');
 });

@@ -1,16 +1,26 @@
 const asyncHandler = require('express-async-handler');
 const Doctor = require('../modules/healthcare/models/Doctor');
 const Provider = require('../models/Provider');
-const Notification = require('../models/Notification');
+const auditService = require('../services/auditService');
+const providerStatus = require('../services/admin/providerStatus');
+const AppError = require('../utils/AppError');
+const { ERROR_CODES } = require('../utils/errorCodes');
+const { ok } = require('../utils/apiResponse');
+const { clampInt, searchRegex, MAX_PAGE_SIZE } = require('../utils/pagination');
 
-// Best-effort notification (never breaks the request).
-const notifyAdmin = async (type, title, message, data = {}) => {
-  try {
-    await Notification.create({ type, title, message, data });
-  } catch (err) {
-    console.error('notifyAdmin failed:', err.message);
-  }
-};
+// Doctor decisions are recorded in the unified AdminAuditLog. (They used to
+// post a message addressed to the doctor — "Congratulations! Your doctor
+// account…" — into the ADMIN notification feed, where no doctor would see it.)
+const audit = (req, action, doctor, { before, after, reason } = {}) =>
+  auditService.audit(req, {
+    module: 'healthcare',
+    action: `healthcare.${action}`,
+    targetType: 'Doctor',
+    targetId: doctor._id,
+    before,
+    after,
+    reason,
+  });
 
 // @desc    Get all pending/under_review doctors
 // @route   GET /api/v1/admin/doctors/pending
@@ -20,15 +30,12 @@ const getPendingDoctors = asyncHandler(async (req, res) => {
     verificationStatus: { $in: ['pending', 'under_review'] },
   })
     .populate('providerId', 'fullName email phone profilePhoto')
-    .populate('specialtyId', 'name');
+    .populate('specialtyId', 'name')
+    .sort({ createdAt: 1 })
+    .limit(MAX_PAGE_SIZE);
+  const total = await Doctor.countDocuments({ verificationStatus: { $in: ['pending', 'under_review'] } });
 
-  res.json({
-    success: true,
-    data: {
-      doctors,
-      pendingCount: doctors.length,
-    },
-  });
+  ok(res, doctors, { page: 1, limit: MAX_PAGE_SIZE, total, pages: Math.max(1, Math.ceil(total / MAX_PAGE_SIZE)) });
 });
 
 // @desc    Approve a doctor
@@ -36,17 +43,11 @@ const getPendingDoctors = asyncHandler(async (req, res) => {
 // @access  Private (Admin)
 const approveDoctor = asyncHandler(async (req, res) => {
   const doctor = await Doctor.findById(req.params.doctorId);
-  if (!doctor) {
-    res.status(404);
-    throw new Error('Doctor not found');
-  }
-
-  if (doctor.verificationStatus === 'verified') {
-    res.status(400);
-    throw new Error('Doctor is already approved');
-  }
+  if (!doctor) throw new AppError(ERROR_CODES.NOT_FOUND, 'Doctor not found');
+  if (doctor.verificationStatus === 'verified') throw new AppError(ERROR_CODES.CONFLICT, 'Doctor is already approved');
 
   const { notes } = req.body;
+  const before = { verificationStatus: doctor.verificationStatus, isActive: doctor.isActive };
 
   // Update Doctor
   doctor.verificationStatus = 'verified';
@@ -54,32 +55,25 @@ const approveDoctor = asyncHandler(async (req, res) => {
   doctor.isActive = true;
   await doctor.save();
 
-  // Update Provider
+  // The doctor's provider account follows (single writer keeps
+  // verificationStatus, adminVerified and isActive in step).
   const provider = await Provider.findById(doctor.providerId);
   if (provider) {
-    provider.isActive = true;
-    provider.adminVerified = 'active';
-    provider.verificationStatus = 'approved';
+    providerStatus.approve(provider, { admin: req.user, notes });
     await provider.save();
   }
 
-  // Notify doctor (best-effort)
-  await notifyAdmin(
-    'doctor_approved',
-    'Account Approved',
-    'Congratulations! Your doctor account has been approved. You can now start receiving appointments.',
-    { providerId: doctor.providerId }
-  );
+  await audit(req, 'doctor.approve', doctor, {
+    before,
+    after: { verificationStatus: 'verified', isActive: true },
+    reason: notes,
+  });
 
   const updatedDoctor = await Doctor.findById(doctor._id)
     .populate('providerId', 'fullName email phone')
     .populate('specialtyId', 'name');
 
-  res.json({
-    success: true,
-    message: 'Doctor approved successfully',
-    data: { doctor: updatedDoctor },
-  });
+  ok(res, updatedDoctor);
 });
 
 // @desc    Reject a doctor
@@ -87,16 +81,12 @@ const approveDoctor = asyncHandler(async (req, res) => {
 // @access  Private (Admin)
 const rejectDoctor = asyncHandler(async (req, res) => {
   const doctor = await Doctor.findById(req.params.doctorId);
-  if (!doctor) {
-    res.status(404);
-    throw new Error('Doctor not found');
-  }
+  if (!doctor) throw new AppError(ERROR_CODES.NOT_FOUND, 'Doctor not found');
 
   const { reason, canReapply } = req.body;
-  if (!reason) {
-    res.status(400);
-    throw new Error('Rejection reason is required');
-  }
+  if (!reason || !String(reason).trim()) throw new AppError(ERROR_CODES.VALIDATION_FAILED, 'Rejection reason is required');
+
+  const before = { verificationStatus: doctor.verificationStatus, isActive: doctor.isActive };
 
   // Update Doctor
   doctor.verificationStatus = 'rejected';
@@ -106,98 +96,66 @@ const rejectDoctor = asyncHandler(async (req, res) => {
   }
   await doctor.save();
 
-  // Update Provider if not allowed to reapply
+  // Not allowed to reapply: the provider account is rejected too (it used to
+  // only flip isActive, so the account showed as neither pending nor rejected).
   if (canReapply === false) {
     const provider = await Provider.findById(doctor.providerId);
     if (provider) {
+      providerStatus.reject(provider, { admin: req.user, reason });
       provider.isActive = false;
       await provider.save();
     }
   }
 
-  // Notify doctor (best-effort)
-  await notifyAdmin(
-    'doctor_rejected',
-    'Verification Rejected',
-    `Your account verification was rejected. Reason: ${reason}${canReapply === false ? ' You cannot reapply.' : ''}`,
-    { providerId: doctor.providerId }
-  );
+  await audit(req, 'doctor.reject', doctor, {
+    before,
+    after: { verificationStatus: 'rejected', isActive: doctor.isActive, canReapply: canReapply !== false },
+    reason,
+  });
 
   const updatedDoctor = await Doctor.findById(doctor._id)
     .populate('providerId', 'fullName email')
     .populate('specialtyId', 'name');
 
-  res.json({
-    success: true,
-    message: 'Doctor rejected',
-    data: { doctor: updatedDoctor },
-  });
+  ok(res, updatedDoctor);
 });
 
 // @desc    Get all doctors with filters
 // @route   GET /api/v1/admin/doctors
 // @access  Private (Admin)
 const getAllDoctors = asyncHandler(async (req, res) => {
-  const { status, specialtyId, search, page = 1, limit = 10 } = req.query;
+  const { status, specialtyId, search } = req.query;
   const query = {};
 
   if (status) {
-    query.verificationStatus = status;
+    query.verificationStatus = String(status);
   }
   if (specialtyId) {
     query.specialtyId = specialtyId;
   }
   if (search) {
-    // Search by name in provider or pmc number
-    const providers = await Provider.find({
-      fullName: { $regex: search, $options: 'i' },
-    }).select('_id');
-    const providerIds = providers.map(p => p._id);
-    query.$or = [
-      { providerId: { $in: providerIds } },
-      { pmcNumber: { $regex: search, $options: 'i' } },
-    ];
+    // Search by the doctor's name (on their provider account) or PMC number.
+    const re = searchRegex(search);
+    const providerIds = await Provider.find({ fullName: re }).distinct('_id');
+    query.$or = [{ providerId: { $in: providerIds } }, { pmcNumber: re }];
   }
 
-  const pageNum = parseInt(page);
-  const limitNum = parseInt(limit);
-  const skip = (pageNum - 1) * limitNum;
+  const page = clampInt(req.query.page, 1, 1, 1000000);
+  const limit = clampInt(req.query.limit, 10, 1, MAX_PAGE_SIZE);
 
-  const [doctors, total] = await Promise.all([
+  const [doctors, total, statusCounts] = await Promise.all([
     Doctor.find(query)
       .populate('providerId', 'fullName email city')
       .populate('specialtyId', 'name')
-      .skip(skip)
-      .limit(limitNum)
-      .sort({ createdAt: -1 }),
+      .sort({ createdAt: -1, _id: -1 })
+      .skip((page - 1) * limit)
+      .limit(limit),
     Doctor.countDocuments(query),
+    Doctor.aggregate([{ $group: { _id: '$verificationStatus', count: { $sum: 1 } } }]),
   ]);
 
-  // Also get total counts per status
-  const statusCounts = await Doctor.aggregate([
-    {
-      $group: {
-        _id: '$verificationStatus',
-        count: { $sum: 1 },
-      },
-    },
-  ]);
-  const counts = {};
-  statusCounts.forEach(s => { counts[s._id] = s.count; });
-
-  res.json({
-    success: true,
-    data: {
-      doctors,
-      pagination: {
-        page: pageNum,
-        limit: limitNum,
-        total,
-        pages: Math.ceil(total / limitNum),
-      },
-      statusCounts: counts,
-    },
-  });
+  const counts = Object.fromEntries(statusCounts.map((s) => [s._id, s.count]));
+  ok(res, doctors, { page, limit, total, pages: Math.max(1, Math.ceil(total / limit)), counts });
 });
 
 module.exports = {

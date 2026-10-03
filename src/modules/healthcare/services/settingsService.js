@@ -4,14 +4,15 @@ const AdminSettings = require('../../../models/AdminSettings');
  * Single source of truth for healthcare platform settings.
  * Values live in the AdminSettings singleton under `healthcare` and are the
  * SAME values payment, refund and booking code read — no duplicated constants.
+ *
+ * Only settings something reads are listed (all three feed paymentService).
+ * defaultSlotDurationMinutes, maxAdvanceBookingDays and autoApproveDoctors
+ * were editable but read by nothing, so changing them did nothing; removed.
  */
 const HEALTHCARE_SETTINGS_DEFAULTS = Object.freeze({
   commissionPercent: 10,
   cancellationWindowHours: 12,
   lateCancelRefundPercent: 50,
-  defaultSlotDurationMinutes: 30,
-  maxAdvanceBookingDays: 30,
-  autoApproveDoctors: false,
 });
 
 const getHealthcareSettings = async () => {

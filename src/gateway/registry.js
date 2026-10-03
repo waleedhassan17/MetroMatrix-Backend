@@ -78,6 +78,8 @@ const ROUTES = [
 
   // Admin wallet oversight — one ledger, cross-module admin view.
   { prefix: '/api/admin/wallets', module: 'wallet', load: () => require('../routes/adminWalletRoutes') },
+  // Admin management (create/disable admins, roles, permissions, their sessions).
+  { prefix: '/api/admin/admins', module: 'admin', load: () => require('../routes/adminManagementRoutes') },
 
   // Legacy / shared routers.
   { prefix: '/api/users', module: 'core', load: () => require('../routes/userRoutes') },

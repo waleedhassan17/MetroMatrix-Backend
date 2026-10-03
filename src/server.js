@@ -8,9 +8,8 @@ const colors = require('colors');
 
 dotenv.config();
 
-console.log('Loading environment variables...'.cyan);
-console.log('JWT_SECRET:', process.env.JWT_SECRET ? '✓ Loaded' : '✗ Missing'.red);
-console.log('MONGODB_URI:', process.env.MONGODB_URI ? '✓ Loaded' : '✗ Missing'.red);
+// Throws — and so stops the server — on missing or unsafe configuration.
+require('./config/validateEnv')();
 
 const connectDB = require('./config/db');
 console.log('Requiring connectDB...'.cyan);

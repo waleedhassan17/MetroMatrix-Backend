@@ -67,7 +67,7 @@ const moderateProduct = asyncHandler(async (req, res) => {
   const before = { moderation: product.moderation ? product.moderation.toObject() : null };
   product.moderation = { status, note: String(note || '').trim().slice(0, 500), by: req.user._id, at: new Date() };
   await product.save();
-  await audit(req.user._id, 'moderate_product', 'Product', product._id, {
+  await audit(req, 'moderate_product', 'Product', product._id, {
     before,
     after: { moderation: product.moderation.toObject() },
     reason: note,

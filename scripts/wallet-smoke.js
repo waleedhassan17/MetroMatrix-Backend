@@ -50,21 +50,24 @@ const bail = (name, detail) => {
   }
   const stripe = Stripe(process.env.STRIPE_SECRET_KEY);
 
+  const { assertSafeSeedTarget, demoPassword } = require('./lib/seedSafety');
+  assertSafeSeedTarget();
+  const password = demoPassword();
   await mongoose.connect(process.env.MONGODB_URI);
   const User = require('../src/models/User');
   const Provider = require('../src/models/Provider');
   const WalletService = require('../src/services/walletService');
   const Wallet = require('../src/models/Wallet');
 
-  // 1. Test user (+ password 'password123' so we can log in over HTTP)
+  // 1. Test user (password = SEED_DEMO_PASSWORD so we can log in over HTTP)
   const email = 'wallet-smoke@metromatrix.pk';
   let user = await User.findOne({ email }).select('+password');
   if (!user) {
     user = new User({ email, fullName: 'Wallet Smoke User', phoneNumber: '03001112222', isActive: true, isEmailVerified: true });
-    user.password = 'password123';
+    user.password = password;
     await user.save();
   }
-  const login = await api.post('/auth/login', { email, password: 'password123' });
+  const login = await api.post('/auth/login', { email, password });
   const token = login.data?.accessToken;
   if (!token) bail('customer login', JSON.stringify(login.data).slice(0, 150));
   step('test user ready + logged in', true, email);
@@ -132,7 +135,7 @@ const bail = (name, detail) => {
   if (!provider) {
     provider = await Provider.create({
       email: 'wallet-smoke-provider@metromatrix.pk',
-      password: 'Provider@123',
+      password,
       fullName: 'Wallet Smoke Provider',
       phoneNumber: '03001113333',
       providerType: 'home_service',

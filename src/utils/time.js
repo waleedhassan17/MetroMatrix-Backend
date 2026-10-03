@@ -213,7 +213,52 @@ function daysBetween(fromKey, toKey) {
   return Math.round(b.diff(a, 'days').days);
 }
 
+/**
+ * Month windows for "this month vs last month" figures, as half-open UTC
+ * ranges `[from, to)` computed in `tz`.
+ *
+ *  thisMonth        — 1st of this month 00:00 → now
+ *  lastMonth        — the whole of last month
+ *  samePeriodLastMonth — 1st of last month → the same elapsed time into it
+ *                     (capped at the end of last month), the fair comparison
+ *                     for a month that isn't over yet.
+ *
+ * The admin dashboard used to compare "since the 1st of LAST month, with no
+ * end" (which includes this month) against the month before, in server time.
+ */
+function monthWindows(now = new Date(), tz = DEFAULT_TIMEZONE) {
+  const zone = safeZone(tz);
+  const nowDt = DateTime.fromJSDate(new Date(now)).setZone(zone);
+  const thisStart = nowDt.startOf('month');
+  const lastStart = thisStart.minus({ months: 1 });
+  const elapsedMs = nowDt.toMillis() - thisStart.toMillis();
+  const samePeriodEnd = Math.min(lastStart.toMillis() + elapsedMs, thisStart.toMillis());
+  return {
+    thisMonth: { from: thisStart.toUTC().toJSDate(), to: nowDt.toUTC().toJSDate() },
+    lastMonth: { from: lastStart.toUTC().toJSDate(), to: thisStart.toUTC().toJSDate() },
+    samePeriodLastMonth: { from: lastStart.toUTC().toJSDate(), to: new Date(samePeriodEnd) },
+  };
+}
+
+/** Today in `tz` as a half-open UTC window. */
+function todayWindow(now = new Date(), tz = DEFAULT_TIMEZONE) {
+  return dayWindow(toDateKey(now, tz), tz);
+}
+
+/**
+ * Percentage change, one decimal. `null` when there is no baseline — a
+ * figure with nothing to compare against has no growth, and showing "0 %" (or
+ * the "+12 %" the app used to substitute) would be invented.
+ */
+function growthPct(current, baseline) {
+  if (!Number.isFinite(current) || !Number.isFinite(baseline) || baseline <= 0) return null;
+  return Math.round(((current - baseline) / baseline) * 1000) / 10;
+}
+
 module.exports = {
+  monthWindows,
+  todayWindow,
+  growthPct,
   DEFAULT_TIMEZONE,
   HHMM,
   isValidTimezone,

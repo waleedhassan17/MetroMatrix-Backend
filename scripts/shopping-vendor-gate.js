@@ -25,9 +25,10 @@ const Brand = require('../src/modules/shopping/models/Brand');
 const User = require('../src/models/User');
 const InventoryLog = require('../src/modules/shopping/models/InventoryLog');
 
-const CUSTOMER = { email: 'shopper1.qa@metromatrix.pk', password: 'Shopper@123' };
-const V_COUGAR = { email: 'vendor.cougar@metromatrix.pk', password: 'Vendor@123' };
-const V_OUTF = { email: 'vendor.outfitters@metromatrix.pk', password: 'Vendor@123' };
+const { demoPassword } = require('./lib/seedSafety');
+const CUSTOMER = { email: 'shopper1.qa@metromatrix.pk', password: demoPassword() };
+const V_COUGAR = { email: 'vendor.cougar@metromatrix.pk', password: demoPassword() };
+const V_OUTF = { email: 'vendor.outfitters@metromatrix.pk', password: demoPassword() };
 
 let pass = 0, fail = 0;
 const step = (id, name, ok, detail = '') => {
@@ -41,6 +42,7 @@ const short = (d) => JSON.stringify(d).slice(0, 110);
 
 (async () => {
   console.log(`\n=== VENDOR PATH GATE against ${BASE} ===\n`);
+  require('./lib/seedSafety').assertSafeSeedTarget();
   await mongoose.connect(process.env.MONGODB_URI);
 
   const login = async (c, provider = true) =>

@@ -2,6 +2,7 @@ const crypto = require('crypto');
 const mongoose = require('mongoose');
 const Wallet = require('../models/Wallet');
 const WalletTransaction = require('../models/WalletTransaction');
+const WalletAdjustment = require('../models/WalletAdjustment');
 const { WALLET_CURRENCY, PKR_PER_USD, usdCentsToPkr } = require('../config/currency');
 
 // Fixed sentinel owner id for the singleton Platform commission ledger
@@ -1074,6 +1075,69 @@ class WalletService {
     tx.status = 'failed';
     tx.metadata = { ...(tx.metadata || {}), failureReason: reason, refundedAt: new Date() };
     return tx.save();
+  }
+
+  /**
+   * Apply an admin WalletAdjustment: move the balance and write the ledger row
+   * in ONE MongoDB transaction — both happen or neither does. (The old adjust
+   * endpoint did the balance $inc and the ledger insert as two separate
+   * writes; a failure between them left a balance change with no ledger
+   * entry, i.e. unexplained drift.) The ledger row's idempotency key is the
+   * adjustment id, so an adjustment can never be applied twice.
+   *
+   * Requires a replica set (Atlas always is; tests use an in-memory one).
+   * @returns {Promise<{ wallet, transaction, balanceBefore }>}
+   * @throws Error('Insufficient balance') for a debit the wallet can't cover
+   */
+  static async applyAdminAdjustment(adjustment, { approvedBy } = {}) {
+    const session = await mongoose.startSession();
+    try {
+      let out;
+      await session.withTransaction(async () => {
+        const wallet = await Wallet.findById(adjustment.wallet).session(session);
+        if (!wallet) throw new Error('Wallet not found');
+        const balanceBefore = wallet.balance;
+        const updated =
+          adjustment.direction === 'credit'
+            ? await Wallet.creditAtomic(wallet._id, adjustment.amount, session)
+            : await Wallet.debitAtomic(wallet._id, adjustment.amount, session);
+        const [transaction] = await WalletTransaction.create(
+          [
+            {
+              wallet: wallet._id,
+              type: adjustment.direction,
+              amount: adjustment.amount,
+              currency: wallet.currency,
+              description: `Admin adjustment: ${adjustment.reason}`,
+              source: 'admin_adjustment',
+              status: 'completed',
+              idempotencyKey: `admin_adjustment:${adjustment._id}`,
+              metadata: {
+                adjustmentId: String(adjustment._id),
+                requestedBy: String(adjustment.requestedBy),
+                approvedBy: approvedBy ? String(approvedBy) : null,
+              },
+            },
+          ],
+          { session }
+        );
+        // Claim the adjustment inside the same transaction. The unique
+        // idempotency key already blocks a second ledger row, but only once
+        // its index exists; this conditional write does not depend on any
+        // index, and two concurrent applies conflict on it, so the loser
+        // aborts and nothing it did (balance, ledger row) is kept.
+        const claim = await WalletAdjustment.updateOne(
+          { _id: adjustment._id, transaction: null },
+          { $set: { transaction: transaction._id } },
+          { session }
+        );
+        if (claim.modifiedCount !== 1) throw new Error('This adjustment has already been applied');
+        out = { wallet: updated, transaction, balanceBefore };
+      });
+      return out;
+    } finally {
+      await session.endSession();
+    }
   }
 }
 

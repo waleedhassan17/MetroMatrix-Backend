@@ -11,9 +11,11 @@ const { k } = require('../../../lib/redis');
 
 // Defaults — hardcoded for FYP-I; matching weights are intended to be
 // learned from booking outcomes in FYP-II.
+// (cancellationWindowHours used to be listed and editable, but no cancellation
+// path read it; customer cancellation is governed by booking status — see
+// statusMap.js CUSTOMER_CANCELLABLE_FROM. Removed.)
 const DEFAULTS = {
   commissionPercent: 10,
-  cancellationWindowHours: 2,
   defaultSearchRadiusKm: 15,
   matchingWeights: {
     distance: 0.4,

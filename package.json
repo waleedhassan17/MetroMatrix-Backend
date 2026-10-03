@@ -8,9 +8,10 @@
     "dev": "nodemon src/server.js",
     "test": "jest --coverage --runInBand",
     "test:watch": "jest --watch",
-    "lint": "eslint src/",
-    "lint:fix": "eslint src/ --fix",
+    "lint": "eslint src/ scripts/ test/ api/",
+    "lint:fix": "eslint src/ scripts/ test/ api/ --fix",
     "seed": "node scripts/seed.js",
+    "seed:admin": "node scripts/seed-admin.js",
     "smoke:wallet": "node scripts/smoke-wallet.js",
     "smoke:auth-email": "node scripts/smoke-auth-email.js",
     "smoke:auth": "node scripts/smoke-auth.js",
@@ -25,7 +26,8 @@
     "smoke:wallet-stripe": "node scripts/wallet-smoke.js",
     "integrity:wallet-shop": "node scripts/wallet-shop-integrity.js",
     "fix:variants": "node scripts/fix-variant-size-color.js",
-    "normalise:catalog": "node scripts/normalise-catalog-variants.js"
+    "normalise:catalog": "node scripts/normalise-catalog-variants.js",
+    "dev:memory": "node scripts/dev-memory.js"
   },
   "keywords": [
     "metromatrix",
@@ -70,13 +72,19 @@
     "passport-google-oauth20": "^2.0.0",
     "passport-jwt": "^4.0.1",
     "pdfkit": "^0.18.0",
+    "pino": "^9.14.0",
     "socket.io": "^4.8.3",
     "stripe": "^22.1.0",
     "uuid": "^14.0.0"
   },
   "devDependencies": {
     "eslint": "^8.40.0",
+    "eslint-plugin-n": "^16.6.2",
+    "eslint-plugin-security": "^1.7.1",
     "jest": "^29.5.0",
+    "jest-openapi": "^0.14.2",
+    "js-yaml": "^4.3.2",
+    "mongodb-memory-server": "^10.4.3",
     "nodemon": "^2.0.20",
     "socket.io-client": "^4.8.3",
     "supertest": "^6.3.3"

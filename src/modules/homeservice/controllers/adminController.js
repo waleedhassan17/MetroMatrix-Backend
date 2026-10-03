@@ -1,15 +1,14 @@
 const asyncHandler = require('express-async-handler');
 const { assertOwnedAsset } = require('../../../utils/assetUrl');
-const mongoose = require('mongoose');
 const Booking = require('../models/Booking');
 const Dispute = require('../models/Dispute');
 const PayoutRequest = require('../models/PayoutRequest');
 const ServiceCategory = require('../models/ServiceCategory');
-const HSAuditLog = require('../models/HSAuditLog');
 const ProviderReview = require('../models/ProviderReview');
-const Provider = require('../../../models/Provider');
 const User = require('../../../models/User');
 const WalletService = require('../../../services/walletService');
+const { DEFAULT_TIMEZONE } = require('../../../utils/time');
+const { refundBookingToCustomer, refundState } = require('../services/bookingRefunds');
 const { transition } = require('../services/bookingService');
 const { STATUS } = require('../services/statusMap');
 const {
@@ -17,33 +16,35 @@ const {
   updateHomeserviceSettings,
 } = require('../services/settingsService');
 const { avatar } = require('../services/serializers');
+const auditService = require('../../../services/auditService');
+const { homeserviceDashboard } = require('../services/adminDashboardService');
+const AppError = require('../../../utils/AppError');
+const { ERROR_CODES } = require('../../../utils/errorCodes');
+const apiResponse = require('../../../utils/apiResponse');
+const { isAdminRequest } = require('../../../utils/adminScope');
+const { clampInt, MAX_PAGE_SIZE } = require('../../../utils/pagination');
 
-const ok = (res, data, message, pagination) =>
-  res.json({ success: true, data, message, ...(pagination ? { pagination } : {}) });
+// Admin routes answer in the admin console's standard envelope. raiseDispute
+// (a customer/provider route that lives in this file) keeps its legacy shape.
+const ok = (res, data, message, pagination) => {
+  if (isAdminRequest(res.req)) return apiResponse.ok(res, data, pagination);
+  return res.json({ success: true, data, message, ...(pagination ? { pagination } : {}) });
+};
 
-async function audit(adminId, action, targetType, targetId, before, after, reason) {
-  await HSAuditLog.create({
-    admin: adminId,
-    action,
+// Every home-services admin mutation lands in the unified AdminAuditLog
+// (module 'homeservice'). The old HSAuditLog was written and never read.
+const audit = (req, action, targetType, targetId, before, after, reason) =>
+  auditService.audit(req, {
+    module: 'homeservice',
+    action: `homeservice.${action}`,
     targetType,
     targetId,
-    before,
-    after,
+    before: before ?? undefined,
+    after: after ?? undefined,
     reason,
   });
-}
 
-function paginationOf(page, limit, total) {
-  const totalPages = Math.max(1, Math.ceil(total / limit));
-  return {
-    currentPage: page,
-    totalPages,
-    totalItems: total,
-    itemsPerPage: limit,
-    hasNext: page < totalPages,
-    hasPrevious: page > 1,
-  };
-}
+const paginationOf = (page, limit, total) => ({ page, limit, total, pages: Math.max(1, Math.ceil(total / limit)) });
 
 function bookingListItem(b) {
   return {
@@ -79,8 +80,8 @@ const listBookings = asyncHandler(async (req, res) => {
     page = 1,
     limit = 20,
   } = req.query;
-  const pageN = parseInt(page, 10) || 1;
-  const limitN = parseInt(limit, 10) || 20;
+  const pageN = clampInt(page, 1, 1, 1000000);
+  const limitN = clampInt(limit, 20, 1, MAX_PAGE_SIZE);
 
   const query = {};
   if (status && status !== 'all') query.status = status;
@@ -124,9 +125,10 @@ const getBookingDetail = asyncHandler(async (req, res) => {
     res.status(404);
     throw new Error('Booking not found');
   }
-  const [dispute, review] = await Promise.all([
+  const [dispute, review, refund] = await Promise.all([
     Dispute.findOne({ booking: b._id }),
     ProviderReview.findOne({ booking: b._id }),
+    refundState(b),
   ]);
   ok(res, {
     ...bookingListItem(b),
@@ -153,6 +155,8 @@ const getBookingDetail = asyncHandler(async (req, res) => {
       ? { id: String(dispute._id), status: dispute.status, reason: dispute.reason }
       : null,
     review: review ? { rating: review.rating, comment: review.comment } : null,
+    // { paid, refunded, remaining } — what an admin refund can still return.
+    refund,
   }, 'Booking detail fetched');
 });
 
@@ -166,7 +170,7 @@ const forceBookingStatus = asyncHandler(async (req, res) => {
   }
   const before = b.status;
   await transition(b, status, { id: req.user._id, role: 'admin' }, { reason });
-  await audit(req.user._id, 'booking.force-status', 'booking', b._id,
+  await audit(req, 'booking.force-status', 'booking', b._id,
     { status: before }, { status: b.status }, reason);
   ok(res, { bookingId: String(b._id), status: b.status }, 'Status forced');
 });
@@ -183,26 +187,19 @@ const refundBooking = asyncHandler(async (req, res) => {
     res.status(404);
     throw new Error('Booking not found');
   }
-  const refundAmount = Number(amount) || b.pricing.finalPrice || b.pricing.estimatedPrice;
-  if (refundAmount <= 0) {
-    res.status(400);
-    throw new Error('Refund amount must be positive');
-  }
-
-  const { transaction: tx } = await WalletService.refund({
-    ownerType: 'User',
-    ownerId: b.customer,
-    amount: refundAmount,
-    relatedTo: { kind: 'Booking', id: b._id },
+  // Capped at what the customer paid minus refunds already issued
+  // (services/bookingRefunds.js); omitting the amount refunds the remainder.
+  const { amount: refundAmount, transaction: tx, remainingAfter } = await refundBookingToCustomer(b, {
+    amount,
     description: `Admin refund — booking ${b._id}: ${reason}`,
     metadata: { bookingId: String(b._id), adminId: String(req.user._id) },
   });
 
-  await audit(req.user._id, 'booking.refund', 'booking', b._id,
+  await audit(req, 'booking.refund', 'booking', b._id,
     { paymentStatus: b.payment.status },
     { refundAmount, transactionId: String(tx._id) }, reason);
 
-  ok(res, { refunded: true, amount: refundAmount, transactionId: String(tx._id) }, 'Refund issued');
+  ok(res, { refunded: true, amount: refundAmount, remainingRefundable: remainingAfter, transactionId: String(tx._id) }, 'Refund issued');
 });
 
 // ---------- 2. DISPUTES ----------
@@ -247,14 +244,15 @@ const raiseDispute = asyncHandler(async (req, res) => {
     description: description || '',
     evidence: cleanEvidence,
   });
+  await require('../../../services/notificationService').notifyDisputeOpened(dispute);
   ok(res, { disputeId: String(dispute._id), status: dispute.status }, 'Dispute raised');
 });
 
 // GET /api/admin/disputes
 const listDisputes = asyncHandler(async (req, res) => {
   const { status, page = 1, limit = 20 } = req.query;
-  const pageN = parseInt(page, 10) || 1;
-  const limitN = parseInt(limit, 10) || 20;
+  const pageN = clampInt(page, 1, 1, 1000000);
+  const limitN = clampInt(limit, 20, 1, MAX_PAGE_SIZE);
   const query = {};
   if (status && status !== 'all') query.status = status;
 
@@ -293,6 +291,15 @@ const listDisputes = asyncHandler(async (req, res) => {
 // PATCH /api/admin/disputes/:id — resolve with optional refund/penalty
 const resolveDispute = asyncHandler(async (req, res) => {
   const { status, resolution, refundAmount, penalizeProvider, reason } = req.body;
+  // Deciding a dispute needs canManageHomeServices (route guard); moving money
+  // as part of the decision — a refund or a provider penalty — also needs
+  // canManageFinance.
+  const movesMoney = (refundAmount && Number(refundAmount) > 0) || !!penalizeProvider;
+  if (movesMoney && !req.user.hasPermission('canManageFinance')) {
+    throw new AppError(ERROR_CODES.FORBIDDEN, "Refunds and penalties need the 'canManageFinance' permission", {
+      details: { permission: 'canManageFinance' },
+    });
+  }
   const d = await Dispute.findById(req.params.id).populate('booking');
   if (!d) {
     res.status(404);
@@ -308,15 +315,14 @@ const resolveDispute = asyncHandler(async (req, res) => {
   }
 
   if (refundAmount && Number(refundAmount) > 0 && d.booking) {
-    await WalletService.refund({
-      ownerType: 'User',
-      ownerId: d.booking.customer,
+    // Same cap as the admin refund: a dispute refund on top of an earlier
+    // refund cannot pay out more than the customer paid.
+    await refundBookingToCustomer(d.booking, {
       amount: Number(refundAmount),
-      relatedTo: { kind: 'Booking', id: d.booking._id },
       description: `Dispute refund — booking ${d.booking._id}`,
       metadata: { disputeId: String(d._id), adminId: String(req.user._id) },
     });
-    d.refundAmount = Number(refundAmount);
+    d.refundAmount = (d.refundAmount || 0) + Number(refundAmount);
   }
 
   if (penalizeProvider && Number(penalizeProvider) > 0 && d.booking) {
@@ -335,7 +341,7 @@ const resolveDispute = asyncHandler(async (req, res) => {
   }
 
   await d.save();
-  await audit(req.user._id, 'dispute.resolve', 'dispute', d._id, before,
+  await audit(req, 'dispute.resolve', 'dispute', d._id, before,
     { status: d.status, resolution: d.resolution, refundAmount: d.refundAmount },
     reason || resolution || 'Dispute decision');
 
@@ -347,8 +353,8 @@ const resolveDispute = asyncHandler(async (req, res) => {
 // GET /api/admin/payout-requests
 const listPayoutRequests = asyncHandler(async (req, res) => {
   const { status, page = 1, limit = 20 } = req.query;
-  const pageN = parseInt(page, 10) || 1;
-  const limitN = parseInt(limit, 10) || 20;
+  const pageN = clampInt(page, 1, 1, 1000000);
+  const limitN = clampInt(limit, 20, 1, MAX_PAGE_SIZE);
   const query = {};
   if (status && status !== 'all') query.status = status;
 
@@ -441,7 +447,7 @@ const decidePayoutRequest = asyncHandler(async (req, res) => {
   p.decidedAt = new Date();
   await p.save();
 
-  await audit(req.user._id, `payout.${action}`, 'payout', p._id,
+  await audit(req, `payout.${action}`, 'payout', p._id,
     { status: 'pending' }, { status: p.status }, reason || `Payout ${action}d`);
 
   ok(res, { payoutId: String(p._id), status: p.status }, `Payout ${p.status}`);
@@ -481,7 +487,7 @@ const createCategory = asyncHandler(async (req, res) => {
     name, slug, providerSubType, icon, badge, badgeColor, image, description,
     basePrice, isActive, sortOrder,
   });
-  await audit(req.user._id, 'category.create', 'category', c._id, null, catShape(c), 'Category created');
+  await audit(req, 'category.create', 'category', c._id, null, catShape(c), 'Category created');
   ok(res, catShape(c), 'Category created');
 });
 
@@ -497,7 +503,7 @@ const updateCategory = asyncHandler(async (req, res) => {
     if (req.body[k] !== undefined) c[k] = req.body[k];
   });
   await c.save();
-  await audit(req.user._id, 'category.update', 'category', c._id, before, catShape(c),
+  await audit(req, 'category.update', 'category', c._id, before, catShape(c),
     req.body.reason || 'Category updated');
   ok(res, catShape(c), 'Category updated');
 });
@@ -508,7 +514,7 @@ const deleteCategory = asyncHandler(async (req, res) => {
     res.status(404);
     throw new Error('Category not found');
   }
-  await audit(req.user._id, 'category.delete', 'category', c._id, catShape(c), null,
+  await audit(req, 'category.delete', 'category', c._id, catShape(c), null,
     req.body.reason || 'Category deleted');
   ok(res, { deleted: true }, 'Category deleted');
 });
@@ -523,35 +529,7 @@ const publicCategories = asyncHandler(async (req, res) => {
 
 // GET /api/admin/homeservice/dashboard
 const dashboard = asyncHandler(async (req, res) => {
-  const startOfDay = new Date();
-  startOfDay.setHours(0, 0, 0, 0);
-
-  const [pendingProviders, bookingsToday, gmvAgg, openDisputes, pendingPayouts, onlineProviders] =
-    await Promise.all([
-      Provider.countDocuments({ providerType: 'home_service', adminVerified: 'pending' }),
-      Booking.countDocuments({ createdAt: { $gte: startOfDay } }),
-      Booking.aggregate([
-        { $match: { 'payment.status': 'paid', 'payment.paidAt': { $gte: startOfDay } } },
-        {
-          $group: {
-            _id: null,
-            gmv: { $sum: { $ifNull: ['$pricing.finalPrice', '$pricing.estimatedPrice'] } },
-          },
-        },
-      ]),
-      Dispute.countDocuments({ status: { $in: ['open', 'investigating'] } }),
-      PayoutRequest.countDocuments({ status: 'pending' }),
-      Provider.countDocuments({ providerType: 'home_service', isOnline: true }),
-    ]);
-
-  ok(res, {
-    pendingProviderApprovals: pendingProviders,
-    bookingsToday,
-    gmvToday: (gmvAgg[0] && gmvAgg[0].gmv) || 0,
-    openDisputes,
-    pendingPayouts,
-    activeProvidersOnline: onlineProviders,
-  }, 'Dashboard fetched');
+  ok(res, await homeserviceDashboard(), 'Dashboard fetched');
 });
 
 // GET /api/admin/homeservice/analytics?from&to
@@ -570,7 +548,8 @@ const analytics = asyncHandler(async (req, res) => {
         { $match: range },
         {
           $group: {
-            _id: { $dateToString: { format: '%Y-%m-%d', date: '$createdAt' } },
+            // Pakistan days, not UTC: a booking at 02:00 PKT belongs to that day.
+            _id: { $dateToString: { format: '%Y-%m-%d', date: '$createdAt', timezone: DEFAULT_TIMEZONE } },
             count: { $sum: 1 },
           },
         },
@@ -630,14 +609,16 @@ const analytics = asyncHandler(async (req, res) => {
     byStatus: byStatus.map((x) => ({ status: x._id, count: x.count })),
     revenue,
     commission: Math.round(revenue * (settings.commissionPercent / 100)),
-    averageCompletionMinutes: Math.round((completionAgg[0] && completionAgg[0].avgMinutes) || 0),
-    cancellationRate: totalInRange ? Math.round((cancelled / totalInRange) * 100) : 0,
+    // null, not 0, when there is nothing to measure: "0 min" and "0 %" read as facts.
+    averageCompletionMinutes: completionAgg[0] ? Math.round(completionAgg[0].avgMinutes) : null,
+    cancellationRate: totalInRange ? Math.round((cancelled / totalInRange) * 100) : null,
+    timezone: DEFAULT_TIMEZONE,
     topProviders: topProviders.map((x) => ({
       id: String(x._id),
       name: x.name || 'Provider',
       jobs: x.jobs,
       gross: x.gross,
-      rating: x.rating || 0,
+      rating: typeof x.rating === 'number' ? x.rating : null,
     })),
   }, 'Analytics fetched');
 });
@@ -648,65 +629,79 @@ const getSettings = asyncHandler(async (req, res) => {
   ok(res, await getHomeserviceSettings(), 'Settings fetched');
 });
 
+// Limits for each editable value. These drive live money (commission, the
+// payout floor) and matching, so nothing outside them is stored — before this
+// a commission of -50 or "abc" was saved as given.
+const HS_SETTING_LIMITS = {
+  commissionPercent: { min: 0, max: 100, label: 'Commission' },
+  defaultSearchRadiusKm: { min: 1, max: 100, label: 'Search radius' },
+  minPayoutAmount: { min: 0, max: 1000000, label: 'Minimum payout' },
+  avgUrbanSpeedKmh: { min: 5, max: 120, label: 'Average speed' },
+  // How recently a provider must have been seen to count as "available now".
+  onlineStaleMinutes: { min: 5, max: 240, label: 'Online freshness (minutes)' },
+};
+const WEIGHT_KEYS = ['distance', 'rating', 'availability'];
+// Optional fourth weight (completion quality). When it is sent, all four must
+// add up to 1; when it is not, the three above must, and quality weighs 0.
+const OPTIONAL_WEIGHT_KEYS = ['quality'];
+const RANKING_MODES = ['heuristic', 'shadow', 'blend', 'model'];
+
+function validateHomeserviceSettings(body) {
+  const patch = {};
+  const problems = [];
+  for (const [key, limit] of Object.entries(HS_SETTING_LIMITS)) {
+    if (body[key] === undefined) continue;
+    const v = body[key];
+    if (typeof v !== 'number' || !Number.isFinite(v) || v < limit.min || v > limit.max) {
+      problems.push({ field: key, message: `${limit.label} must be a number from ${limit.min} to ${limit.max}` });
+    } else patch[key] = v;
+  }
+  if (body.matchingWeights !== undefined) {
+    const w = body.matchingWeights && typeof body.matchingWeights === 'object' ? body.matchingWeights : {};
+    const keys = [...WEIGHT_KEYS, ...OPTIONAL_WEIGHT_KEYS.filter((k) => w[k] !== undefined)];
+    const values = keys.map((k) => w[k]);
+    if (values.some((v) => typeof v !== 'number' || !Number.isFinite(v) || v < 0 || v > 1)) {
+      problems.push({ field: 'matchingWeights', message: 'Each matching weight must be a number from 0 to 1' });
+    } else if (Math.abs(values.reduce((a, b) => a + b, 0) - 1) > 0.01) {
+      problems.push({ field: 'matchingWeights', message: 'The matching weights must add up to 1' });
+    } else {
+      patch.matchingWeights = { quality: 0, ...Object.fromEntries(keys.map((k, i) => [k, values[i]])) };
+    }
+  }
+  if (body.ranking !== undefined) {
+    const r = body.ranking && typeof body.ranking === 'object' ? body.ranking : null;
+    const clean = {};
+    if (!r) problems.push({ field: 'ranking', message: 'Ranking must be an object' });
+    else {
+      if (r.mode !== undefined) {
+        if (!RANKING_MODES.includes(r.mode)) problems.push({ field: 'ranking.mode', message: `Ranking mode must be one of ${RANKING_MODES.join(', ')}` });
+        else clean.mode = r.mode;
+      }
+      if (r.blendAlpha !== undefined) {
+        if (typeof r.blendAlpha !== 'number' || r.blendAlpha < 0 || r.blendAlpha > 1) problems.push({ field: 'ranking.blendAlpha', message: 'Blend alpha must be a number from 0 to 1' });
+        else clean.blendAlpha = r.blendAlpha;
+      }
+      if (r.explorationBoost !== undefined) {
+        if (typeof r.explorationBoost !== 'number' || r.explorationBoost < 0 || r.explorationBoost > 0.5) problems.push({ field: 'ranking.explorationBoost', message: 'Exploration boost must be a number from 0 to 0.5' });
+        else clean.explorationBoost = r.explorationBoost;
+      }
+      patch.ranking = clean;
+    }
+  }
+  const unknown = Object.keys(body).filter((k) => !['reason', 'matchingWeights', 'ranking'].includes(k) && !HS_SETTING_LIMITS[k]);
+  for (const key of unknown) problems.push({ field: key, message: `Unknown home-services setting '${key}'` });
+  return { patch, problems };
+}
+
 const patchSettings = asyncHandler(async (req, res) => {
   const before = await getHomeserviceSettings();
-  const allowed = [
-    'commissionPercent',
-    'cancellationWindowHours',
-    'defaultSearchRadiusKm',
-    'matchingWeights',
-    'minPayoutAmount',
-    'avgUrbanSpeedKmh',
-    'onlineStaleMinutes',
-    'ranking',
-  ];
-  const patch = {};
-  allowed.forEach((k) => {
-    if (req.body[k] !== undefined) patch[k] = req.body[k];
-  });
-  const invalid = (message) => {
-    res.status(400);
-    throw new Error(message);
-  };
-  if (patch.onlineStaleMinutes !== undefined) {
-    const m = Number(patch.onlineStaleMinutes);
-    if (!Number.isFinite(m) || m < 5 || m > 240) invalid('onlineStaleMinutes must be between 5 and 240');
-    patch.onlineStaleMinutes = Math.round(m);
-  }
-  if (patch.ranking !== undefined) {
-    const r = patch.ranking || {};
-    const clean = {};
-    if (r.mode !== undefined) {
-      if (!['heuristic', 'shadow', 'blend', 'model'].includes(r.mode)) invalid('ranking.mode must be heuristic, shadow, blend or model');
-      clean.mode = r.mode;
-    }
-    if (r.blendAlpha !== undefined) {
-      const a = Number(r.blendAlpha);
-      if (!Number.isFinite(a) || a < 0 || a > 1) invalid('ranking.blendAlpha must be between 0 and 1');
-      clean.blendAlpha = a;
-    }
-    if (r.explorationBoost !== undefined) {
-      const b = Number(r.explorationBoost);
-      if (!Number.isFinite(b) || b < 0 || b > 0.5) invalid('ranking.explorationBoost must be between 0 and 0.5');
-      clean.explorationBoost = b;
-    }
-    patch.ranking = clean;
-  }
-  if (patch.matchingWeights !== undefined) {
-    const w = patch.matchingWeights;
-    if (!w || typeof w !== 'object') invalid('matchingWeights must be an object');
-    const clean = {};
-    for (const key of ['distance', 'rating', 'availability', 'quality']) {
-      if (w[key] === undefined) continue;
-      const v = Number(w[key]);
-      if (!Number.isFinite(v) || v < 0 || v > 1) invalid(`matchingWeights.${key} must be between 0 and 1`);
-      clean[key] = v;
-    }
-    patch.matchingWeights = clean;
+  const { patch, problems } = validateHomeserviceSettings(req.body || {});
+  if (problems.length) {
+    throw new AppError(ERROR_CODES.VALIDATION_FAILED, problems.map((p) => p.message).join('; '), { details: { fields: problems } });
   }
   const after = await updateHomeserviceSettings(patch);
-  await audit(req.user._id, 'settings.update', 'settings',
-    new mongoose.Types.ObjectId('000000000000000000000000'),
+  await audit(req, 'settings.update', 'settings',
+    null,
     before, after, req.body.reason || 'Settings updated');
   ok(res, after, 'Settings updated');
 });

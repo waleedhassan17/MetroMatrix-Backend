@@ -15,8 +15,10 @@ const VALID_ID = /^[A-Za-z0-9._-]{8,64}$/;
 const API_VERSION = '1';
 
 function requestContext(req, res, next) {
+  // middleware/requestId.js runs first and has already validated or minted
+  // the id (and set the header); adopt it so every log line agrees.
   const inbound = req.headers['x-request-id'];
-  const id = typeof inbound === 'string' && VALID_ID.test(inbound) ? inbound : crypto.randomUUID();
+  const id = req.id || (typeof inbound === 'string' && VALID_ID.test(inbound) ? inbound : crypto.randomUUID());
   req.id = id;
   res.setHeader('X-Request-Id', id);
   res.setHeader('X-API-Version', API_VERSION);

@@ -1,38 +1,28 @@
-const ShoppingAuditLog = require('../models/ShoppingAuditLog');
+const { requirePermission } = require('../../../middleware/authMiddleware');
+const auditService = require('../../../services/auditService');
 
 /**
- * requireShoppingAdmin — authenticated Admin with the shopping permission
- * (canManageShopping, following the existing Admin.permissions pattern).
+ * requireShoppingAdmin — authenticated Admin with canManageShopping (super
+ * admins have every permission). The standard named permission guard, so the
+ * route table and the admin route-guard test see it like every other one.
  * Runs after `protect`.
  */
-const requireShoppingAdmin = (req, res, next) => {
-  if (!req.isAdmin) {
-    return res.status(403).json({ success: false, error: 'This route is for admins only' });
-  }
-  const perms = req.user.permissions || {};
-  if (!req.user.isSuperAdmin && perms.canManageShopping !== true) {
-    return res
-      .status(403)
-      .json({ success: false, error: 'You do not have the shopping permission' });
-  }
-  return next();
-};
+const requireShoppingAdmin = requirePermission('canManageShopping');
 
-/** Append to the shopping audit trail. Never throws into the request path. */
-const audit = async (adminId, action, targetType, targetId, { before, after, reason } = {}) => {
-  try {
-    await ShoppingAuditLog.create({
-      admin: adminId,
-      action,
-      targetType,
-      targetId,
-      before,
-      after,
-      reason,
-    });
-  } catch (e) {
-    console.error('[shopping] audit write failed:', e.message);
-  }
-};
+/**
+ * Record a shopping admin action in the unified AdminAuditLog (the old
+ * ShoppingAuditLog was written and never read). Never throws into the
+ * request path.
+ */
+const audit = (req, action, targetType, targetId, { before, after, reason } = {}) =>
+  auditService.audit(req, {
+    module: 'shopping',
+    action: `shopping.${action}`,
+    targetType,
+    targetId,
+    before,
+    after,
+    reason,
+  });
 
 module.exports = { requireShoppingAdmin, audit };

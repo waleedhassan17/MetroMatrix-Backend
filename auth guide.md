@@ -500,7 +500,7 @@ isAuthenticated: true
 
 ### Check Navigation
 
-- ✅ Admin emails (`waleedhassansfd@gmail.com`) → `AdminDashboard`
+- ✅ Admin sign-in (the dedicated staff sign-in screen) → admin home
 - ✅ Social logins → `UserHome`
 - ✅ Regular email logins → `UserHome`
 

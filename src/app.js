@@ -23,6 +23,7 @@ const PendingSignup = require('./models/PendingSignup');
 const EmailVerification = require('./models/EmailVerification');
 const { generateTokens } = require('./utils/generateToken');
 const { getPublicBaseUrl } = require('./utils/publicUrl');
+const named = require('./utils/named');
 const { verifiedEmailFlag } = require('./utils/verificationFlags');
 
 // Initialize express
@@ -34,7 +35,11 @@ const app = express();
 // Trust proxy
 app.set('trust proxy', 1);
 
-// First of all: every request gets an id (X-Request-Id) and an access-log line.
+// Every request gets an id (req.id, X-Request-Id, req.log) before anything
+// else runs, so even a webhook failure can be traced. requestContext adopts
+// that id for the async context and the realtime hop; accessLog writes one
+// line per request and the live-usage counters.
+app.use(require('./middleware/requestId'));
 app.use(requestContext);
 app.use(accessLog);
 
@@ -71,8 +76,14 @@ if (rateLimitDisabled()) {
 }
 const limiters = buildLimiters();
 app.locals.limiters = limiters;
-app.use('/api/', limiters.api);
-app.use('/api/auth/', limiters.auth);
+// Named: the route table (src/utils/routeTable.js) and the admin route-guard
+// test identify middleware by name.
+app.use('/api/', named('apiRateLimit', limiters.api));
+app.use('/api/auth/', named('authRateLimit', limiters.auth));
+
+// general.maintenanceMode — 503 for the user/provider API; admins, health
+// checks, cron and the Stripe webhook stay open.
+app.use(require('./middleware/maintenance'));
 
 // Initialize passport
 app.use(passport.initialize());
@@ -94,6 +105,38 @@ app.get('/health', async (req, res) => {
     // 'disabled' is a healthy state: Redis only accelerates, it is never required.
     redis: await redisHealth(),
   });
+});
+
+// Readiness — for the uptime monitor: is the database answering and is the
+// configuration sane? 503 when not. (/health above only says the process is up.)
+app.get('/health/ready', async (req, res) => {
+  const mongoose = require('mongoose');
+  const checks = {};
+  let timer;
+  try {
+    if (mongoose.connection.readyState !== 1) throw new Error('not connected');
+    await Promise.race([
+      mongoose.connection.db.admin().ping(),
+      new Promise((_, reject) => {
+        timer = setTimeout(() => reject(new Error('ping timed out')), 2000);
+      }),
+    ]);
+    checks.database = 'ok';
+  } catch (err) {
+    checks.database = `failing: ${err.message}`;
+  } finally {
+    clearTimeout(timer);
+  }
+  try {
+    require('./config/validateEnv')();
+    checks.configuration = 'ok';
+  } catch (err) {
+    checks.configuration = 'failing';
+  }
+  // Audit writes never fail a request, so their failures are surfaced here.
+  checks.auditWriteFailures = require('./services/auditService').auditFailureCount();
+  const ready = checks.database === 'ok' && checks.configuration === 'ok';
+  res.status(ready ? 200 : 503).json({ status: ready ? 'ready' : 'not_ready', checks, timestamp: new Date().toISOString() });
 });
 
 // ===== EMAIL VERIFICATION JSON API (FOR FRONTEND REQUESTS) =====
@@ -1521,7 +1564,6 @@ app.get('/', (req, res) => {
   res.json({
     message: 'Welcome to MetroMatrix API',
     version: '1.0.0',
-    documentation: '/api-docs',
     timestamp: new Date().toISOString(),
     endpoints: {
       health: '/health',

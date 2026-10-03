@@ -15,10 +15,11 @@
  *   - a full clinic day TODAY for doctor 1 (3 completed + 3 upcoming) so the
  *     doctor dashboard, patient queue and earnings are not empty on sign-in
  *
- * Run: node scripts/seed-healthcare.js
+ * Run: SEED_DEMO_PASSWORD=… node scripts/seed-healthcare.js --confirm-db=<db name>
  */
 require('dotenv').config();
 const mongoose = require('mongoose');
+const { assertSafeSeedTarget, demoPassword } = require('./lib/seedSafety');
 
 const User = require('../src/models/User');
 const Provider = require('../src/models/Provider');
@@ -95,6 +96,8 @@ const APPOINTMENT_PLAN = [
 ];
 
 async function main() {
+  assertSafeSeedTarget();
+  const password = demoPassword();
   await mongoose.connect(process.env.MONGODB_URI);
   console.log('✓ MongoDB connected\n=== Healthcare seed ===');
 
@@ -117,7 +120,7 @@ async function main() {
     if (!provider) {
       provider = await Provider.create({
         email,
-        password: 'Doctor@123',
+        password,
         fullName,
         phoneNumber: `030088800${String(i + 1).padStart(2, '0')}`,
         providerType: 'doctor',
@@ -204,7 +207,7 @@ async function main() {
     let user = await User.findOne({ email }).select('+password');
     if (!user) {
       user = new User({ email, fullName, phoneNumber, isActive: true, isEmailVerified: true });
-      user.password = '123456';
+      user.password = password;
       await user.save();
     }
     const wallet = await WalletService.getOrCreateWallet(user._id, 'User');
@@ -416,9 +419,9 @@ async function main() {
   }
 
   console.log('=== Done ===');
-  console.log('Logins:');
-  console.log('  doctors: doctor1..12.hc@metromatrix.pk / Doctor@123');
-  console.log('  patients: patient1..5.hc@metromatrix.pk / 123456');
+  console.log('Logins (password: SEED_DEMO_PASSWORD):');
+  console.log('  doctors: doctor1..12.hc@metromatrix.pk');
+  console.log('  patients: patient1..5.hc@metromatrix.pk');
   await mongoose.disconnect();
 }
 

@@ -42,22 +42,42 @@ const accessTokenExpire = () => process.env.JWT_EXPIRE || DEFAULT_ACCESS_TOKEN_E
 const refreshTokenExpire = () =>
   process.env.REFRESH_TOKEN_EXPIRE || DEFAULT_REFRESH_TOKEN_EXPIRE;
 
+// Every token states what it is (`typ`), and `protect` only accepts access
+// tokens. Without it the two kinds were told apart solely by which secret
+// signed them — so on a deployment where JWT_SECRET happened to equal
+// REFRESH_TOKEN_SECRET, a 90-day refresh token worked as an access token.
+// `typ` is set last so a caller's payload can never override it.
+
 // Generate access token (short-lived)
 // payload can include: { id, userType, email, tokenType, onboardingStatus, etc. }
-const generateAccessToken = (id, payload = {}) => {
-  const tokenPayload = { id, ...payload };
+const generateAccessToken = (id, payload = {}, { expiresIn } = {}) => {
+  const tokenPayload = { id, ...payload, typ: 'access' };
   return jwt.sign(tokenPayload, process.env.JWT_SECRET, {
-    expiresIn: accessTokenExpire(),
+    expiresIn: expiresIn || accessTokenExpire(),
   });
 };
 
 // Generate refresh token (long-lived)
 // payload can include: { id, userType, email, tokenType, onboardingStatus, etc. }
-const generateRefreshToken = (id, payload = {}) => {
-  const tokenPayload = { id, ...payload };
+const generateRefreshToken = (id, payload = {}, { expiresIn } = {}) => {
+  const tokenPayload = { id, ...payload, typ: 'refresh' };
   return jwt.sign(tokenPayload, process.env.REFRESH_TOKEN_SECRET, {
-    expiresIn: refreshTokenExpire(),
+    expiresIn: expiresIn || refreshTokenExpire(),
   });
+};
+
+/**
+ * Expiry of an issued token, read from the token itself so the client is told
+ * exactly what the server will enforce.
+ * @returns {{ accessTokenExpiresAt: string, expiresInSeconds: number }}
+ */
+const describeExpiry = (token) => {
+  const { exp } = jwt.decode(token) || {};
+  const expiresAtMs = (exp || 0) * 1000;
+  return {
+    accessTokenExpiresAt: new Date(expiresAtMs).toISOString(),
+    expiresInSeconds: Math.max(0, Math.round((expiresAtMs - Date.now()) / 1000)),
+  };
 };
 
 // Generate both tokens
@@ -92,5 +112,6 @@ module.exports = {
   generateTokens,
   verifyToken,
   expiryToMs,
+  describeExpiry,
   DEFAULT_ACCESS_TOKEN_EXPIRE,
 };

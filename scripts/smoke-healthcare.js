@@ -17,9 +17,10 @@ const axios = require('axios');
 const BASE = process.env.API_URL || 'http://localhost:5000';
 const api = axios.create({ baseURL: `${BASE}/api`, validateStatus: () => true });
 
-const PATIENT = { email: 'patient1.hc@metromatrix.pk', password: '123456' };
-const ADMIN = { email: 'waleedhassansfd@gmail.com', password: 'Waleed@104' };
-const DOCTOR_PASSWORD = 'Doctor@123';
+const { demoPassword, qaAdminCredentials } = require('./lib/seedSafety');
+const PATIENT = { email: 'patient1.hc@metromatrix.pk', password: demoPassword() };
+const ADMIN = qaAdminCredentials();
+const DOCTOR_PASSWORD = demoPassword();
 
 let passed = 0;
 let failed = 0;

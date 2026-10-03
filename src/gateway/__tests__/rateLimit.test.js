@@ -13,6 +13,16 @@ function appWith(limiter) {
 }
 
 describe('gateway RedisStore', () => {
+  // test/setupEnv.js disables rate limiting for every other suite; this one
+  // is about the limiter itself.
+  let disabledBefore;
+  beforeAll(() => {
+    disabledBefore = process.env.DISABLE_RATE_LIMIT;
+    delete process.env.DISABLE_RATE_LIMIT;
+  });
+  afterAll(() => {
+    if (disabledBefore !== undefined) process.env.DISABLE_RATE_LIMIT = disabledBefore;
+  });
   afterEach(() => redis.__setClientForTests(undefined));
 
   it('counts in Redis when it is available', async () => {

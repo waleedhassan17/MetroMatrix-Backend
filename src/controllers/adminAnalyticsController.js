@@ -3,68 +3,48 @@ const Doctor = require('../modules/healthcare/models/Doctor');
 const Appointment = require('../modules/healthcare/models/Appointment');
 const Specialty = require('../modules/healthcare/models/Specialty');
 const mongoose = require('mongoose');
+const { ok } = require('../utils/apiResponse');
+const { monthWindows, growthPct, DEFAULT_TIMEZONE } = require('../utils/time');
+const { PENDING_DOCTOR_STATUSES } = require('../modules/healthcare/services/adminDashboardService');
 
 // @desc    Get overall platform stats
 // @route   GET /api/v1/admin/analytics/stats
 // @access  Private (Admin)
 const getStats = asyncHandler(async (req, res) => {
-  const now = new Date();
-  const currentYear = now.getFullYear();
-  const currentMonth = now.getMonth(); // 0-indexed
-  const lastMonth = currentMonth === 0 ? 11 : currentMonth - 1;
-  const lastMonthYear = currentMonth === 0 ? currentYear - 1 : currentYear;
+  // Asia/Karachi month windows (this used to be server time). Growth compares
+  // this month so far with the same stretch of last month, and is null when
+  // there is nothing to compare with — it used to report +100 %.
+  const w = monthWindows(new Date());
+  const completedRevenue = (window) =>
+    Appointment.aggregate([
+      { $match: { status: 'completed' } },
+      { $lookup: { from: 'slots', localField: 'slotId', foreignField: '_id', as: 'slot' } },
+      { $unwind: '$slot' },
+      { $match: { 'slot.date': { $gte: window.from, $lt: window.to } } },
+      { $group: { _id: null, total: { $sum: '$totalAmount' } } },
+    ]).then((r) => r[0]?.total || 0);
 
-  const startOfThisMonth = new Date(currentYear, currentMonth, 1);
-  const startOfLastMonth = new Date(lastMonthYear, lastMonth, 1);
-  const endOfLastMonth = new Date(currentYear, currentMonth, 1); // start of this month
+  const [totalDoctors, verifiedDoctors, pendingVerification, totalAppointments, thisMonthRevenue, samePeriodLastMonth, lastMonthRevenue] =
+    await Promise.all([
+      Doctor.countDocuments(),
+      Doctor.countDocuments({ verificationStatus: 'verified' }),
+      Doctor.countDocuments({ verificationStatus: { $in: PENDING_DOCTOR_STATUSES } }),
+      Appointment.countDocuments(),
+      completedRevenue(w.thisMonth),
+      completedRevenue(w.samePeriodLastMonth),
+      completedRevenue(w.lastMonth),
+    ]);
 
-  const [
+  ok(res, {
     totalDoctors,
     verifiedDoctors,
     pendingVerification,
     totalAppointments,
     thisMonthRevenue,
     lastMonthRevenue,
-  ] = await Promise.all([
-    Doctor.countDocuments(),
-    Doctor.countDocuments({ verificationStatus: 'verified' }),
-    Doctor.countDocuments({ verificationStatus: 'pending' }),
-    Appointment.countDocuments(),
-    Appointment.aggregate([
-      { $match: { status: 'completed' } },
-      { $lookup: { from: 'slots', localField: 'slotId', foreignField: '_id', as: 'slot' } },
-      { $unwind: '$slot' },
-      { $match: { 'slot.date': { $gte: startOfThisMonth, $lt: new Date() } } },
-      { $group: { _id: null, total: { $sum: '$totalAmount' } } },
-    ]).then(r => (r[0]?.total || 0)),
-    Appointment.aggregate([
-      { $match: { status: 'completed' } },
-      { $lookup: { from: 'slots', localField: 'slotId', foreignField: '_id', as: 'slot' } },
-      { $unwind: '$slot' },
-      { $match: { 'slot.date': { $gte: startOfLastMonth, $lt: startOfThisMonth } } },
-      { $group: { _id: null, total: { $sum: '$totalAmount' } } },
-    ]).then(r => (r[0]?.total || 0)),
-  ]);
-
-  // Growth percentage
-  let growth = 0;
-  if (lastMonthRevenue > 0) {
-    growth = ((thisMonthRevenue - lastMonthRevenue) / lastMonthRevenue) * 100;
-  } else if (thisMonthRevenue > 0) {
-    growth = 100;
-  }
-
-  res.json({
-    success: true,
-    data: {
-      totalDoctors,
-      verifiedDoctors,
-      pendingVerification,
-      totalAppointments,
-      thisMonthRevenue,
-      lastMonthRevenue,
-      growth: Math.round(growth * 100) / 100, // round to 2 decimals
-    },
+    growth: growthPct(thisMonthRevenue, samePeriodLastMonth),
+    growthComparedTo: 'same_period_last_month',
+    timezone: DEFAULT_TIMEZONE,
   });
 });
 
@@ -132,16 +112,9 @@ const getAppointmentAnalytics = asyncHandler(async (req, res) => {
 
   const totalAll = timeline.reduce((sum, d) => sum + d.totalAppointments, 0);
   const completedAll = timeline.reduce((sum, d) => sum + d.completedAppointments, 0);
-  const completionRate = totalAll > 0 ? Math.round((completedAll / totalAll) * 10000) / 100 : 0;
+  const completionRate = totalAll > 0 ? Math.round((completedAll / totalAll) * 10000) / 100 : null;
 
-  res.json({
-    success: true,
-    data: {
-      period,
-      timeline,
-      overallCompletionRate: completionRate,
-    },
-  });
+  ok(res, { period, timeline, overallCompletionRate: completionRate });
 });
 
 // @desc    Revenue breakdown by specialty or doctor
@@ -201,7 +174,7 @@ const getRevenueAnalytics = asyncHandler(async (req, res) => {
         },
       },
     ]);
-    return res.json({ success: true, data: { groupBy: 'doctor', revenue: result } });
+    return ok(res, { groupBy: 'doctor', revenue: result });
   } else {
     // group by specialty
     const result = await Appointment.aggregate([
@@ -242,7 +215,7 @@ const getRevenueAnalytics = asyncHandler(async (req, res) => {
         },
       },
     ]);
-    return res.json({ success: true, data: { groupBy: 'specialty', revenue: result } });
+    return ok(res, { groupBy: 'specialty', revenue: result });
   }
 });
 

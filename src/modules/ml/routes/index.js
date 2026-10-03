@@ -4,7 +4,7 @@
 const express = require('express');
 const router = express.Router();
 
-const { optionalAuth, protect, adminOnly, userOnly } = require('../../../middleware/authMiddleware');
+const { optionalAuth, protect, adminOnly, userOnly, requirePermission } = require('../../../middleware/authMiddleware');
 const { requireInternalKey } = require('../../../gateway/internalAuth');
 const eventC = require('../controllers/eventController');
 const adminC = require('../controllers/adminMlController');
@@ -25,10 +25,11 @@ router.get('/recommendations/healthcare', protect, userOnly, recsC.healthcare);
 router.get('/search/services', require('../../../gateway/rateLimit').limiter('nlq'), searchC.searchServices);
 
 // Model registry, for admins.
-router.get('/admin/ml/models', protect, adminOnly, adminC.listModels);
-router.post('/admin/ml/models/:id/activate', protect, adminOnly, adminC.activateModel);
-router.post('/admin/ml/models/:id/archive', protect, adminOnly, adminC.archiveModel);
-router.get('/admin/ml/runs', protect, adminOnly, adminC.listRuns);
+router.get('/admin/ml/models', protect, adminOnly, requirePermission('canViewAnalytics'), adminC.listModels);
+// Activating a model changes live ranking: a settings-level decision.
+router.post('/admin/ml/models/:id/activate', protect, adminOnly, requirePermission('canManageSettings'), adminC.activateModel);
+router.post('/admin/ml/models/:id/archive', protect, adminOnly, requirePermission('canManageSettings'), adminC.archiveModel);
+router.get('/admin/ml/runs', protect, adminOnly, requirePermission('canViewAnalytics'), adminC.listRuns);
 
 // The nightly ML job, when it finishes.
 router.post('/internal/ml/refresh', requireInternalKey, adminC.refresh);

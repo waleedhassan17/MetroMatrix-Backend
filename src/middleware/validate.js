@@ -1,4 +1,7 @@
 const { validationResult } = require('express-validator');
+const { isAdminRequest } = require('../utils/adminScope');
+const { fail } = require('../utils/apiResponse');
+const { ERROR_CODES } = require('../utils/errorCodes');
 
 // Validation middleware
 const validate = (req, res, next) => {
@@ -14,6 +17,10 @@ const validate = (req, res, next) => {
       field: err.path ?? err.type ?? null,
       message: err.msg,
     }));
+
+    if (isAdminRequest(req)) {
+      return fail(res, 400, ERROR_CODES.VALIDATION_FAILED, details.map((d) => d.message).join('; '), { fields: details });
+    }
 
     return res.status(400).json({
       success: false,

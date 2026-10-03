@@ -1,5 +1,6 @@
 const multer = require('multer');
 const { uploadAvatar, uploadDocument, uploadPostImage } = require('../config/cloudinary');
+const logger = require('../utils/logger');
 
 // Error handling wrapper for upload middleware
 const handleUploadError = (uploadFunction) => {
@@ -35,7 +36,7 @@ const handleUploadError = (uploadFunction) => {
         });
       } else if (err) {
         // Other errors (file type, etc.)
-        console.error('Upload error:', err);
+        logger.error('Upload error:', err);
         return res.status(400).json({
           success: false,
           error: err.message || 'File upload failed',
@@ -45,7 +46,7 @@ const handleUploadError = (uploadFunction) => {
       
       // Log successful upload to middleware
       if (req.file) {
-        console.log('✅ File uploaded via middleware:', {
+        logger.debug('✅ File uploaded via middleware:', {
           field: req.file.fieldname,
           filename: req.file.filename,
           path: req.file.path,

@@ -32,10 +32,11 @@ const OrderGroup = require('../src/modules/shopping/models/OrderGroup');
 const Brand = require('../src/modules/shopping/models/Brand');
 const User = require('../src/models/User');
 
-const C1 = { email: 'shopper1.qa@metromatrix.pk', password: 'Shopper@123' };
-const C2 = { email: 'shopper2.qa@metromatrix.pk', password: 'Shopper@123' };
-const V_C = { email: 'vendor.cougar@metromatrix.pk', password: 'Vendor@123' };
-const V_O = { email: 'vendor.outfitters@metromatrix.pk', password: 'Vendor@123' };
+const { demoPassword } = require('./lib/seedSafety');
+const C1 = { email: 'shopper1.qa@metromatrix.pk', password: demoPassword() };
+const C2 = { email: 'shopper2.qa@metromatrix.pk', password: demoPassword() };
+const V_C = { email: 'vendor.cougar@metromatrix.pk', password: demoPassword() };
+const V_O = { email: 'vendor.outfitters@metromatrix.pk', password: demoPassword() };
 
 let pass = 0, fail = 0;
 const results = [];
@@ -97,6 +98,7 @@ const fund = async (userId, minimum) => {
 
 (async () => {
   console.log(`\n=== SHOPPING MONEY & STOCK INTEGRITY SWEEP against ${BASE} ===\n`);
+  require('./lib/seedSafety').assertSafeSeedTarget();
   await mongoose.connect(process.env.MONGODB_URI);
 
   const login = async (c, p = false) =>

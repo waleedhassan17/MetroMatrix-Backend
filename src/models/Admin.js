@@ -79,6 +79,27 @@ const adminSchema = new mongoose.Schema(
         type: Boolean,
         default: true,
       },
+      // Home-services oversight: bookings, disputes, categories, HS settings.
+      canManageHomeServices: {
+        type: Boolean,
+        default: false,
+      },
+      // Money: refunds (every vertical), payout decisions, wallet adjustments,
+      // reconciliation. Separate from module oversight on purpose.
+      canManageFinance: {
+        type: Boolean,
+        default: false,
+      },
+      // Sending broadcast notifications to users/providers.
+      canBroadcast: {
+        type: Boolean,
+        default: false,
+      },
+      // Reading the admin audit trail.
+      canViewAudit: {
+        type: Boolean,
+        default: false,
+      },
     },
 
     // Profile
@@ -106,56 +127,34 @@ const adminSchema = new mongoose.Schema(
 
     // Authentication
     lastLoginDate: Date,
-    refreshToken: String,
+    // Set for bootstrap/temporary passwords (seed-admin, admin-issued resets):
+    // the first sign-in gets a session that can only change the password.
+    mustChangePassword: {
+      type: Boolean,
+      default: false,
+    },
+    passwordChangedAt: Date,
+    // Sessions live in AdminSession (one per device, hashed rotating refresh
+    // token). The old single plaintext `refreshToken` field is gone; the
+    // cleanup migration unsets it from existing documents.
+
+    // TOTP two-factor sign-in. Secrets are AES-GCM encrypted
+    // (services/admin/totp.js) and never selected by default.
+    twoFactor: {
+      enabled: { type: Boolean, default: false },
+      secretEnc: { type: String, select: false },
+      pendingSecretEnc: { type: String, select: false },
+      recoveryCodeHashes: { type: [String], select: false, default: undefined },
+      // Last accepted time-step counter — a code can't be used twice.
+      lastUsedCounter: { type: Number, select: false, default: 0 },
+      enrolledAt: Date,
+    },
     resetPasswordToken: String,
     resetPasswordExpire: Date,
 
-    // Activity Tracking
-    activityLog: [
-      {
-        action: {
-          type: String,
-          enum: [
-            'login',
-            'logout',
-            'approve_provider',
-            'reject_provider',
-            'deactivate_user',
-            'activate_user',
-            'delete_post',
-            'create_admin',
-            'update_settings',
-          ],
-        },
-        targetId: mongoose.Schema.Types.ObjectId,
-        targetType: String,
-        details: String,
-        timestamp: {
-          type: Date,
-          default: Date.now,
-        },
-      },
-    ],
-
-    // Statistics
-    stats: {
-      totalProvidersApproved: {
-        type: Number,
-        default: 0,
-      },
-      totalProvidersRejected: {
-        type: Number,
-        default: 0,
-      },
-      totalUsersManaged: {
-        type: Number,
-        default: 0,
-      },
-      totalPostsModerated: {
-        type: Number,
-        default: 0,
-      },
-    },
+    // (activityLog and stats were removed: every admin action is recorded in
+    // AdminAuditLog, and scripts/migrations/03-audit-backfill.js copies the old
+    // embedded entries there before unsetting them.)
 
     // Created by (for tracking who created this admin)
     createdBy: {
@@ -169,7 +168,9 @@ const adminSchema = new mongoose.Schema(
 );
 
 // Indexes
-adminSchema.index({ email: 1 });
+// (email is already indexed by `unique: true` on the field; a second
+// index({ email: 1 }) declared the same index twice and made createIndexes —
+// and scripts/sync-indexes.js — fail with an index-name conflict.)
 adminSchema.index({ role: 1 });
 adminSchema.index({ isActive: 1 });
 
@@ -177,6 +178,15 @@ adminSchema.index({ isActive: 1 });
 // the double-hash bug it fixes). Admin had the identical missing-`return`,
 // so admin logins were corrupting their own hash too.
 adminSchema.pre('save', hashPasswordPreSave);
+
+// `role` is the source of truth; isSuperAdmin (which hasPermission and every
+// super-admin check read) follows it. They used to be set independently, so a
+// seeded role:'super_admin' without isSuperAdmin got none of the bypass, and
+// vice versa.
+adminSchema.pre('validate', function syncSuperAdminFlag(next) {
+  this.isSuperAdmin = this.role === 'super_admin';
+  next();
+});
 
 // Match passwords
 adminSchema.methods.matchPassword = async function (enteredPassword) {
@@ -199,33 +209,23 @@ adminSchema.methods.getResetPasswordToken = function () {
   return resetToken;
 };
 
-// Log admin activity
-adminSchema.methods.logActivity = function (action, targetId, targetType, details) {
-  this.activityLog.push({
-    action,
-    targetId,
-    targetType,
-    details,
-    timestamp: new Date(),
-  });
-
-  // Keep only last 100 activities
-  if (this.activityLog.length > 100) {
-    this.activityLog = this.activityLog.slice(-100);
-  }
-};
-
-// Update statistics
-adminSchema.methods.incrementStat = function (statName) {
-  if (this.stats[statName] !== undefined) {
-    this.stats[statName] += 1;
-  }
-};
-
 // Check permissions
 adminSchema.methods.hasPermission = function (permission) {
   if (this.isSuperAdmin) return true;
   return this.permissions[permission] === true;
+};
+
+// Every permission flag the schema defines (new flags are picked up
+// automatically).
+const PERMISSION_KEYS = Object.keys(adminSchema.paths)
+  .filter((p) => p.startsWith('permissions.'))
+  .map((p) => p.slice('permissions.'.length));
+adminSchema.statics.PERMISSION_KEYS = PERMISSION_KEYS;
+
+// Effective permissions: what this admin can actually do (a super admin has
+// every flag regardless of what is stored).
+adminSchema.methods.effectivePermissions = function () {
+  return Object.fromEntries(PERMISSION_KEYS.map((k) => [k, this.isSuperAdmin ? true : this.permissions?.[k] === true]));
 };
 
 // Sanitize admin data for response
@@ -235,6 +235,12 @@ adminSchema.methods.toJSON = function () {
   delete obj.refreshToken;
   delete obj.resetPasswordToken;
   delete obj.resetPasswordExpire;
+  if (obj.twoFactor) {
+    delete obj.twoFactor.secretEnc;
+    delete obj.twoFactor.pendingSecretEnc;
+    delete obj.twoFactor.recoveryCodeHashes;
+    delete obj.twoFactor.lastUsedCounter;
+  }
   delete obj.__v;
   return obj;
 };
