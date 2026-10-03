@@ -156,7 +156,9 @@ emailVerificationAttempts: {
 );
 
 // Indexes
-userSchema.index({ email: 1 });
+// (email is already indexed by `unique: true` on the field; a second
+// index({ email: 1 }) declared the same index twice and made createIndexes —
+// and scripts/sync-indexes.js — fail with an index-name conflict.)
 userSchema.index({ phoneNumber: 1 });
 userSchema.index({ createdAt: -1 });
 
@@ -271,5 +273,18 @@ userSchema.methods.toJSON = function () {
 // Admin deletion is a soft delete (deletedAt): deleted accounts disappear from
 // every query automatically — see models/plugins/softDelete.js.
 userSchema.plugin(require('./plugins/softDelete'));
+
+// "New customer" admin notification (notifications.userRegistrations), raised
+// here because accounts are created on eight different sign-up paths (email,
+// Google, Facebook, web verification…). Best-effort: never blocks the save.
+userSchema.pre('save', function rememberIsNew(next) {
+  this.$locals.wasNew = this.isNew;
+  next();
+});
+userSchema.post('save', function notifyAdminsOfNewUser(doc) {
+  if (!doc.$locals.wasNew) return;
+  // Required lazily: the service depends on models that depend on this one.
+  require('../services/notificationService').notifyUserRegistration(doc);
+});
 
 module.exports = mongoose.model('User', userSchema);

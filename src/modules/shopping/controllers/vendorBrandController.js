@@ -43,6 +43,9 @@ const createMyBrand = asyncHandler(async (req, res) => {
     if (req.body[f] !== undefined) payload[f] = req.body[f];
   });
   const brand = await Brand.create(payload);
+  if (brand.status === 'pending') {
+    await require('../../../services/notificationService').notifyBrandSubmitted(brand);
+  }
   return ok(res, brand, 201);
 });
 

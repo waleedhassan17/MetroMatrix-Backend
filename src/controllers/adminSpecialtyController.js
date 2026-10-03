@@ -3,6 +3,9 @@ const Specialty = require('../modules/healthcare/models/Specialty');
 const Doctor = require('../modules/healthcare/models/Doctor');
 const Appointment = require('../modules/healthcare/models/Appointment');
 const auditService = require('../services/auditService');
+const AppError = require('../utils/AppError');
+const { ERROR_CODES } = require('../utils/errorCodes');
+const { ok, created } = require('../utils/apiResponse');
 
 const { diff } = auditService;
 const audit = (req, action, specialty, { before, after, reason } = {}) =>
@@ -48,7 +51,7 @@ const getSpecialties = asyncHandler(async (req, res) => {
     })
   );
 
-  res.json({ success: true, data: { specialties: specialtiesWithCounts } });
+  ok(res, specialtiesWithCounts);
 });
 
 // @desc    Create a new specialty
@@ -58,15 +61,13 @@ const createSpecialty = asyncHandler(async (req, res) => {
   const { name, icon, description, commonConditions } = req.body;
 
   if (!name) {
-    res.status(400);
-    throw new Error('Specialty name is required');
+    throw new AppError(ERROR_CODES.VALIDATION_FAILED, 'Specialty name is required');
   }
 
   // Check uniqueness
   const existing = await Specialty.findOne({ name: name.trim() });
   if (existing) {
-    res.status(400);
-    throw new Error('A specialty with this name already exists');
+    throw new AppError(ERROR_CODES.CONFLICT, 'A specialty with this name already exists');
   }
 
   const specialty = await Specialty.create({
@@ -77,10 +78,7 @@ const createSpecialty = asyncHandler(async (req, res) => {
   });
   await audit(req, 'specialty.create', specialty, { after: { name: specialty.name, icon: specialty.icon } });
 
-  res.status(201).json({
-    success: true,
-    data: { specialty },
-  });
+  created(res, specialty);
 });
 
 // @desc    Update a specialty
@@ -89,8 +87,7 @@ const createSpecialty = asyncHandler(async (req, res) => {
 const updateSpecialty = asyncHandler(async (req, res) => {
   const specialty = await Specialty.findById(req.params.id);
   if (!specialty) {
-    res.status(404);
-    throw new Error('Specialty not found');
+    throw new AppError(ERROR_CODES.NOT_FOUND, 'Specialty not found');
   }
 
   const { name, icon, description, commonConditions } = req.body;
@@ -100,8 +97,7 @@ const updateSpecialty = asyncHandler(async (req, res) => {
   if (name && name !== specialty.name) {
     const duplicate = await Specialty.findOne({ name: name.trim(), _id: { $ne: specialty._id } });
     if (duplicate) {
-      res.status(400);
-      throw new Error('Another specialty already uses this name');
+      throw new AppError(ERROR_CODES.CONFLICT, 'Another specialty already uses this name');
     }
     specialty.name = name.trim();
   }
@@ -114,10 +110,7 @@ const updateSpecialty = asyncHandler(async (req, res) => {
   const changes = diff(before, snapshot(specialty));
   await audit(req, 'specialty.update', specialty, changes);
 
-  res.json({
-    success: true,
-    data: { specialty },
-  });
+  ok(res, specialty);
 });
 
 // @desc    Soft-delete a specialty
@@ -126,8 +119,7 @@ const updateSpecialty = asyncHandler(async (req, res) => {
 const deleteSpecialty = asyncHandler(async (req, res) => {
   const specialty = await Specialty.findById(req.params.id);
   if (!specialty) {
-    res.status(404);
-    throw new Error('Specialty not found');
+    throw new AppError(ERROR_CODES.NOT_FOUND, 'Specialty not found');
   }
 
   // Check for active doctors in this specialty
@@ -138,8 +130,7 @@ const deleteSpecialty = asyncHandler(async (req, res) => {
   });
 
   if (activeDoctorsCount > 0) {
-    res.status(400);
-    throw new Error('Cannot delete specialty with active doctors');
+    throw new AppError(ERROR_CODES.CONFLICT, 'Cannot delete specialty with active doctors');
   }
 
   specialty.isActive = false;
@@ -150,10 +141,7 @@ const deleteSpecialty = asyncHandler(async (req, res) => {
     reason: req.body?.reason,
   });
 
-  res.json({
-    success: true,
-    message: 'Specialty deactivated',
-  });
+  ok(res, { id: String(specialty._id), isActive: false });
 });
 
 module.exports = {

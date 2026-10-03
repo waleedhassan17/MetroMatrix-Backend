@@ -50,7 +50,6 @@ const {
   isDateKey,
   paddedRange,
 } = require('../utils/time');
-const Notification = require('../models/Notification');
 const hcNotificationService = require('../modules/healthcare/services/notificationService');
 const { generateTokens } = require('../utils/generateToken');
 const User = require('../models/User');
@@ -260,17 +259,8 @@ const submitVerification = asyncHandler(async (req, res) => {
 
   await doctor.save();
 
-  // 5. Create admin notification (broadcast to admins; best-effort)
-  try {
-    await Notification.create({
-      type: 'doctor_verification',
-      title: 'New Doctor Verification',
-      message: `Dr. ${req.user.fullName || 'Unknown'} has submitted verification documents.`,
-      data: { providerId },
-    });
-  } catch (err) {
-    console.error('admin notification failed:', err.message);
-  }
+  // 5. Tell the admins who verify doctors (best-effort, never throws).
+  await require('../services/notificationService').notifyDoctorSubmitted(doctor, req.user.fullName && `Dr. ${req.user.fullName}`);
 
   res.json({
     success: true,

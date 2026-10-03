@@ -1,11 +1,9 @@
 const asyncHandler = require('express-async-handler');
-const mongoose = require('mongoose');
 const Booking = require('../models/Booking');
 const Dispute = require('../models/Dispute');
 const PayoutRequest = require('../models/PayoutRequest');
 const ServiceCategory = require('../models/ServiceCategory');
 const ProviderReview = require('../models/ProviderReview');
-const Provider = require('../../../models/Provider');
 const User = require('../../../models/User');
 const WalletService = require('../../../services/walletService');
 const { transition } = require('../services/bookingService');
@@ -16,11 +14,19 @@ const {
 } = require('../services/settingsService');
 const { avatar } = require('../services/serializers');
 const auditService = require('../../../services/auditService');
+const { homeserviceDashboard } = require('../services/adminDashboardService');
 const AppError = require('../../../utils/AppError');
 const { ERROR_CODES } = require('../../../utils/errorCodes');
+const apiResponse = require('../../../utils/apiResponse');
+const { isAdminRequest } = require('../../../utils/adminScope');
+const { clampInt, MAX_PAGE_SIZE } = require('../../../utils/pagination');
 
-const ok = (res, data, message, pagination) =>
-  res.json({ success: true, data, message, ...(pagination ? { pagination } : {}) });
+// Admin routes answer in the admin console's standard envelope. raiseDispute
+// (a customer/provider route that lives in this file) keeps its legacy shape.
+const ok = (res, data, message, pagination) => {
+  if (isAdminRequest(res.req)) return apiResponse.ok(res, data, pagination);
+  return res.json({ success: true, data, message, ...(pagination ? { pagination } : {}) });
+};
 
 // Every home-services admin mutation lands in the unified AdminAuditLog
 // (module 'homeservice'). The old HSAuditLog was written and never read.
@@ -35,17 +41,7 @@ const audit = (req, action, targetType, targetId, before, after, reason) =>
     reason,
   });
 
-function paginationOf(page, limit, total) {
-  const totalPages = Math.max(1, Math.ceil(total / limit));
-  return {
-    currentPage: page,
-    totalPages,
-    totalItems: total,
-    itemsPerPage: limit,
-    hasNext: page < totalPages,
-    hasPrevious: page > 1,
-  };
-}
+const paginationOf = (page, limit, total) => ({ page, limit, total, pages: Math.max(1, Math.ceil(total / limit)) });
 
 function bookingListItem(b) {
   return {
@@ -81,8 +77,8 @@ const listBookings = asyncHandler(async (req, res) => {
     page = 1,
     limit = 20,
   } = req.query;
-  const pageN = parseInt(page, 10) || 1;
-  const limitN = parseInt(limit, 10) || 20;
+  const pageN = clampInt(page, 1, 1, 1000000);
+  const limitN = clampInt(limit, 20, 1, MAX_PAGE_SIZE);
 
   const query = {};
   if (status && status !== 'all') query.status = status;
@@ -237,14 +233,15 @@ const raiseDispute = asyncHandler(async (req, res) => {
     description: description || '',
     evidence: Array.isArray(evidence) ? evidence : [],
   });
+  await require('../../../services/notificationService').notifyDisputeOpened(dispute);
   ok(res, { disputeId: String(dispute._id), status: dispute.status }, 'Dispute raised');
 });
 
 // GET /api/admin/disputes
 const listDisputes = asyncHandler(async (req, res) => {
   const { status, page = 1, limit = 20 } = req.query;
-  const pageN = parseInt(page, 10) || 1;
-  const limitN = parseInt(limit, 10) || 20;
+  const pageN = clampInt(page, 1, 1, 1000000);
+  const limitN = clampInt(limit, 20, 1, MAX_PAGE_SIZE);
   const query = {};
   if (status && status !== 'all') query.status = status;
 
@@ -346,8 +343,8 @@ const resolveDispute = asyncHandler(async (req, res) => {
 // GET /api/admin/payout-requests
 const listPayoutRequests = asyncHandler(async (req, res) => {
   const { status, page = 1, limit = 20 } = req.query;
-  const pageN = parseInt(page, 10) || 1;
-  const limitN = parseInt(limit, 10) || 20;
+  const pageN = clampInt(page, 1, 1, 1000000);
+  const limitN = clampInt(limit, 20, 1, MAX_PAGE_SIZE);
   const query = {};
   if (status && status !== 'all') query.status = status;
 
@@ -522,35 +519,7 @@ const publicCategories = asyncHandler(async (req, res) => {
 
 // GET /api/admin/homeservice/dashboard
 const dashboard = asyncHandler(async (req, res) => {
-  const startOfDay = new Date();
-  startOfDay.setHours(0, 0, 0, 0);
-
-  const [pendingProviders, bookingsToday, gmvAgg, openDisputes, pendingPayouts, onlineProviders] =
-    await Promise.all([
-      Provider.countDocuments({ providerType: 'home_service', adminVerified: 'pending' }),
-      Booking.countDocuments({ createdAt: { $gte: startOfDay } }),
-      Booking.aggregate([
-        { $match: { 'payment.status': 'paid', 'payment.paidAt': { $gte: startOfDay } } },
-        {
-          $group: {
-            _id: null,
-            gmv: { $sum: { $ifNull: ['$pricing.finalPrice', '$pricing.estimatedPrice'] } },
-          },
-        },
-      ]),
-      Dispute.countDocuments({ status: { $in: ['open', 'investigating'] } }),
-      PayoutRequest.countDocuments({ status: 'pending' }),
-      Provider.countDocuments({ providerType: 'home_service', isOnline: true }),
-    ]);
-
-  ok(res, {
-    pendingProviderApprovals: pendingProviders,
-    bookingsToday,
-    gmvToday: (gmvAgg[0] && gmvAgg[0].gmv) || 0,
-    openDisputes,
-    pendingPayouts,
-    activeProvidersOnline: onlineProviders,
-  }, 'Dashboard fetched');
+  ok(res, await homeserviceDashboard(), 'Dashboard fetched');
 });
 
 // GET /api/admin/homeservice/analytics?from&to

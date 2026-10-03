@@ -168,7 +168,9 @@ const adminSchema = new mongoose.Schema(
 );
 
 // Indexes
-adminSchema.index({ email: 1 });
+// (email is already indexed by `unique: true` on the field; a second
+// index({ email: 1 }) declared the same index twice and made createIndexes —
+// and scripts/sync-indexes.js — fail with an index-name conflict.)
 adminSchema.index({ role: 1 });
 adminSchema.index({ isActive: 1 });
 

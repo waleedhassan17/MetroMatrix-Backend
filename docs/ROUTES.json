@@ -272,47 +272,6 @@
   },
   {
     "method": "GET",
-    "path": "/api/admin/dashboard",
-    "middleware": [
-      "apiRateLimit",
-      "protect",
-      "adminOnly",
-      "asyncHandler"
-    ]
-  },
-  {
-    "method": "GET",
-    "path": "/api/admin/dashboard/quick-stats",
-    "middleware": [
-      "apiRateLimit",
-      "protect",
-      "adminOnly",
-      "asyncHandler"
-    ]
-  },
-  {
-    "method": "GET",
-    "path": "/api/admin/dashboard/recent-registrations",
-    "middleware": [
-      "apiRateLimit",
-      "protect",
-      "adminOnly",
-      "requirePermission(canApproveProviders)",
-      "asyncHandler"
-    ]
-  },
-  {
-    "method": "GET",
-    "path": "/api/admin/dashboard/stats",
-    "middleware": [
-      "apiRateLimit",
-      "protect",
-      "adminOnly",
-      "asyncHandler"
-    ]
-  },
-  {
-    "method": "GET",
     "path": "/api/admin/disputes",
     "middleware": [
       "apiRateLimit",
@@ -390,6 +349,16 @@
   },
   {
     "method": "GET",
+    "path": "/api/admin/meta",
+    "middleware": [
+      "apiRateLimit",
+      "protect",
+      "adminOnly",
+      "asyncHandler"
+    ]
+  },
+  {
+    "method": "GET",
     "path": "/api/admin/notifications",
     "middleware": [
       "apiRateLimit",
@@ -406,7 +375,9 @@
       "apiRateLimit",
       "protect",
       "adminOnly",
-      "requirePermission(canManageNotifications)",
+      "selfScoped",
+      "middleware",
+      "validate",
       "asyncHandler"
     ]
   },
@@ -418,12 +389,25 @@
       "protect",
       "adminOnly",
       "selfScoped",
+      "middleware",
+      "validate",
       "asyncHandler"
     ]
   },
   {
     "method": "DELETE",
     "path": "/api/admin/notifications/clear-all",
+    "middleware": [
+      "apiRateLimit",
+      "protect",
+      "adminOnly",
+      "selfScoped",
+      "asyncHandler"
+    ]
+  },
+  {
+    "method": "DELETE",
+    "path": "/api/admin/notifications/purge",
     "middleware": [
       "apiRateLimit",
       "protect",
@@ -451,6 +435,16 @@
       "protect",
       "adminOnly",
       "selfScoped",
+      "asyncHandler"
+    ]
+  },
+  {
+    "method": "GET",
+    "path": "/api/admin/overview",
+    "middleware": [
+      "apiRateLimit",
+      "protect",
+      "adminOnly",
       "asyncHandler"
     ]
   },
@@ -484,6 +478,8 @@
       "protect",
       "adminOnly",
       "requirePermission(canManagePosts)",
+      "middleware",
+      "validate",
       "asyncHandler"
     ]
   },
@@ -545,6 +541,8 @@
       "protect",
       "adminOnly",
       "requirePermission(canApproveProviders)",
+      "middleware",
+      "validate",
       "asyncHandler"
     ]
   },
@@ -556,17 +554,8 @@
       "protect",
       "adminOnly",
       "requirePermission(canApproveProviders)",
-      "asyncHandler"
-    ]
-  },
-  {
-    "method": "PUT",
-    "path": "/api/admin/providers/:providerId/activate",
-    "middleware": [
-      "apiRateLimit",
-      "protect",
-      "adminOnly",
-      "requirePermission(canApproveProviders)",
+      "middleware",
+      "validate",
       "asyncHandler"
     ]
   },
@@ -578,28 +567,8 @@
       "protect",
       "adminOnly",
       "requirePermission(canApproveProviders)",
-      "asyncHandler"
-    ]
-  },
-  {
-    "method": "PUT",
-    "path": "/api/admin/providers/:providerId/deactivate",
-    "middleware": [
-      "apiRateLimit",
-      "protect",
-      "adminOnly",
-      "requirePermission(canApproveProviders)",
-      "asyncHandler"
-    ]
-  },
-  {
-    "method": "GET",
-    "path": "/api/admin/providers/:providerId/details",
-    "middleware": [
-      "apiRateLimit",
-      "protect",
-      "adminOnly",
-      "requirePermission(canApproveProviders)",
+      "middleware",
+      "validate",
       "asyncHandler"
     ]
   },
@@ -613,6 +582,8 @@
       "requirePermission(canApproveProviders)",
       "middleware",
       "validate",
+      "middleware",
+      "validate",
       "asyncHandler"
     ]
   },
@@ -624,28 +595,46 @@
       "protect",
       "adminOnly",
       "requireSuperAdmin",
+      "middleware",
+      "validate",
       "asyncHandler"
     ]
   },
   {
-    "method": "GET",
-    "path": "/api/admin/providers/:providerType(doctor|home_service|vendor)",
+    "method": "PUT",
+    "path": "/api/admin/providers/:providerId/suspend",
     "middleware": [
       "apiRateLimit",
       "protect",
       "adminOnly",
       "requirePermission(canApproveProviders)",
+      "middleware",
+      "validate",
+      "middleware",
+      "validate",
       "asyncHandler"
     ]
   },
   {
-    "method": "GET",
-    "path": "/api/admin/providers/pending",
+    "method": "PUT",
+    "path": "/api/admin/providers/:providerId/unsuspend",
     "middleware": [
       "apiRateLimit",
       "protect",
       "adminOnly",
       "requirePermission(canApproveProviders)",
+      "middleware",
+      "validate",
+      "asyncHandler"
+    ]
+  },
+  {
+    "method": "GET",
+    "path": "/api/admin/queue",
+    "middleware": [
+      "apiRateLimit",
+      "protect",
+      "adminOnly",
       "asyncHandler"
     ]
   },
@@ -790,6 +779,8 @@
       "protect",
       "adminOnly",
       "requirePermission(canManageUsers)",
+      "middleware",
+      "validate",
       "asyncHandler"
     ]
   },
@@ -801,6 +792,8 @@
       "protect",
       "adminOnly",
       "requirePermission(canManageUsers)",
+      "middleware",
+      "validate",
       "asyncHandler"
     ]
   },
@@ -812,6 +805,8 @@
       "protect",
       "adminOnly",
       "requirePermission(canManageUsers)",
+      "middleware",
+      "validate",
       "asyncHandler"
     ]
   },
@@ -823,6 +818,10 @@
       "protect",
       "adminOnly",
       "requirePermission(canManageUsers)",
+      "middleware",
+      "validate",
+      "middleware",
+      "validate",
       "asyncHandler"
     ]
   },
@@ -834,6 +833,8 @@
       "protect",
       "adminOnly",
       "requireSuperAdmin",
+      "middleware",
+      "validate",
       "asyncHandler"
     ]
   },

@@ -123,3 +123,44 @@ describe('03-audit-backfill', () => {
     expect(await db().collection('hsauditlogs').countDocuments()).toBe(1);
   });
 });
+
+describe('04-provider-status', () => {
+  it('derives the state model from what each record says happened', async () => {
+    await db().collection('providers').insertMany([
+      { email: 'live@x.co', adminVerified: 'active', isActive: true },
+      { email: 'switched-off@x.co', adminVerified: 'active', isActive: false },
+      { email: 'rejected@x.co', adminVerified: 'inactive', rejectionReason: 'Fake documents' },
+      { email: 'approved-then-off@x.co', adminVerified: 'inactive', approvedAt: new Date('2026-01-01') },
+      { email: 'waiting@x.co', adminVerified: 'pending' },
+    ]);
+    expect(run('04-provider-status.js', confirm()).code).toBe(0);
+    const by = async (email) => db().collection('providers').findOne({ email });
+    expect(await by('live@x.co')).toMatchObject({ verificationStatus: 'approved', isSuspended: false });
+    expect(await by('switched-off@x.co')).toMatchObject({ verificationStatus: 'approved', isSuspended: true });
+    expect(await by('rejected@x.co')).toMatchObject({ verificationStatus: 'rejected', isSuspended: false });
+    expect(await by('approved-then-off@x.co')).toMatchObject({ verificationStatus: 'approved', isSuspended: true });
+    expect(await by('waiting@x.co')).toMatchObject({ verificationStatus: 'pending', isSuspended: false });
+    // Login flags untouched.
+    expect((await by('switched-off@x.co')).adminVerified).toBe('active');
+    expect(run('04-provider-status.js', confirm()).out).toMatch(/"changed":0/);
+  });
+});
+
+describe('05-notification-read-state', () => {
+  it('turns the global isRead flag into per-admin read state', async () => {
+    const [a1, a2] = [new mongoose.Types.ObjectId(), new mongoose.Types.ObjectId()];
+    await db().collection('admins').insertMany([{ _id: a1, email: 'a1@x.co' }, { _id: a2, email: 'a2@x.co' }]);
+    const providerId = new mongoose.Types.ObjectId();
+    await db().collection('notifications').insertMany([
+      { type: 'provider_registration', title: 't', message: 'm', isRead: true, readAt: new Date(), data: { providerId, severity: 'warning' } },
+      { type: 'system_alert', title: 't', message: 'm', isRead: false },
+    ]);
+    expect(run('05-notification-read-state.js', confirm()).code).toBe(0);
+    const [read, unread] = await db().collection('notifications').find({}).sort({ type: 1 }).toArray();
+    expect(read.readBy.map(String).sort()).toEqual([a1, a2].map(String).sort());
+    expect(read.isRead).toBeUndefined();
+    expect(read.severity).toBe('warning');
+    expect(read.target).toEqual({ type: 'Provider', id: providerId });
+    expect(unread.readBy).toEqual([]);
+  });
+});

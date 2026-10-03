@@ -245,11 +245,25 @@ const providerSchema = new mongoose.Schema(
     rejectedAt: Date,
     submittedAt: Date, // When profile was submitted for review
     
-    // Legacy fields (kept for backward compatibility)
+    // Admin verification outcome — the canonical state the admin console
+    // reads (services/admin/providerStatus.js is its only writer, and keeps
+    // the older adminVerified flag that login checks in step).
     verificationStatus: {
       type: String,
       enum: ['pending', 'approved', 'rejected'],
       default: 'pending',
+    },
+    // Suspension is separate from verification: an approved provider an admin
+    // has suspended is not "rejected" (the dashboard used to count them so).
+    isSuspended: {
+      type: Boolean,
+      default: false,
+    },
+    suspendedReason: String,
+    suspendedAt: Date,
+    suspendedBy: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: 'Admin',
     },
     canLogin: {
       type: Boolean,
@@ -386,11 +400,18 @@ const providerSchema = new mongoose.Schema(
 );
 
 // Indexes
-providerSchema.index({ email: 1 });
+// (email is already indexed by `unique: true` on the field; a second
+// index({ email: 1 }) declared the same index twice and made createIndexes —
+// and scripts/sync-indexes.js — fail with an index-name conflict.)
 providerSchema.index({ providerType: 1 });
 providerSchema.index({ city: 1 });
 providerSchema.index({ 'ratings.average': -1 });
 providerSchema.index({ verificationStatus: 1 });
+// Admin console: state filters (the pending queue sorts by submittedAt),
+// sign-ups by month, search by phone.
+providerSchema.index({ verificationStatus: 1, isSuspended: 1, submittedAt: 1 });
+providerSchema.index({ createdAt: -1 });
+providerSchema.index({ phoneNumber: 1 });
 providerSchema.index({ status: 1 });
 providerSchema.index({ emailVerified: 1 });
 providerSchema.index({ adminVerified: 1 });

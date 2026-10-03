@@ -3,13 +3,12 @@ const mongoose = require('mongoose');
 const Order = require('../models/Order');
 const OrderGroup = require('../models/OrderGroup');
 const Brand = require('../models/Brand');
-const Product = require('../models/Product');
-const ReturnRequest = require('../models/ReturnRequest');
 const User = require('../../../models/User');
 const orderService = require('../services/orderService');
 const { audit } = require('../middleware/adminAuth');
 const { getShoppingSettings, updateShoppingSettings } = require('../services/settingsService');
 const { escapeRegex } = require('../services/catalogService');
+const { shoppingDashboard } = require('../services/adminDashboardService');
 const { ok, paginated, fail, parsePagination } = require('../utils/respond');
 
 /**
@@ -226,38 +225,7 @@ const platformAnalytics = asyncHandler(async (req, res) => {
 
 // @desc  GET /api/shopping/admin/dashboard — summary tiles
 const adminDashboard = asyncHandler(async (req, res) => {
-  const settings = await getShoppingSettings();
-  const dayStart = new Date(new Date().setHours(0, 0, 0, 0));
-
-  const [pendingBrands, ordersToday, gmvAgg, openReturns, products] = await Promise.all([
-    Brand.countDocuments({ status: 'pending', isDeleted: false }),
-    Order.countDocuments({ createdAt: { $gte: dayStart } }),
-    Order.aggregate([
-      { $match: { createdAt: { $gte: dayStart }, orderStatus: { $nin: ['cancelled'] } } },
-      { $group: { _id: null, gmv: { $sum: '$total' } } },
-    ]),
-    ReturnRequest.countDocuments({ status: { $in: ['requested', 'approved', 'picked_up'] } }),
-    Product.find({ isActive: true }).select('variants'),
-  ]);
-
-  let lowStockAlerts = 0;
-  products.forEach((p) => {
-    p.variants.forEach((v) => {
-      // Running out, not already out — same rule as getInventory and the
-      // vendor dashboard, so the three counts agree.
-      if (v.stockQuantity > 0 && v.stockQuantity <= settings.lowStockThreshold) {
-        lowStockAlerts += 1;
-      }
-    });
-  });
-
-  return ok(res, {
-    pendingBrandApprovals: pendingBrands,
-    ordersToday,
-    gmvToday: gmvAgg.length ? gmvAgg[0].gmv : 0,
-    openReturnRequests: openReturns,
-    lowStockAlerts,
-  });
+  return ok(res, await shoppingDashboard());
 });
 
 /**

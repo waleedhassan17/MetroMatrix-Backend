@@ -1678,7 +1678,6 @@ app.get('/', (req, res) => {
   res.json({
     message: 'Welcome to MetroMatrix API',
     version: '1.0.0',
-    documentation: '/api-docs',
     timestamp: new Date().toISOString(),
     endpoints: {
       health: '/health',

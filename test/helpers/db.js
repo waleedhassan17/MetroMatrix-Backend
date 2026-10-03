@@ -9,9 +9,11 @@ async function connect() {
   }
 }
 
+// Every collection that exists — including ones a test wrote to directly
+// without a registered model.
 async function clear() {
-  const { collections } = mongoose.connection;
-  await Promise.all(Object.values(collections).map((c) => c.deleteMany({})));
+  const collections = await mongoose.connection.db.collections();
+  await Promise.all(collections.map((c) => c.deleteMany({})));
 }
 
 async function disconnect() {

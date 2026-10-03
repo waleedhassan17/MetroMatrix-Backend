@@ -699,6 +699,7 @@ const updateProviderProfileComplete = asyncHandler(async (req, res) => {
   // Send notification to admin
   try {
     const { notifyProviderSubmitted } = require('../services/adminEmailService');
+    await require('../services/notificationService').notifyProviderSubmitted(provider);
     await notifyProviderSubmitted(provider);
   } catch (emailError) {
     console.error('Error sending admin notification:', emailError);
