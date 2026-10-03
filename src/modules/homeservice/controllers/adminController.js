@@ -616,19 +616,47 @@ const getSettings = asyncHandler(async (req, res) => {
   ok(res, await getHomeserviceSettings(), 'Settings fetched');
 });
 
+// Limits for each editable value. These drive live money (commission, the
+// payout floor) and matching, so nothing outside them is stored — before this
+// a commission of -50 or "abc" was saved as given.
+const HS_SETTING_LIMITS = {
+  commissionPercent: { min: 0, max: 100, label: 'Commission' },
+  defaultSearchRadiusKm: { min: 1, max: 100, label: 'Search radius' },
+  minPayoutAmount: { min: 0, max: 1000000, label: 'Minimum payout' },
+  avgUrbanSpeedKmh: { min: 5, max: 120, label: 'Average speed' },
+};
+const WEIGHT_KEYS = ['distance', 'rating', 'availability'];
+
+function validateHomeserviceSettings(body) {
+  const patch = {};
+  const problems = [];
+  for (const [key, limit] of Object.entries(HS_SETTING_LIMITS)) {
+    if (body[key] === undefined) continue;
+    const v = body[key];
+    if (typeof v !== 'number' || !Number.isFinite(v) || v < limit.min || v > limit.max) {
+      problems.push({ field: key, message: `${limit.label} must be a number from ${limit.min} to ${limit.max}` });
+    } else patch[key] = v;
+  }
+  if (body.matchingWeights !== undefined) {
+    const w = body.matchingWeights;
+    const values = WEIGHT_KEYS.map((k) => (w && typeof w === 'object' ? w[k] : undefined));
+    if (values.some((v) => typeof v !== 'number' || !Number.isFinite(v) || v < 0 || v > 1)) {
+      problems.push({ field: 'matchingWeights', message: 'Each matching weight must be a number from 0 to 1' });
+    } else if (Math.abs(values.reduce((a, b) => a + b, 0) - 1) > 0.01) {
+      problems.push({ field: 'matchingWeights', message: 'The matching weights must add up to 1' });
+    } else patch.matchingWeights = Object.fromEntries(WEIGHT_KEYS.map((k, i) => [k, values[i]]));
+  }
+  const unknown = Object.keys(body).filter((k) => k !== 'reason' && k !== 'matchingWeights' && !HS_SETTING_LIMITS[k]);
+  for (const key of unknown) problems.push({ field: key, message: `Unknown home-services setting '${key}'` });
+  return { patch, problems };
+}
+
 const patchSettings = asyncHandler(async (req, res) => {
   const before = await getHomeserviceSettings();
-  const allowed = [
-    'commissionPercent',
-    'defaultSearchRadiusKm',
-    'matchingWeights',
-    'minPayoutAmount',
-    'avgUrbanSpeedKmh',
-  ];
-  const patch = {};
-  allowed.forEach((k) => {
-    if (req.body[k] !== undefined) patch[k] = req.body[k];
-  });
+  const { patch, problems } = validateHomeserviceSettings(req.body || {});
+  if (problems.length) {
+    throw new AppError(ERROR_CODES.VALIDATION_FAILED, problems.map((p) => p.message).join('; '), { details: { fields: problems } });
+  }
   const after = await updateHomeserviceSettings(patch);
   await audit(req, 'settings.update', 'settings',
     null,
