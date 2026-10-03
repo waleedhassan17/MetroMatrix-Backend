@@ -164,3 +164,35 @@ describe('05-notification-read-state', () => {
     expect(unread.readBy).toEqual([]);
   });
 });
+
+describe('audit-prod-hygiene', () => {
+  const hygiene = (...args) => {
+    try {
+      return { code: 0, out: execFileSync(process.execPath, [path.join(ROOT, 'scripts', 'audit-prod-hygiene.js'), ...args], { env: process.env, encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] }) };
+    } catch (err) {
+      return { code: err.status, out: `${err.stdout || ''}${err.stderr || ''}` };
+    }
+  };
+
+  it('finds seeded accounts and known passwords read-only, and cleans up with --apply', async () => {
+    const User = require('../models/User');
+    const Admin = require('../models/Admin');
+    await User.create({ email: 'user1@metromatrix.pk', fullName: 'Demo', phoneNumber: '03001234567', password: '123456' });
+    await User.create({ email: 'real@gmail.com', fullName: 'Real', phoneNumber: '03001234568', password: 'A-Real-Password-9' });
+    await Admin.create({ email: 'old-admin@gmail.com', fullName: 'Old', role: 'admin', password: 'Moderator@123456' });
+    await Admin.create({ email: 'boss@gmail.com', fullName: 'Boss', role: 'super_admin', password: 'Strong-Unique-Pass-1' });
+
+    const look = hygiene(confirm());
+    expect(look.code).toBe(0);
+    expect(look.out).toMatch(/user1@metromatrix\.pk/);
+    expect(look.out).toMatch(/old-admin@gmail\.com/);
+    expect(look.out).not.toMatch(/real@gmail\.com|boss@gmail\.com/);
+    expect(await User.countDocuments({})).toBe(2); // read-only
+
+    expect(hygiene(confirm(), '--apply').code).toBe(0);
+    expect(await User.findOne({ email: 'real@gmail.com' })).not.toBeNull();
+    expect(await User.countDocuments({})).toBe(1); // demo account soft-deleted
+    expect((await Admin.findOne({ email: 'old-admin@gmail.com' })).isActive).toBe(false);
+    expect((await Admin.findOne({ email: 'boss@gmail.com' })).isActive).toBe(true);
+  }, 60000);
+});

@@ -194,6 +194,38 @@ app.get('/health', (req, res) => {
   });
 });
 
+// Readiness — for the uptime monitor: is the database answering and is the
+// configuration sane? 503 when not. (/health above only says the process is up.)
+app.get('/health/ready', async (req, res) => {
+  const mongoose = require('mongoose');
+  const checks = {};
+  let timer;
+  try {
+    if (mongoose.connection.readyState !== 1) throw new Error('not connected');
+    await Promise.race([
+      mongoose.connection.db.admin().ping(),
+      new Promise((_, reject) => {
+        timer = setTimeout(() => reject(new Error('ping timed out')), 2000);
+      }),
+    ]);
+    checks.database = 'ok';
+  } catch (err) {
+    checks.database = `failing: ${err.message}`;
+  } finally {
+    clearTimeout(timer);
+  }
+  try {
+    require('./config/validateEnv')();
+    checks.configuration = 'ok';
+  } catch (err) {
+    checks.configuration = 'failing';
+  }
+  // Audit writes never fail a request, so their failures are surfaced here.
+  checks.auditWriteFailures = require('./services/auditService').auditFailureCount();
+  const ready = checks.database === 'ok' && checks.configuration === 'ok';
+  res.status(ready ? 200 : 503).json({ status: ready ? 'ready' : 'not_ready', checks, timestamp: new Date().toISOString() });
+});
+
 // ===== EMAIL VERIFICATION JSON API (FOR FRONTEND REQUESTS) =====
 // ✅ NEW: Verify email via API and return JSON response with tokens
 app.get('/api/verify-email', async (req, res) => {

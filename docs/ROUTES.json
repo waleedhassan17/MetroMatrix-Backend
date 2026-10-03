@@ -4840,6 +4840,13 @@
   },
   {
     "method": "GET",
+    "path": "/health/ready",
+    "middleware": [
+      "anonymous"
+    ]
+  },
+  {
+    "method": "GET",
     "path": "/privacy-policy",
     "middleware": [
       "anonymous"
