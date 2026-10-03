@@ -56,4 +56,4 @@ Status as of 2026-10-03, branch `admin-hardening` in both repos.
 | Q34 | Security | **Pass** | No tokens in Redux (one SecureStore record). `devLog` redaction; token and response logs removed. BE: the secret scan only reports items in `docs/SECURITY_ROTATION.md`; 0 tracked `node_modules`; no credential literals. No crash reporter yet (item 13). Rotation itself is item 1. |
 | Q35 | Ops: database down, bad env | **Pass** | BE `healthAndConfig`: "is not ready without a database", refuses to start without required secrets or with equal access/refresh secrets, production requires `TOTP_ENC_KEY`. |
 
-**Totals:** 24 Pass · 6 Partial · 5 Blocked (3 need a device, 2 are out of scope).
+**Totals:** 25 Pass (Q03, Q19 and Q30 have a deferred part, noted in the row) · 5 Partial · 5 Blocked (Q23, Q31, Q32 need a device; Q27, Q28 are out of scope).
