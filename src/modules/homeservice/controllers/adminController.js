@@ -276,6 +276,8 @@ const listDisputes = asyncHandler(async (req, res) => {
     bookingId: d.booking ? String(d.booking._id) : null,
     customer: d.booking && d.booking.customer ? d.booking.customer.fullName : '',
     provider: d.booking && d.booking.provider ? d.booking.provider.fullName : '',
+    providerId: d.booking && d.booking.provider ? String(d.booking.provider._id) : null,
+    customerId: d.booking && d.booking.customer ? String(d.booking.customer._id) : null,
     raisedByRole: d.raisedBy.role,
     againstRole: d.againstRole,
     reason: d.reason,

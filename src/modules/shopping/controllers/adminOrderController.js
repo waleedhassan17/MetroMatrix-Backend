@@ -141,7 +141,7 @@ const platformAnalytics = asyncHandler(async (req, res) => {
     : new Date(to.getTime() - 30 * 86400000);
   const range = { createdAt: { $gte: from, $lte: to } };
 
-  const orders = await Order.find(range).populate('brandId', 'name');
+  const orders = await Order.find(range).populate('brandId', 'name owner');
   const delivered = orders.filter((o) => o.orderStatus === 'delivered');
   const returns = orders.filter((o) => ['returned', 'refunded'].includes(o.orderStatus));
 
@@ -165,7 +165,9 @@ const platformAnalytics = asyncHandler(async (req, res) => {
   delivered.forEach((o) => {
     const key = String(o.brandId && o.brandId._id ? o.brandId._id : o.brandId);
     const name = o.brandId && o.brandId.name ? o.brandId.name : key;
-    const row = brandAgg.get(key) || { brandId: key, brandName: name, revenue: 0, orders: 0 };
+    // ownerId is the vendor (Provider) who owns the brand — null for a brand the platform runs.
+    const ownerId = o.brandId && o.brandId.owner ? String(o.brandId.owner) : null;
+    const row = brandAgg.get(key) || { brandId: key, brandName: name, ownerId, revenue: 0, orders: 0 };
     row.revenue += o.total;
     row.orders += 1;
     brandAgg.set(key, row);

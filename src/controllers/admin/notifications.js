@@ -17,7 +17,11 @@ const { audit } = require('../../services/auditService');
 
 // Pre-B3 documents carried the target in data.providerId / data.userId.
 function targetOf(n) {
-  if (n.target?.type && n.target?.id) return { type: n.target.type, id: String(n.target.id) };
+  if (n.target?.type && n.target?.id) {
+    const t = { type: n.target.type, id: String(n.target.id) };
+    if (n.target.providerId) t.providerId = String(n.target.providerId);
+    return t;
+  }
   if (n.data?.providerId) return { type: 'Provider', id: String(n.data.providerId) };
   if (n.data?.userId) return { type: 'User', id: String(n.data.userId) };
   return null;

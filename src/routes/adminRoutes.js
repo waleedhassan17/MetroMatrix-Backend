@@ -103,6 +103,7 @@ const canApprove = requirePermission('canApproveProviders');
 const providerId = [param('providerId').isMongoId().withMessage('Unknown provider'), validate];
 router.get('/providers', canApprove, providers.listProviders);
 router.get('/providers/:providerId', canApprove, providerId, providers.getProvider);
+router.get('/providers/:providerId/analytics', canApprove, providerId, providers.getProviderAnalytics);
 router.put('/providers/:providerId/approve', canApprove, providerId, providers.approveProvider);
 router.put('/providers/:providerId/reject', canApprove, providerId, reasonRequired('reject an application'), validate, providers.rejectProvider);
 router.put('/providers/:providerId/suspend', canApprove, providerId, reasonRequired('suspend a provider'), validate, providers.suspendProvider);

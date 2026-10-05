@@ -1,4 +1,8 @@
-/** Leaderboards: who serves customers well, per vertical, over a window. */
+/**
+ * Leaderboards: who serves customers well, per vertical, over a window. Every
+ * row carries providerId (null for a brand the platform runs itself) so the
+ * admin app can open that provider.
+ */
 const builders = require('./builders');
 
 const round2 = (n) => Math.round((Number(n) || 0) * 100) / 100;
@@ -10,6 +14,7 @@ async function getPerformance({ module, days = 90, limit = 20, now = new Date() 
     const rows = await require('../../homeservice/models/Booking').aggregate(builders.homeservicePerformance(since, lim));
     return rows.map((r) => ({
       id: String(r._id),
+      providerId: String(r._id),
       name: r.p.fullName,
       category: r.p.providerSubType,
       requests: r.requests,
@@ -27,6 +32,7 @@ async function getPerformance({ module, days = 90, limit = 20, now = new Date() 
     const rows = await require('../../healthcare/models/Appointment').aggregate(builders.healthcarePerformance(since, lim));
     return rows.map((r) => ({
       id: String(r._id),
+      providerId: r.d.providerId ? String(r.d.providerId) : null,
       name: (r.p[0] && r.p[0].fullName) || 'Doctor',
       specialty: (r.s[0] && r.s[0].name) || '',
       appointments: r.appointments,
@@ -42,6 +48,7 @@ async function getPerformance({ module, days = 90, limit = 20, now = new Date() 
     const rows = await require('../../shopping/models/Order').aggregate(builders.shoppingPerformance(since, lim));
     return rows.map((r) => ({
       id: String(r._id),
+      providerId: r.b.owner ? String(r.b.owner) : null,
       name: r.b.name,
       orders: r.orders,
       delivered: r.delivered,

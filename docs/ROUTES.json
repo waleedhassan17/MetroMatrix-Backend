@@ -637,6 +637,19 @@
     ]
   },
   {
+    "method": "GET",
+    "path": "/api/admin/providers/:providerId/analytics",
+    "middleware": [
+      "apiRateLimit",
+      "protect",
+      "adminOnly",
+      "requirePermission(canApproveProviders)",
+      "middleware",
+      "validate",
+      "asyncHandler"
+    ]
+  },
+  {
     "method": "PUT",
     "path": "/api/admin/providers/:providerId/approve",
     "middleware": [

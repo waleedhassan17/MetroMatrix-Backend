@@ -11,6 +11,9 @@ const { softDeleteAccount, restoreAccount } = require('../../services/admin/acco
 const { sendEmail } = require('../../services/emailService');
 const { escapeHtml } = require('../../services/adminEmailService');
 const logger = require('../../utils/logger');
+const { providerAnalytics, RANGES, DEFAULT_RANGE } = require('../../services/admin/providerAnalytics');
+const Doctor = require('../../modules/healthcare/models/Doctor');
+const Brand = require('../../modules/shopping/models/Brand');
 
 /*
  * Provider management — /api/admin/providers*.
@@ -62,6 +65,33 @@ const detail = (p) => ({
   suspendedAt: p.suspendedAt || null,
   rejectedAt: p.rejectedAt || null,
   approvedBy: p.approvedBy ? String(p.approvedBy) : null,
+  isAvailable: p.isAvailable ?? null,
+  lastLoginDate: p.lastLoginDate || null,
+  counters: {
+    totalBookings: p.totalBookings ?? 0,
+    completedBookings: p.completedBookings ?? 0,
+    cancelledBookings: p.cancelledBookings ?? 0,
+  },
+});
+
+// The module records behind a provider: a doctor profile, or the brands a
+// vendor owns. The app uses them to open the doctor or brand screens.
+async function linksOf(p) {
+  if (p.providerType === 'doctor') {
+    const doc = await Doctor.findOne({ providerId: p._id }).select('_id').lean();
+    return { doctorId: doc ? String(doc._id) : null, brands: [] };
+  }
+  if (p.providerType === 'vendor') {
+    const brands = await Brand.find({ owner: p._id, isDeleted: { $ne: true } }).select('_id name').lean();
+    return { doctorId: null, brands: brands.map((b) => ({ id: String(b._id), name: b.name })) };
+  }
+  return { doctorId: null, brands: [] };
+}
+
+const present = async (p) => ({
+  ...detail(p),
+  links: await linksOf(p),
+  history: await historyOf('Provider', p._id),
 });
 
 // @route GET /api/admin/providers?state=&type=&subType=&city=&search=&sort=&page=&limit=&cursor=
@@ -114,7 +144,20 @@ async function loadProvider(req) {
 // @route GET /api/admin/providers/:providerId
 const getProvider = asyncHandler(async (req, res) => {
   const provider = await loadProvider(req);
-  ok(res, { ...detail(provider), history: await historyOf('Provider', provider._id) });
+  ok(res, await present(provider));
+});
+
+// @route GET /api/admin/providers/:providerId/analytics?range=30d|90d|12m
+const getProviderAnalytics = asyncHandler(async (req, res) => {
+  const range = req.query.range || DEFAULT_RANGE;
+  if (!RANGES[range]) {
+    throw new AppError(ERROR_CODES.VALIDATION_FAILED, `range must be one of ${Object.keys(RANGES).join(', ')}`, {
+      details: { fields: [{ field: 'range', message: 'Unknown range' }] },
+    });
+  }
+  const provider = await Provider.findById(req.params.providerId).select('_id providerType').lean();
+  if (!provider) throw new AppError(ERROR_CODES.NOT_FOUND, 'Provider not found');
+  ok(res, await providerAnalytics(provider, range));
 });
 
 const snapshot = (p) => ({ state: status.stateOf(p) });
@@ -129,7 +172,7 @@ async function decided(req, res, provider, action, { before, reason }) {
     after: snapshot(provider),
     reason,
   });
-  ok(res, { ...detail(provider), history: await historyOf('Provider', provider._id) });
+  ok(res, await present(provider));
 }
 
 async function emailProvider(provider, subject, paragraphs) {
@@ -226,6 +269,7 @@ const restoreProvider = asyncHandler(async (req, res) => {
 module.exports = {
   listProviders,
   getProvider,
+  getProviderAnalytics,
   approveProvider,
   rejectProvider,
   suspendProvider,

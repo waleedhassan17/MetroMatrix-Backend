@@ -26,7 +26,7 @@ async function notifyAdmins({ type, title, message, severity = 'info', target, r
       title,
       message,
       severity,
-      target: target ? { type: target.type, id: target.id } : undefined,
+      target: target ? { type: target.type, id: target.id, providerId: target.providerId || undefined } : undefined,
       requiredPermission,
       dedupeKey,
     });
@@ -81,7 +81,7 @@ const NotificationService = {
       title: 'Doctor to verify',
       message: `${name || 'A doctor'} submitted their credentials for verification.`,
       severity: 'warning',
-      target: { type: 'Doctor', id: doctor._id },
+      target: { type: 'Doctor', id: doctor._id, providerId: doctor.providerId },
       requiredPermission: 'canManageHealthcare',
     }),
 
@@ -91,7 +91,7 @@ const NotificationService = {
       title: 'Brand application to review',
       message: `${brand.name} applied to sell on the platform.`,
       severity: 'warning',
-      target: { type: 'Brand', id: brand._id },
+      target: { type: 'Brand', id: brand._id, providerId: brand.owner || undefined },
       requiredPermission: 'canManageShopping',
     }),
 
@@ -111,7 +111,7 @@ const NotificationService = {
       title: 'Payout request',
       message: `${providerName || 'A provider'} asked for a payout of PKR ${payout.amount}.`,
       severity: 'warning',
-      target: { type: 'PayoutRequest', id: payout._id },
+      target: { type: 'PayoutRequest', id: payout._id, providerId: payout.provider },
       requiredPermission: 'canManageFinance',
     }),
 

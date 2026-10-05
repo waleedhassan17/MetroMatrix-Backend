@@ -423,10 +423,216 @@ components:
               type: string
               format: date-time
               nullable: true
+            isAvailable:
+              type: boolean
+              nullable: true
+            lastLoginDate:
+              type: string
+              format: date-time
+              nullable: true
+            counters:
+              type: object
+              properties:
+                totalBookings:
+                  type: integer
+                completedBookings:
+                  type: integer
+                cancelledBookings:
+                  type: integer
+            links:
+              $ref: '#/components/schemas/ProviderLinks'
             history:
               type: array
               items:
                 $ref: '#/components/schemas/HistoryEntry'
+    ProviderLinks:
+      type: object
+      description: The module records behind a provider.
+      properties:
+        doctorId:
+          type: string
+          nullable: true
+        brandIds:
+          type: array
+          items:
+            type: string
+        brands:
+          type: array
+          items:
+            type: object
+            required:
+              - id
+              - name
+            properties:
+              id:
+                type: string
+              name:
+                type: string
+    ProviderAnalytics:
+      type: object
+      description: >-
+        One provider's activity and money over a range. Money is what the
+        provider was paid (there is no platform commission). A figure that
+        cannot be measured is null.
+      required:
+        - providerId
+        - type
+        - range
+        - bucket
+        - from
+        - to
+        - summary
+        - series
+        - seriesLabels
+        - breakdowns
+        - recent
+        - wallet
+        - links
+      properties:
+        providerId:
+          type: string
+        type:
+          type: string
+          enum:
+            - home_service
+            - doctor
+            - vendor
+            - pending
+        range:
+          type: string
+          enum:
+            - 30d
+            - 90d
+            - 12m
+        rangeLabel:
+          type: string
+        bucket:
+          type: string
+          enum:
+            - day
+            - month
+        from:
+          type: string
+          format: date-time
+        to:
+          type: string
+          format: date-time
+        summary:
+          type: array
+          items:
+            $ref: '#/components/schemas/Metric'
+        series:
+          type: array
+          description: One entry per Pakistan day or month, zero-filled.
+          items:
+            type: object
+            required:
+              - date
+              - count
+              - amount
+            properties:
+              date:
+                type: string
+                description: YYYY-MM-DD, or YYYY-MM for monthly buckets.
+              count:
+                type: integer
+              amount:
+                type: number
+        seriesLabels:
+          type: object
+          required:
+            - count
+            - amount
+          properties:
+            count:
+              type: string
+            amount:
+              type: string
+        breakdowns:
+          type: array
+          items:
+            type: object
+            required:
+              - key
+              - label
+              - rows
+            properties:
+              key:
+                type: string
+              label:
+                type: string
+              unit:
+                type: string
+              rows:
+                type: array
+                items:
+                  type: object
+                  required:
+                    - key
+                    - label
+                    - value
+                  properties:
+                    key:
+                      type: string
+                    label:
+                      type: string
+                    value:
+                      type: number
+        recent:
+          type: array
+          items:
+            type: object
+            required:
+              - kind
+              - id
+              - title
+              - status
+              - at
+            properties:
+              kind:
+                type: string
+                enum:
+                  - booking
+                  - appointment
+                  - order
+              id:
+                type: string
+              title:
+                type: string
+              subtitle:
+                type: string
+                nullable: true
+              status:
+                type: string
+              amount:
+                type: number
+                nullable: true
+              at:
+                type: string
+                format: date-time
+        wallet:
+          type: object
+          required:
+            - balance
+            - lifetimeEarnings
+            - pendingPayouts
+          properties:
+            balance:
+              type: number
+            lifetimeEarnings:
+              type: number
+            pendingPayouts:
+              type: object
+              required:
+                - count
+                - amount
+              properties:
+                count:
+                  type: integer
+                amount:
+                  type: number
+        links:
+          $ref: '#/components/schemas/ProviderLinks'
     UserSummary:
       type: object
       required:
@@ -553,6 +759,9 @@ components:
               type: string
             id:
               type: string
+            providerId:
+              type: string
+              description: The provider the record belongs to (doctor, brand, payout), when there is one.
         read:
           type: boolean
         createdAt:
@@ -583,6 +792,7 @@ components:
             - now
             - month_to_date
             - all_time
+            - range
         delta:
           type: number
           nullable: true
@@ -655,6 +865,10 @@ components:
             orderId:
               type: string
               nullable: true
+            providerId:
+              type: string
+              nullable: true
+              description: The provider the work is about (doctor, brand owner, payout requester); null for a brand the platform runs.
     Vertical:
       type: object
       required:
@@ -2963,6 +3177,57 @@ paths:
               properties:
                 reason:
                   type: string
+  /api/admin/providers/{providerId}/analytics:
+    get:
+      tags:
+        - Providers
+      operationId: getAdminProvidersProviderIdAnalytics
+      summary: One provider's analytics (home service, doctor or vendor)
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                required:
+                  - success
+                  - data
+                properties:
+                  success:
+                    type: boolean
+                    enum:
+                      - true
+                  data:
+                    $ref: '#/components/schemas/ProviderAnalytics'
+        '400':
+          $ref: '#/components/responses/ValidationFailed'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+      parameters:
+        - name: providerId
+          in: path
+          required: true
+          schema:
+            type: string
+        - name: range
+          in: query
+          required: false
+          schema:
+            type: string
+            enum:
+              - 30d
+              - 90d
+              - 12m
+            default: 30d
+      security:
+        - bearerAuth: []
+      x-guards:
+        - requirePermission(canApproveProviders)
   /api/admin/providers/{providerId}/approve:
     put:
       tags:

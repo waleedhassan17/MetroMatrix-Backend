@@ -169,6 +169,7 @@ const getRevenueAnalytics = asyncHandler(async (req, res) => {
           _id: 0,
           doctorId: '$_id',
           doctorName: '$provider.fullName',
+          providerId: '$provider._id',
           totalRevenue: 1,
           appointmentCount: 1,
         },

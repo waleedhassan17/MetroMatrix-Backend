@@ -157,7 +157,7 @@ function shoppingPerformance(since, limit) {
         gmv: { $sum: { $cond: [{ $eq: ['$orderStatus', 'delivered'] }, '$total', 0] } },
       },
     },
-    { $lookup: { from: 'brands', localField: '_id', foreignField: '_id', as: 'b', pipeline: [{ $project: { name: 1, logo: 1 } }] } },
+    { $lookup: { from: 'brands', localField: '_id', foreignField: '_id', as: 'b', pipeline: [{ $project: { name: 1, logo: 1, owner: 1 } }] } },
     { $unwind: '$b' },
     {
       $addFields: {

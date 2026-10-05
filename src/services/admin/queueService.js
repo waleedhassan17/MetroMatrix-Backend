@@ -19,7 +19,10 @@ const { MAX_PAGE_SIZE, clampInt } = require('../../utils/pagination');
  *
  * A viewer only sees the work they are permitted to do. Items point at their
  * record with `target: { type, id }` — the app decides which screen that is.
+ * Work about a provider (doctor, brand, payout) also carries
+ * `target.providerId`, so the app can open that provider.
  */
+const idOf = (ref) => (ref ? String(ref._id || ref) : null);
 const SOURCES = [
   {
     type: 'provider_approval',
@@ -50,7 +53,7 @@ const SOURCES = [
     item: (d) => ({
       title: d.providerId?.fullName || 'Doctor',
       subtitle: d.specialtyId?.name || null,
-      target: { type: 'Doctor', id: String(d._id) },
+      target: { type: 'Doctor', id: String(d._id), providerId: idOf(d.providerId) },
     }),
   },
   {
@@ -60,8 +63,8 @@ const SOURCES = [
     model: Brand,
     filter: () => ({ status: 'pending', isDeleted: false }),
     timeField: 'createdAt',
-    select: 'name createdAt',
-    item: (b) => ({ title: b.name, subtitle: null, target: { type: 'Brand', id: String(b._id) } }),
+    select: 'name owner createdAt',
+    item: (b) => ({ title: b.name, subtitle: null, target: { type: 'Brand', id: String(b._id), providerId: idOf(b.owner) } }),
   },
   {
     type: 'dispute',
@@ -90,7 +93,7 @@ const SOURCES = [
       title: p.provider?.fullName || 'Provider',
       subtitle: null,
       amount: { value: p.amount, currency: 'PKR' },
-      target: { type: 'PayoutRequest', id: String(p._id) },
+      target: { type: 'PayoutRequest', id: String(p._id), providerId: idOf(p.provider) },
     }),
   },
   {
