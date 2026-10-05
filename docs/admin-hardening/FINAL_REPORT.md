@@ -7,6 +7,11 @@ Waleed-MetroMatrix (9 commits). **Not pushed.**
 1–3, and the §5 release documents. The app keeps the admin console as a
 role-gated area; it is not a separate build.
 
+**Follow-up, 2026-10-06 — phase C** (`PHASE_C.md`): the platform commission was
+removed (providers are paid in full; migration 06), every provider in the
+console opens their details and analytics, and the core console screens got
+charts and a UI pass.
+
 The deploys are coupled. Admin sign-in, token refresh and the response
 envelope changed together, so the backend and an app build from this branch
 must ship together (`docs/RELEASE_CHECKLIST.md`).

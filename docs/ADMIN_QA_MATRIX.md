@@ -1,14 +1,14 @@
 # Admin console — QA verification matrix
 
-Status as of 2026-10-03, branch `admin-hardening` in both repos.
+Status as of 2026-10-06, branch `admin-hardening` in both repos (Q36–Q38 added in phase C, `docs/admin-hardening/PHASE_C.md`).
 
 **Evidence sources**
 
-| Code | Source | Result on 2026-10-03 |
+| Code | Source | Result on 2026-10-06 |
 |---|---|---|
-| BE | Backend jest suite, run on an in-memory replica set (`npm test`) | 60 suites / 698 tests passed, twice in a row |
-| FE | App jest suite (`npx jest`) | 14 suites / 247 tests passed |
-| E2E | `e2e/adminConsole.e2e.test.ts` in the app, driving the app's own network layer over HTTP against `npm run dev:memory` (backend). Run with `JWT_EXPIRE=1m`. | 11 / 11 passed |
+| BE | Backend jest suite, run on an in-memory replica set (`npm test`) | 87 / 89 suites, 947 / 955 tests passed. The 2 failing suites are ML suites (`@tensorflow/*` not installed after the `main` merge); they are unrelated to the console. |
+| FE | App jest suite (`npx jest`) | 31 suites / 335 tests passed (1 suite skipped: E2E) |
+| E2E | `e2e/adminConsole.e2e.test.ts` in the app, driving the app's own network layer over HTTP against `npm run dev:memory` (backend). Run with `JWT_EXPIRE=1m`. | 13 / 13 passed |
 | Gate | `scripts/*` gates in each repo | — |
 
 **Result values**
@@ -39,7 +39,7 @@ Status as of 2026-10-03, branch `admin-hardening` in both repos.
 | Q17 | Delete a clean record | **Partial** → item 15 | BE: "soft-deletes a clean account: hidden everywhere, signed out, email free, history intact, audited"; "only a super admin restores…". No restore screen yet. |
 | Q18 | Home services: force status, refund, dispute, payout | **Pass** | Server state machine: BE `stateMachine.test`. Guards: `adminRouteGuards` "money-moving routes require canManageFinance". Refund cap: BE `adminRefunds.test` (default remainder, partial, unpaid refused, dispute counted against the same cap, a race pays out once). E2E Q19: refund defaults to the amount paid and a repeat gets 409. FE screens show the server's refusal verbatim. |
 | Q19 | Finance: wallet adjustment below / above the threshold | **Pass** (server); UI **Partial** → item 11 | BE `adminWallet`: applied at once with balance, ledger row and audit row together; above the threshold waits for a different super admin; applied at most once (now also claimed inside the transaction). Finance screens are F5. |
-| Q20 | Finance: reconciliation with a seeded mismatch | **Partial** → item 11 | BE: reconciliation drift raises a notification once per day ("a recurring alert is raised once per key"); overview queue `reconciliation_drift`. No finance screen yet. |
+| Q20 | Finance: reconciliation with a seeded mismatch | **Partial** → item 11 | BE: reconciliation drift raises a notification once per day ("a recurring alert is raised once per key"); overview queue `reconciliation_drift`. The field is now `platformWalletBalance`. No finance screen yet. |
 | Q21 | Healthcare: appointments, doctors, specialties, clinics, reviews | **Partial** → items 16, 18 | Data layer fixed (F2): error envelope, `meta` paging, doctor list (was always empty), DELETE bodies; specialty reactivation now real (BE `adminSpecialties.test`). Visual migration is deferred and the screens were not exercised on a device. |
 | Q22 | Healthcare analytics: partial data / failure | **Pass** | Screen rewritten (F2): only `/analytics/*` figures, "—" when missing, an error with retry per section, the Export button removed. The dummy slice is deleted; the static-data gate is 0. |
 | Q23 | Shopping: brand, outlet, banner, order | **Blocked** → item 18 | Backend shopping suites pass. Envelope compatibility fixed (orders `pagination`, error objects). Needs a device and Cloudinary. |
@@ -55,5 +55,8 @@ Status as of 2026-10-03, branch `admin-hardening` in both repos.
 | Q33 | Resilience: airplane mode, double tap | **Partial** → items 18, 19 | Double submit: a repeated approve gets 409; refunds and wallet adjustments are claimed atomically (BE race tests); payouts are idempotent by ledger key; confirm buttons are disabled while busy. Offline: a refresh that cannot reach the server keeps the session (FE `sessionRefresh.test`, `authRecovery.test`). Airplane mode on a device is not run. |
 | Q34 | Security | **Pass** | No tokens in Redux (one SecureStore record). `devLog` redaction; token and response logs removed. BE: the secret scan only reports items in `docs/SECURITY_ROTATION.md`; 0 tracked `node_modules`; no credential literals. No crash reporter yet (item 13). Rotation itself is item 1. |
 | Q35 | Ops: database down, bad env | **Pass** | BE `healthAndConfig`: "is not ready without a database", refuses to start without required secrets or with equal access/refresh secrets, production requires `TOTP_ENC_KEY`. |
+| Q36 | No platform commission: providers are paid in full | **Pass** | BE: HS `payment` ("settles the full amount to the provider", "marks the booking paid and moves nothing" for cash), healthcare `payout` and shopping `payout` (full fee and order total; no rate passed); `adminSettings` ("has no commission: a stored legacy value is never returned, and setting one is refused"); `adminMigrations` 06 (unset, waive pending, audit row, idempotent). E2E A1. App: commission fields and tiles gone, and `grep -ri commission screens/admin networks/admin` finds nothing outside the generated spec; the provider job screen shows the full price. |
+| Q37 | Provider analytics for every type of provider | **Pass** | BE `adminProviderAnalytics` (7 tests, contract-checked): home service, doctor and vendor figures, zero-filled day/month series, deltas, ranges, null when nothing to measure, 400/403/404. E2E A2 against seeded data (2,500 / 2,000 / 3,750 paid in full). FE `metrics.test`, `trendChart.test`. |
+| Q38 | Every provider mention opens the provider | **Pass** (automated); on a device **Blocked** → item 18 | `providerId` added server-side to queue and notification targets, disputes, leaderboards, revenue by doctor and brand, and order detail (`adminProviderAnalytics` checks the targets). FE: one helper (`openProvider.test`) used by booking detail, payouts, disputes, busiest providers, doctor cards, appointments, clinics, reviews, top doctors, brand owners, revenue by brand, order detail, Leaders and the Queue (long press). Brands with no owner say so. |
 
-**Totals:** 25 Pass (Q03, Q19 and Q30 have a deferred part, noted in the row) · 5 Partial · 5 Blocked (Q23, Q31, Q32 need a device; Q27, Q28 are out of scope).
+**Totals:** 28 Pass (Q03, Q19, Q30 and Q38 have a deferred part, noted in the row) · 5 Partial · 5 Blocked (Q23, Q31, Q32 need a device; Q27, Q28 are out of scope).
