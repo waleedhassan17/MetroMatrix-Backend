@@ -42,7 +42,7 @@ const getMyRecords = async (req, res, next) => {
     const query = { userId: req.user._id };
 
     if (category) {
-      const validCategories = ['prescriptions', 'lab_reports', 'imaging', 'vaccination'];
+      const validCategories = HealthRecord.schema.path('category').enumValues;
       if (!validCategories.includes(category)) {
         return res.status(400).json({
           success: false,
@@ -93,7 +93,7 @@ const createRecord = async (req, res, next) => {
       return res.status(400).json({ success: false, error: 'Title is required' });
     }
 
-    const validCategories = ['prescriptions', 'lab_reports', 'imaging', 'vaccination'];
+    const validCategories = HealthRecord.schema.path('category').enumValues;
     if (!category || !validCategories.includes(category)) {
       return res.status(400).json({
         success: false,
@@ -224,7 +224,7 @@ const updateRecord = async (req, res, next) => {
 
     if (title !== undefined) updates.title = title.trim();
     if (category !== undefined) {
-      const validCategories = ['prescriptions', 'lab_reports', 'imaging', 'vaccination'];
+      const validCategories = HealthRecord.schema.path('category').enumValues;
       if (!validCategories.includes(category)) {
         return res.status(400).json({
           success: false,

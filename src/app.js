@@ -1,24 +1,20 @@
 const express = require('express');
-const cors = require('cors');
-const helmet = require('helmet');
 const morgan = require('morgan');
-const compression = require('compression');
-const rateLimit = require('express-rate-limit');
-const mongoSanitize = require('express-mongo-sanitize');
 const passport = require('passport');
 const path = require('path');
 const crypto = require('crypto');
 
 // Import middleware
-const { errorHandler, notFound } = require('./middleware/errorMiddleware');
+const { errorHandler } = require('./middleware/errorMiddleware');
 
-// Import routes
-const authRoutes = require('./routes/authRoutes');
-const userRoutes = require('./routes/userRoutes');
-const providerRoutes = require('./routes/providerRoutes');
-const postRoutes = require('./routes/postRoutes');
-const adminRoutes = require('./routes/adminRoutes');
-const walletRoutes = require('./routes/walletRoutes');
+// The in-process API gateway: request identity, access log, security
+// headers, shared rate limits and the module route table (src/gateway/).
+const { requestContext } = require('./gateway/requestContext');
+const { accessLog } = require('./gateway/accessLog');
+const { applySecurity } = require('./gateway/security');
+const { buildLimiters, rateLimitDisabled } = require('./gateway/rateLimit');
+const { mountRoutes } = require('./gateway/registry');
+const { redisHealth } = require('./lib/redis');
 
 // Import models and utils for verification page
 const User = require('./models/User');
@@ -30,13 +26,6 @@ const { getPublicBaseUrl } = require('./utils/publicUrl');
 const named = require('./utils/named');
 const { verifiedEmailFlag } = require('./utils/verificationFlags');
 
-const healthcareDoctorRoutes = require('./routes/healthcareDoctorRoutes');
-
-const adminDoctorRoutes = require('./routes/adminDoctorRoutes');
-
-const adminSpecialtyRoutes = require('./routes/adminSpecialtyRoutes');
-const adminAnalyticsRoutes = require('./routes/adminAnalyticsRoutes');
-
 // Initialize express
 const app = express();
 
@@ -47,8 +36,12 @@ const app = express();
 app.set('trust proxy', 1);
 
 // Every request gets an id (req.id, X-Request-Id, req.log) before anything
-// else runs, so even a webhook failure can be traced.
+// else runs, so even a webhook failure can be traced. requestContext adopts
+// that id for the async context and the realtime hop; accessLog writes one
+// line per request and the live-usage counters.
 app.use(require('./middleware/requestId'));
+app.use(requestContext);
+app.use(accessLog);
 
 // Stripe webhook MUST receive the raw body for signature verification. It is
 // mounted here, ahead of express.json(), because the global JSON parser would
@@ -67,108 +60,26 @@ app.use(express.json({ limit: '10mb' }));
 app.use(express.urlencoded({ extended: true, limit: '10mb' }));
 
 
-// CORS configuration
-const corsOptions = {
-  origin: function (origin, callback) {
-    const allowedOrigins = [
-      'http://localhost:3000',
-      'http://localhost:19006', // Expo
-      'http://localhost:8081',  // React Native / Expo Web
-      'http://localhost:8082',  // Expo Web fallback port
-      'http://localhost:8083',  // Expo Web fallback port
-      process.env.CLIENT_URL,
-    ];
-
-    // Allow requests with no origin (mobile apps / curl).
-    if (!origin) return callback(null, true);
-    // In development, allow any localhost / LAN origin (Expo web on any port, etc.).
-    if (process.env.NODE_ENV !== 'production') return callback(null, true);
-    if (allowedOrigins.includes(origin)) return callback(null, true);
-    return callback(new Error('Not allowed by CORS'));
-  },
-  credentials: true,
-  optionsSuccessStatus: 200,
-};
-
-app.use(cors(corsOptions));
-
-// Security middleware
-app.use(
-  helmet({
-    crossOriginResourcePolicy: { policy: 'cross-origin' },
-    contentSecurityPolicy: false, // Disable for verification page
-  })
-);
-
-// Data sanitization against NoSQL query injection
-app.use(mongoSanitize());
-
-// Compression middleware
-app.use(compression());
+// CORS, helmet, NoSQL-injection sanitising, compression (src/gateway/security.js).
+applySecurity(app);
 
 // Development logging
 if (process.env.NODE_ENV === 'development') {
   app.use(morgan('dev'));
 }
 
-// Rate limiting.
-//
-// DISABLE_RATE_LIMIT exists ONLY so the local QA scripts (shopping-triage-probe,
-// shopping-integrity, wallet-qa-gate) can run a full multi-role sweep without
-// tripping the limiter and reporting throttled requests as product failures —
-// which is exactly what happened before it existed. It is deliberately opt-in
-// and is IGNORED in production, so a stray env var can never expose the
-// deployed API.
-const rateLimitDisabled =
-  process.env.DISABLE_RATE_LIMIT === 'true' && process.env.NODE_ENV !== 'production';
-if (rateLimitDisabled) {
+// Rate limiting — per account when signed in, per IP otherwise; counters are
+// shared across serverless instances through Redis when it is configured
+// (src/gateway/rateLimit.js has the full rationale and the limits).
+if (rateLimitDisabled()) {
   console.log('⚠ Rate limiting DISABLED (DISABLE_RATE_LIMIT=true, non-production only)');
 }
-
-// Signed-in traffic is limited PER ACCOUNT, anonymous traffic per IP.
-//
-// This was 100 requests per 10 minutes per IP for everything. One provider on
-// the "awaiting approval" screen (which checks every 6 seconds) spends exactly
-// that in ten minutes, after which every request of theirs — the approval
-// check included — fails with 429. Mobile carriers in Pakistan also put many
-// subscribers behind one public IP, so strangers were throttling each other.
-// A verified token identifies the account; an invalid or forged one gets no
-// bucket of its own and falls back to the IP.
-const limiterKey = (req) => {
-  if (req.rateLimitKey) return req.rateLimitKey;
-  let key = `ip:${req.ip}`;
-  const header = req.headers.authorization || '';
-  if (header.startsWith('Bearer ')) {
-    try {
-      const decoded = require('jsonwebtoken').verify(header.slice(7), process.env.JWT_SECRET);
-      if (decoded && decoded.id) key = `user:${decoded.id}`;
-    } catch (e) {
-      // expired or forged — rate-limited by address like any anonymous caller
-    }
-  }
-  req.rateLimitKey = key;
-  return key;
-};
-const limiter = rateLimit({
-  windowMs: 10 * 60 * 1000, // 10 minutes
-  // ~2 requests a second on average for a signed-in account: room for every
-  // polling screen at once; anonymous callers get a quarter of that.
-  max: (req) => (limiterKey(req).startsWith('user:') ? 1200 : 300),
-  keyGenerator: limiterKey,
-  message: 'Too many requests, please try again in a few minutes.',
-  skip: () => rateLimitDisabled,
-});
-app.use('/api/', named('apiRateLimit', limiter));
-
-// Auth rate limiting (stricter)
-const authLimiter = rateLimit({
-  windowMs: 15 * 60 * 1000, // 15 minutes
-  max: 10, // limit each IP to 10 requests per windowMs
-  skipSuccessfulRequests: true,
-  message: 'Too many authentication attempts, please try again later.',
-  skip: () => rateLimitDisabled,
-});
-app.use('/api/auth/', named('authRateLimit', authLimiter));
+const limiters = buildLimiters();
+app.locals.limiters = limiters;
+// Named: the route table (src/utils/routeTable.js) and the admin route-guard
+// test identify middleware by name.
+app.use('/api/', named('apiRateLimit', limiters.api));
+app.use('/api/auth/', named('authRateLimit', limiters.auth));
 
 // general.maintenanceMode — 503 for the user/provider API; admins, health
 // checks, cron and the Stripe webhook stay open.
@@ -185,12 +96,14 @@ app.use('/uploads', uploadRoutes);
 app.use('/uploads', express.static(path.join(__dirname, '../uploads')));
 
 // Health check endpoint
-app.get('/health', (req, res) => {
+app.get('/health', async (req, res) => {
   res.status(200).json({
     status: 'OK',
     timestamp: new Date().toISOString(),
     environment: process.env.NODE_ENV,
     uptime: process.uptime(),
+    // 'disabled' is a healthy state: Redis only accelerates, it is never required.
+    redis: await redisHealth(),
   });
 });
 
@@ -1641,69 +1554,10 @@ function getPasswordResetHTML(status, message, deepLinkUrl = null, userType = 'u
   `;
 }
 
-// API Routes
-app.use('/api/auth', authRoutes);
-// Healthcare: provider-based doctor self-service routes first (claim /doctors/me,
-// /doctors/register, /doctors/signin), then the shared healthcare module router.
-app.use('/api/v1/healthcare', healthcareDoctorRoutes);
-app.use('/api/v1/healthcare', require('./modules/healthcare/routes/index'));
-
-// ---------------------------------------------------------------------------
-// The production trigger for the rolling slot horizon.
-//
-// Vercel is serverless — there is no long-lived process, so the node-cron job
-// in modules/healthcare/jobs/slotHorizon.js only ever fires under `npm start`
-// locally. (This repo has already been bitten by that: the Socket.IO layer was
-// registered in server.js and was silently a no-op in production for months,
-// because vercel.json rewrites everything to api/index.js.) So the schedule
-// lives in vercel.json's `crons` and calls this endpoint instead.
-//
-// GET as well as POST: Vercel Cron issues a GET.
-// ---------------------------------------------------------------------------
-{
-  const { refreshHorizon } = require('./modules/healthcare/controllers/slotHorizonController');
-  app.get('/api/internal/slots/refresh-horizon', refreshHorizon);
-  app.post('/api/internal/slots/refresh-horizon', refreshHorizon);
-}
-// Home services: the daily sweep that closes requests and bookings whose time
-// has passed (the lazy per-read pass in expiryService does the same for any
-// booking someone looks at). Same auth as the slot horizon above.
-{
-  const { runExpiry } = require('./modules/homeservice/controllers/maintenanceController');
-  app.get('/api/internal/homeservice/expire', runExpiry);
-  app.post('/api/internal/homeservice/expire', runExpiry);
-}
-// Shopping module (multi-vendor storefront) — peer module of healthcare.
-app.use('/api/shopping', require('./modules/shopping/routes/index'));
-// Healthcare admin routes (doctor approval, specialty CRUD, analytics).
-app.use('/api/v1/admin', adminDoctorRoutes);
-app.use('/api/v1/admin', adminSpecialtyRoutes);
-app.use('/api/v1/admin', adminAnalyticsRoutes);
-// Healthcare admin oversight (doctor suspend, appointments, clinics, reviews, settings).
-// Mounted after adminDoctorRoutes so its static /doctors/pending wins over /doctors/:doctorId.
-app.use('/api/v1/admin', require('./routes/adminHealthcareRoutes'));
-// Home Services module (FR-01..FR-20) — peer module of healthcare/shopping.
-// Mounted BEFORE the legacy /api/providers and /api/admin mounts: its
-// GET /providers[/:id] handlers fall through (next()) for non-home-service
-// requests, and its admin routes only claim home-service-specific paths.
-app.use('/api', require('./modules/homeservice/routes/index'));
-app.use('/api/admin', require('./modules/homeservice/routes/adminRoutes'));
-// Admin wallet oversight (Part F) — one ledger, cross-module admin view.
-app.use('/api/admin/wallets', require('./routes/adminWalletRoutes'));
-// Admin management (create/disable admins, roles, permissions, their sessions).
-app.use('/api/admin/admins', require('./routes/adminManagementRoutes'));
-app.use('/api/users', userRoutes);
-app.use('/api/providers', providerRoutes);
-app.use('/api/posts', postRoutes);
-app.use('/api/admin', adminRoutes);
-app.use('/api/wallet', walletRoutes);
-
-// ✅ UPDATED: Provider profile endpoints with proper authentication
-const { uploadMultipleDocuments } = require('./middleware/uploadMiddleware');
-const { updateProviderProfileComplete, checkApprovalStatus } = require('./controllers/providerController');
-const { protect } = require('./middleware/authMiddleware');
-app.put('/api/provider/profile', protect, uploadMultipleDocuments, updateProviderProfileComplete);
-app.get('/api/provider/approval-status', checkApprovalStatus);
+// API Routes — every module router, in mount order, from the gateway's route
+// table (src/gateway/registry.js). The order there is load-bearing; read the
+// header comment before inserting anything.
+mountRoutes(app);
 
 // Welcome route
 app.get('/', (req, res) => {

@@ -54,11 +54,12 @@ const hcNotificationService = require('../modules/healthcare/services/notificati
 const { generateTokens } = require('../utils/generateToken');
 const User = require('../models/User');
 const mongoose = require('mongoose');
+const { emitAppointmentStatus } = require('../modules/healthcare/services/roomEvents');
 
 // Best-effort patient notification (never breaks the request).
 const notifyPatient = async (userId, type, title, message, data = {}) => {
   try {
-    await hcNotificationService.createNotification({ userId, type, title, message, data });
+    await hcNotificationService.createNotification({ userId, type, title, message, data, audience: 'patient' });
   } catch (err) {
     console.error('notifyPatient failed:', err.message);
   }
@@ -615,6 +616,10 @@ const confirmAppointment = asyncHandler(async (req, res) => {
     throw new Error(exists ? 'Only pending appointments can be confirmed' : 'Appointment not found');
   }
 
+  // Anyone with the appointment open sees it change now, not on next refresh —
+  // the patient-side confirm path always did this; the doctor's never did.
+  await emitAppointmentStatus(appointment._id, 'confirmed');
+
   await notifyPatient(
     appointment.patientId && appointment.patientId._id ? appointment.patientId._id : appointment.patientId,
     'appointment_confirmed',
@@ -689,6 +694,8 @@ const completeAppointment = asyncHandler(async (req, res) => {
   } catch (settleErr) {
     console.error('Payout settlement failed:', settleErr.message);
   }
+
+  await emitAppointmentStatus(completed._id, 'completed');
 
   await notifyPatient(
     completed.patientId,

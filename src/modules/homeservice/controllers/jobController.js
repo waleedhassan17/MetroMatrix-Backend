@@ -4,12 +4,18 @@ const HSNotification = require('../models/HSNotification');
 const Provider = require('../../../models/Provider');
 const { transition, releaseCompetingRequests } = require('../services/bookingService');
 const { STATUS, toJobBucket } = require('../services/statusMap');
-const { toJob, toDashboardJob, toProviderCard, avatar } = require('../services/serializers');
+const { toJob, toDashboardJob, toProviderCard, avatar, coords } = require('../services/serializers');
 const { expireStale } = require('../services/expiryService');
 const { billOf, parseProviderAmount, assertPriceEditable, AmountError } = require('../services/money');
 const { pktDayBounds } = require('../services/time');
 const { outcomeStats } = require('../services/providerStats');
 const { getHomeserviceSettings } = require('../services/settingsService');
+const { isRealPoint } = require('../services/geo');
+const { serviceBaseOf, setServiceBase } = require('../services/serviceBase');
+const { touch, WRITE_EVERY_SEC } = require('../services/presenceService');
+const { bump } = require('../../../lib/cache');
+const { assertOwnedAsset } = require('../../../utils/assetUrl');
+const { SEARCH_NS } = require('../services/discoveryConstants');
 const {
   servicesFor,
   weeklyAvailability,
@@ -105,6 +111,7 @@ const getJobDetail = asyncHandler(async (req, res) => {
     canonicalStatus: b.status,
     payment: { status: b.payment.status, method: b.payment.method, amount: billOf(b) },
     cancellation: b.cancellation && b.cancellation.by ? b.cancellation : null,
+    identity: require('./identityController').verifiedView(b.identityCheck),
   }, 'Job detail fetched');
 });
 
@@ -302,10 +309,8 @@ const getInProgressData = asyncHandler(async (req, res) => {
     city: b.address.city || '',
     specialInstructions: b.instructions || b.description || '',
     estimatedPrice: b.pricing.estimatedPrice,
-    coordinates: {
-      latitude: b.address.coordinates.coordinates[1],
-      longitude: b.address.coordinates.coordinates[0],
-    },
+    coordinates: coords(b.address.coordinates),
+    addressLocated: isRealPoint(b.address.coordinates),
   }, 'Job in progress data fetched');
 });
 
@@ -336,10 +341,8 @@ const getNavigationData = asyncHandler(async (req, res) => {
   const b = req.booking;
   ok(res, {
     jobId: String(b._id),
-    destination: {
-      latitude: b.address.coordinates.coordinates[1],
-      longitude: b.address.coordinates.coordinates[0],
-    },
+    destination: coords(b.address.coordinates),
+    addressLocated: isRealPoint(b.address.coordinates),
     destinationAddress: b.address.line1,
     destinationCity: b.address.city || '',
     customerName: b.customer.fullName,
@@ -503,6 +506,8 @@ const getProviderProfile = asyncHandler(async (req, res) => {
     gallery: [],
     reviewsList: [],
     serviceRadius: p.serviceRadius || 15,
+    serviceBase: serviceBaseOf(p),
+    autoUpdateBaseOnOnline: !!p.autoUpdateBaseOnOnline,
   }, 'Profile fetched');
 });
 
@@ -514,7 +519,8 @@ const RADIUS_RANGE = [1, 50];
 // customers are shown and what bookings are priced and scheduled from.
 const updateProviderProfile = asyncHandler(async (req, res) => {
   const p = await Provider.findById(req.user._id);
-  const { name, bio, price, city, experience, serviceRadius, availability } = req.body || {};
+  const { name, bio, price, city, experience, serviceRadius, availability, autoUpdateBaseOnOnline, photoUrl } =
+    req.body || {};
   const fail = (message) => {
     res.status(400);
     throw new Error(message);
@@ -555,23 +561,73 @@ const updateProviderProfile = asyncHandler(async (req, res) => {
       p.set(`availability.${day}`, value);
     }
   }
+  if (autoUpdateBaseOnOnline !== undefined) p.autoUpdateBaseOnOnline = !!autoUpdateBaseOnOnline;
+  if (photoUrl !== undefined) {
+    // The provider's own signed upload (purpose 'avatar'); see utils/assetUrl.
+    try {
+      p.profilePhoto = assertOwnedAsset(photoUrl, { purpose: 'avatar', ownerId: req.user._id });
+    } catch (e) {
+      fail(e.message);
+    }
+  }
   await p.save();
+  // Hours, radius and price all change who search shows and how it ranks.
+  bump(SEARCH_NS);
   ok(res, {
     ...toProviderCard(p),
     serviceRadius: p.serviceRadius || 15,
     availability: weeklyAvailability(p),
     servicesOffered: servicesFor(p),
+    serviceBase: serviceBaseOf(p),
+    autoUpdateBaseOnOnline: !!p.autoUpdateBaseOnOnline,
   }, 'Profile updated');
 });
 
-// PATCH /api/provider/status  and  /api/provider/online-status — { isOnline }
+// PATCH /api/provider/status  and  /api/provider/online-status
+//   { isOnline, base?: { latitude, longitude } }
+// Going online may carry one coarse location sample; it becomes the service
+// base only if no deliberate pin exists or the provider opted in
+// (services/serviceBase.js). A bad sample never blocks going online.
 const updateOnlineStatus = asyncHandler(async (req, res) => {
-  const { isOnline } = req.body;
+  const { isOnline, base } = req.body;
   await Provider.updateOne(
     { _id: req.user._id },
     { isOnline: !!isOnline, lastSeen: new Date() }
   );
-  ok(res, { isOnline: !!isOnline }, 'Status updated');
+  let serviceBase;
+  if (isOnline && base) {
+    try {
+      serviceBase = (await setServiceBase(req.user._id, base, 'go_online')).base;
+    } catch (e) {
+      serviceBase = undefined;
+    }
+  }
+  bump(SEARCH_NS);
+  ok(res, { isOnline: !!isOnline, ...(serviceBase ? { serviceBase } : {}) }, 'Status updated');
+});
+
+// PUT /api/provider/location/base — { latitude, longitude }
+// The provider pins the area they work from. Stored coarsened (~500 m) and
+// overwritten in place; it is what "near you" ranks by, never a live position.
+const setProviderBase = asyncHandler(async (req, res) => {
+  let result;
+  try {
+    result = await setServiceBase(req.user._id, req.body || {}, 'profile');
+  } catch (e) {
+    res.status(400);
+    throw new Error(e.message);
+  }
+  bump(SEARCH_NS);
+  ok(res, { serviceBase: result.base }, 'Service area saved');
+});
+
+// POST /api/provider/heartbeat — the app calls this every few minutes while
+// the provider is online and in the foreground. Search treats "online" as true
+// only if lastSeen is recent, so a provider who closed the app stops being
+// offered as available within settings.onlineStaleMinutes.
+const heartbeat = asyncHandler(async (req, res) => {
+  const written = await touch(req.user._id);
+  ok(res, { recorded: written, nextInSeconds: WRITE_EVERY_SEC }, 'OK');
 });
 
 module.exports = {
@@ -594,4 +650,6 @@ module.exports = {
   getProviderProfile,
   updateProviderProfile,
   updateOnlineStatus,
+  setProviderBase,
+  heartbeat,
 };

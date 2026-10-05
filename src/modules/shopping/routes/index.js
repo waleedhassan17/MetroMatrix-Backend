@@ -5,6 +5,7 @@ const router = express.Router();
 router.use('/', require('./catalogRoutes'));
 router.use('/', require('./cartRoutes'));
 router.use('/', require('./orderRoutes'));
+router.use('/', require('./notificationRoutes'));
 router.use('/vendor', require('./vendorRoutes'));
 router.use('/admin', require('./adminShoppingRoutes'));
 

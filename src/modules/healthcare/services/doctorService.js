@@ -38,6 +38,68 @@ const getAvailabilityDateRange = (availability) => {
 /**
  * Get doctors with filtering, sorting, and availability check.
  */
+/**
+ * Narrow `query._id` to `ids`, intersecting with any narrowing already there.
+ * Pure — every id filter (availability, city, search, distance) goes through it.
+ */
+const restrictIds = (query, ids) => {
+  const next = ids.map((id) => id.toString());
+  if (query._id && query._id.$in) {
+    const keep = new Set(next);
+    query._id.$in = query._id.$in.filter((id) => keep.has(id.toString()));
+  } else {
+    query._id = { $in: ids };
+  }
+  return query;
+};
+
+/**
+ * Nearest active clinic per doctor, from the patient's position.
+ * Clinics still at the [0, 0] schema default are not places and are skipped.
+ * @returns {Promise<Map<string, {distanceKm:number, clinic:object}>>}
+ */
+const nearestClinics = async ({ lat, lng, radiusKm }) => {
+  const rows = await Clinic.aggregate([
+    {
+      $geoNear: {
+        near: { type: 'Point', coordinates: [lng, lat] },
+        distanceField: 'distanceMeters',
+        maxDistance: radiusKm * 1000,
+        spherical: true,
+        query: { isActive: true, 'location.coordinates': { $ne: [0, 0] } },
+      },
+    },
+    // $geoNear emits nearest first, so $first is each doctor's closest clinic.
+    {
+      $group: {
+        _id: '$doctorId',
+        distanceMeters: { $first: '$distanceMeters' },
+        name: { $first: '$name' },
+        area: { $first: '$area' },
+        city: { $first: '$city' },
+      },
+    },
+  ]);
+  return new Map(
+    rows.map((r) => [
+      r._id.toString(),
+      {
+        distanceKm: Math.round((r.distanceMeters / 1000) * 10) / 10,
+        clinic: { name: r.name, area: r.area, city: r.city },
+      },
+    ])
+  );
+};
+
+/** A patient position from query strings, or null. */
+const parsePatientPoint = (lat, lng) => {
+  const la = Number(lat);
+  const lo = Number(lng);
+  if (lat === undefined || lng === undefined || !Number.isFinite(la) || !Number.isFinite(lo)) return null;
+  if (Math.abs(la) > 90 || Math.abs(lo) > 180 || (la === 0 && lo === 0)) return null;
+  return { lat: la, lng: lo };
+};
+
 const getDoctors = async (filters = {}, options = {}) => {
   const {
     specialtyId,
@@ -46,6 +108,11 @@ const getDoctors = async (filters = {}, options = {}) => {
     maxFee,
     consultationType,
     city,
+    search,
+    minRating,
+    lat,
+    lng,
+    radiusKm,
   } = filters;
   const { sortBy = 'rating', page = 1, limit = 10 } = options;
   const skip = (page - 1) * Number(limit);
@@ -95,17 +162,34 @@ const getDoctors = async (filters = {}, options = {}) => {
 
   // --- City filter: find doctorIds with clinics in given city ---
   if (city) {
+    // Escaped: a patient's typing, not a pattern ("(" used to 500 the list).
     const clinicDoctorIds = await Clinic.distinct('doctorId', {
-      city: { $regex: city, $options: 'i' },
+      city: { $regex: escapeRegex(String(city).trim().slice(0, 60)), $options: 'i' },
       isActive: true,
     });
-    if (query._id) {
-      // Intersect with availability filter
-      const set = new Set(clinicDoctorIds.map((id) => id.toString()));
-      query._id.$in = query._id.$in.filter((id) => set.has(id.toString()));
-    } else {
-      query._id = { $in: clinicDoctorIds };
-    }
+    restrictIds(query, clinicDoctorIds);
+  }
+
+  if (minRating && Number(minRating) > 0) {
+    query.rating = { $gte: Number(minRating) };
+  }
+
+  // --- Name / specialty search (the list's search box used to be ignored) ---
+  const term = typeof search === 'string' ? search.trim().slice(0, 60) : '';
+  if (term.length >= 2) {
+    const ids = await searchDoctorIds(term);
+    restrictIds(query, ids);
+  }
+
+  // --- Proximity: distance to each doctor's nearest clinic ---
+  const patient = parsePatientPoint(lat, lng);
+  const byDistance = sortBy === 'distance' || sortBy === 'nearest';
+  let nearest = null;
+  if (patient) {
+    const radius = Math.min(Math.max(Number(radiusKm) || (byDistance ? 50 : 100), 1), 200);
+    nearest = await nearestClinics({ ...patient, radiusKm: radius });
+    // An explicit radius, or "nearest first", only lists doctors we can place.
+    if (radiusKm || byDistance) restrictIds(query, [...nearest.keys()].map((id) => new mongoose.Types.ObjectId(id)));
   }
 
   // --- Sort ---
@@ -127,16 +211,40 @@ const getDoctors = async (filters = {}, options = {}) => {
   }
 
   // --- Execute ---
-  const [doctors, total] = await Promise.all([
-    Doctor.find(query)
+  let doctors;
+  let total;
+  if (nearest && byDistance) {
+    // Order by clinic distance: rank the qualifying ids, page, then load the page.
+    const ids = (await Doctor.find(query).select('_id').lean()).map((d) => d._id.toString());
+    ids.sort((a, b) => nearest.get(a).distanceKm - nearest.get(b).distanceKm || a.localeCompare(b));
+    total = ids.length;
+    const pageIds = ids.slice(skip, skip + Number(limit));
+    const docs = await Doctor.find({ _id: { $in: pageIds } })
       .populate('providerId', 'fullName profilePhoto')
       .populate('specialtyId', 'name icon')
-      .sort(sort)
-      .skip(skip)
-      .limit(Number(limit))
-      .lean(),
-    Doctor.countDocuments(query),
-  ]);
+      .lean();
+    const byId = new Map(docs.map((d) => [d._id.toString(), d]));
+    doctors = pageIds.map((id) => byId.get(id)).filter(Boolean);
+  } else {
+    [doctors, total] = await Promise.all([
+      Doctor.find(query)
+        .populate('providerId', 'fullName profilePhoto')
+        .populate('specialtyId', 'name icon')
+        .sort(sort)
+        .skip(skip)
+        .limit(Number(limit))
+        .lean(),
+      Doctor.countDocuments(query),
+    ]);
+  }
+
+  if (nearest) {
+    doctors.forEach((doc) => {
+      const n = nearest.get(doc._id.toString());
+      doc.distanceKm = n ? n.distanceKm : null;
+      doc.nearestClinic = n ? n.clinic : null;
+    });
+  }
 
   // --- Attach availableToday flag ---
   if (doctors.length > 0) {
@@ -205,6 +313,26 @@ const specialtyStem = (q) => {
     }
   }
   return cleaned;
+};
+
+/**
+ * Ids of verified, active doctors whose name or specialty matches `q` — the
+ * same matching rules as searchDoctors, for use as a list filter.
+ */
+const searchDoctorIds = async (q) => {
+  const regex = new RegExp(escapeRegex(q), 'i');
+  const specialtyRegex = new RegExp('^' + escapeRegex(specialtyStem(q)), 'i');
+  const Specialty = require('../models/Specialty');
+  const Provider = require('../../../models/Provider');
+  const [specialtyIds, providerIds] = await Promise.all([
+    Specialty.distinct('_id', { $or: [{ name: regex }, { name: specialtyRegex }], isActive: true }),
+    Provider.distinct('_id', { providerType: 'doctor', fullName: regex }),
+  ]);
+  return Doctor.distinct('_id', {
+    verificationStatus: 'verified',
+    isActive: true,
+    $or: [{ specialtyId: { $in: specialtyIds } }, { providerId: { $in: providerIds } }],
+  });
 };
 
 /**
@@ -396,6 +524,10 @@ const updateDoctor = async (id, data) => {
 
 module.exports = {
   getDoctors,
+  restrictIds,
+  nearestClinics,
+  parsePatientPoint,
+  searchDoctorIds,
   searchDoctors,
   getFeaturedDoctors,
   getDoctorById,

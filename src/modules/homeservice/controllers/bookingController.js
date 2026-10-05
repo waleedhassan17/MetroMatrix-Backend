@@ -15,10 +15,20 @@ const {
   toSavedAddress,
   avatar,
   SUBTYPE_TO_CATEGORY,
+  coords,
 } = require('../services/serializers');
 const { expireStale } = require('../services/expiryService');
 const { quotedBill } = require('../services/money');
 const { hoursFor, to12h } = require('../services/catalogue');
+const { isRealPoint } = require('../services/geo');
+
+/** The search that led here, if the app passed it on (provider search's searchId). */
+function rankingContextFrom(body) {
+  const rc = body && body.rankingContext;
+  if (!rc || typeof rc.searchId !== 'string' || !/^[0-9a-f-]{36}$/i.test(rc.searchId)) return {};
+  const position = Number(rc.position);
+  return { rankingContext: { searchId: rc.searchId, position: Number.isInteger(position) && position >= 0 ? position : null } };
+}
 const {
   pktDateString,
   pktDayBoundsFromString,
@@ -334,10 +344,16 @@ const createBooking = asyncHandler(async (req, res) => {
       line1: address.line1,
       city: address.city,
       icon: address.icon,
-      coordinates: address.coordinates,
+      // Only a real point is copied. An unlocated address leaves the booking's
+      // own [0, 0] placeholder, which the 2dsphere index accepts — copying an
+      // empty or legacy-default point would either fail the insert or send the
+      // provider's map to the city centre as if it were the customer's door.
+      ...(isRealPoint(address.coordinates) ? { coordinates: address.coordinates } : {}),
     },
+    addressLocated: isRealPoint(address.coordinates),
     instructions: String(instructions || '').slice(0, 1000),
     pricing: { estimatedPrice: provider.basePrice || 0, currency: 'PKR' },
+    ...rankingContextFrom(req.body),
     statusHistory: [
       {
         status: STATUS.PENDING,
@@ -359,6 +375,14 @@ const createBooking = asyncHandler(async (req, res) => {
   // Creation is the one lifecycle event that does not go through transition()
   // — there is no previous status to move from — so it announces itself.
   const service = booking.serviceSubCategory || booking.serviceCategory;
+  // The strongest personalisation signal there is: who this customer booked.
+  require('../../ml/services/eventService').recordServerEvent({
+    userId: req.user._id,
+    module: 'homeservice',
+    type: 'book',
+    refId: provider._id,
+    meta: { category: booking.serviceCategory },
+  });
   const results = await Promise.allSettled([
     Provider.updateOne({ _id: provider._id }, { $inc: { totalBookings: 1 } }),
     require('../services/notificationService').notifyBookingStatus(booking, STATUS.PENDING, {
@@ -414,6 +438,7 @@ const getBooking = asyncHandler(async (req, res) => {
     id: String(b._id),
     status: toConfirmationStatus(b.status),
     canonicalStatus: b.status,
+    identity: require('./identityController').verifiedView(b.identityCheck),
     provider: toBookingProvider(b.provider),
     customer: {
       id: String(b.customer._id),
@@ -433,10 +458,8 @@ const getBooking = asyncHandler(async (req, res) => {
         address: [b.address.line1, b.address.city].filter(Boolean).join(', '),
         icon: b.address.icon || 'location',
         isDefault: false,
-        coordinates: {
-          latitude: b.address.coordinates.coordinates[1],
-          longitude: b.address.coordinates.coordinates[0],
-        },
+        coordinates: coords(b.address.coordinates),
+        addressLocated: isRealPoint(b.address.coordinates),
       },
       instructions: b.instructions || '',
       estimatedPrice: b.pricing.estimatedPrice,
@@ -484,6 +507,8 @@ const getServiceStatus = asyncHandler(async (req, res) => {
     // client needs the truth to decide whether completion is even a legal move
     // — offering it earlier produced 'Illegal transition ACCEPTED → COMPLETED'.
     canonicalStatus: b.status,
+    // Doorstep identity check: { verifiedAt, method } once done, else null.
+    identity: require('./identityController').verifiedView(b.identityCheck),
     provider: {
       id: String(b.provider._id),
       name: b.provider.fullName,

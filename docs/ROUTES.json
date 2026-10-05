@@ -359,6 +359,50 @@
   },
   {
     "method": "GET",
+    "path": "/api/admin/ml/models",
+    "middleware": [
+      "apiRateLimit",
+      "protect",
+      "adminOnly",
+      "requirePermission(canViewAnalytics)",
+      "asyncHandler"
+    ]
+  },
+  {
+    "method": "POST",
+    "path": "/api/admin/ml/models/:id/activate",
+    "middleware": [
+      "apiRateLimit",
+      "protect",
+      "adminOnly",
+      "requirePermission(canManageSettings)",
+      "asyncHandler"
+    ]
+  },
+  {
+    "method": "POST",
+    "path": "/api/admin/ml/models/:id/archive",
+    "middleware": [
+      "apiRateLimit",
+      "protect",
+      "adminOnly",
+      "requirePermission(canManageSettings)",
+      "asyncHandler"
+    ]
+  },
+  {
+    "method": "GET",
+    "path": "/api/admin/ml/runs",
+    "middleware": [
+      "apiRateLimit",
+      "protect",
+      "adminOnly",
+      "requirePermission(canViewAnalytics)",
+      "asyncHandler"
+    ]
+  },
+  {
+    "method": "GET",
     "path": "/api/admin/notifications",
     "middleware": [
       "apiRateLimit",
@@ -467,6 +511,39 @@
       "protect",
       "adminOnly",
       "requirePermission(canManageFinance)",
+      "asyncHandler"
+    ]
+  },
+  {
+    "method": "GET",
+    "path": "/api/admin/platform/demand",
+    "middleware": [
+      "apiRateLimit",
+      "protect",
+      "adminOnly",
+      "requirePermission(canViewAnalytics)",
+      "asyncHandler"
+    ]
+  },
+  {
+    "method": "GET",
+    "path": "/api/admin/platform/performance",
+    "middleware": [
+      "apiRateLimit",
+      "protect",
+      "adminOnly",
+      "requirePermission(canViewAnalytics)",
+      "asyncHandler"
+    ]
+  },
+  {
+    "method": "GET",
+    "path": "/api/admin/platform/realtime",
+    "middleware": [
+      "apiRateLimit",
+      "protect",
+      "adminOnly",
+      "requirePermission(canViewAnalytics)",
       "asyncHandler"
     ]
   },
@@ -1387,6 +1464,17 @@
     ]
   },
   {
+    "method": "POST",
+    "path": "/api/bookings/:id/verify-identity",
+    "middleware": [
+      "apiRateLimit",
+      "protect",
+      "userOnly",
+      "asyncHandler",
+      "asyncHandler"
+    ]
+  },
+  {
     "method": "GET",
     "path": "/api/bookings/active",
     "middleware": [
@@ -1407,6 +1495,33 @@
     ]
   },
   {
+    "method": "POST",
+    "path": "/api/events",
+    "middleware": [
+      "apiRateLimit",
+      "optionalAuth",
+      "asyncHandler"
+    ]
+  },
+  {
+    "method": "GET",
+    "path": "/api/insights/demand/mine",
+    "middleware": [
+      "apiRateLimit",
+      "protect",
+      "asyncHandler"
+    ]
+  },
+  {
+    "method": "POST",
+    "path": "/api/internal/homeservice/bookings/:bookingId/nearby",
+    "middleware": [
+      "apiRateLimit",
+      "requireInternalKey",
+      "asyncHandler"
+    ]
+  },
+  {
     "method": "GET",
     "path": "/api/internal/homeservice/expire",
     "middleware": [
@@ -1419,6 +1534,33 @@
     "path": "/api/internal/homeservice/expire",
     "middleware": [
       "apiRateLimit",
+      "asyncHandler"
+    ]
+  },
+  {
+    "method": "POST",
+    "path": "/api/internal/ml/refresh",
+    "middleware": [
+      "apiRateLimit",
+      "requireInternalKey",
+      "asyncHandler"
+    ]
+  },
+  {
+    "method": "GET",
+    "path": "/api/internal/scheduler/tick",
+    "middleware": [
+      "apiRateLimit",
+      "requireInternalKey",
+      "asyncHandler"
+    ]
+  },
+  {
+    "method": "POST",
+    "path": "/api/internal/scheduler/tick",
+    "middleware": [
+      "apiRateLimit",
+      "requireInternalKey",
       "asyncHandler"
     ]
   },
@@ -1648,6 +1790,16 @@
     ]
   },
   {
+    "method": "POST",
+    "path": "/api/provider/heartbeat",
+    "middleware": [
+      "apiRateLimit",
+      "protect",
+      "providerOnly",
+      "asyncHandler"
+    ]
+  },
+  {
     "method": "GET",
     "path": "/api/provider/jobs",
     "middleware": [
@@ -1779,6 +1931,17 @@
     ]
   },
   {
+    "method": "POST",
+    "path": "/api/provider/jobs/:jobId/identity-token",
+    "middleware": [
+      "apiRateLimit",
+      "protect",
+      "providerOnly",
+      "asyncHandler",
+      "asyncHandler"
+    ]
+  },
+  {
     "method": "GET",
     "path": "/api/provider/jobs/:jobId/in-progress",
     "middleware": [
@@ -1866,6 +2029,16 @@
     ]
   },
   {
+    "method": "PUT",
+    "path": "/api/provider/location/base",
+    "middleware": [
+      "apiRateLimit",
+      "protect",
+      "providerOnly",
+      "asyncHandler"
+    ]
+  },
+  {
     "method": "PATCH",
     "path": "/api/provider/online-status",
     "middleware": [
@@ -1930,6 +2103,7 @@
     "path": "/api/providers",
     "middleware": [
       "apiRateLimit",
+      "optionalAuth",
       "asyncHandler"
     ]
   },
@@ -2084,6 +2258,51 @@
   },
   {
     "method": "GET",
+    "path": "/api/recommendations/healthcare",
+    "middleware": [
+      "apiRateLimit",
+      "protect",
+      "userOnly",
+      "asyncHandler"
+    ]
+  },
+  {
+    "method": "GET",
+    "path": "/api/recommendations/homeservice",
+    "middleware": [
+      "apiRateLimit",
+      "protect",
+      "userOnly",
+      "asyncHandler"
+    ]
+  },
+  {
+    "method": "GET",
+    "path": "/api/recommendations/shopping",
+    "middleware": [
+      "apiRateLimit",
+      "optionalAuth",
+      "asyncHandler"
+    ]
+  },
+  {
+    "method": "GET",
+    "path": "/api/recommendations/shopping/similar/:productId",
+    "middleware": [
+      "apiRateLimit",
+      "asyncHandler"
+    ]
+  },
+  {
+    "method": "GET",
+    "path": "/api/recommendations/shopping/trending",
+    "middleware": [
+      "apiRateLimit",
+      "asyncHandler"
+    ]
+  },
+  {
+    "method": "GET",
     "path": "/api/reset-password",
     "middleware": [
       "apiRateLimit",
@@ -2108,6 +2327,15 @@
       "protect",
       "userOnly",
       "asyncHandler",
+      "asyncHandler"
+    ]
+  },
+  {
+    "method": "GET",
+    "path": "/api/search/services",
+    "middleware": [
+      "apiRateLimit",
+      "anonymous",
       "asyncHandler"
     ]
   },
@@ -2412,6 +2640,26 @@
   },
   {
     "method": "GET",
+    "path": "/api/shopping/admin/products",
+    "middleware": [
+      "apiRateLimit",
+      "protect",
+      "requirePermission(canManageShopping)",
+      "asyncHandler"
+    ]
+  },
+  {
+    "method": "PATCH",
+    "path": "/api/shopping/admin/products/:productId/moderation",
+    "middleware": [
+      "apiRateLimit",
+      "protect",
+      "requirePermission(canManageShopping)",
+      "asyncHandler"
+    ]
+  },
+  {
+    "method": "GET",
     "path": "/api/shopping/admin/settings",
     "middleware": [
       "apiRateLimit",
@@ -2580,6 +2828,42 @@
   },
   {
     "method": "GET",
+    "path": "/api/shopping/notifications",
+    "middleware": [
+      "apiRateLimit",
+      "protect",
+      "asyncHandler"
+    ]
+  },
+  {
+    "method": "PATCH",
+    "path": "/api/shopping/notifications/:id/read",
+    "middleware": [
+      "apiRateLimit",
+      "protect",
+      "asyncHandler"
+    ]
+  },
+  {
+    "method": "PATCH",
+    "path": "/api/shopping/notifications/read-all",
+    "middleware": [
+      "apiRateLimit",
+      "protect",
+      "asyncHandler"
+    ]
+  },
+  {
+    "method": "GET",
+    "path": "/api/shopping/notifications/unread-count",
+    "middleware": [
+      "apiRateLimit",
+      "protect",
+      "asyncHandler"
+    ]
+  },
+  {
+    "method": "GET",
     "path": "/api/shopping/orders",
     "middleware": [
       "apiRateLimit",
@@ -2649,6 +2933,7 @@
     "path": "/api/shopping/products",
     "middleware": [
       "apiRateLimit",
+      "nlqBudget",
       "asyncHandler"
     ]
   },
@@ -2974,6 +3259,28 @@
     ]
   },
   {
+    "method": "PATCH",
+    "path": "/api/shopping/vendor/products/:productId/model3d",
+    "middleware": [
+      "apiRateLimit",
+      "protect",
+      "requireVendor",
+      "asyncHandler",
+      "asyncHandler"
+    ]
+  },
+  {
+    "method": "DELETE",
+    "path": "/api/shopping/vendor/products/:productId/model3d",
+    "middleware": [
+      "apiRateLimit",
+      "protect",
+      "requireVendor",
+      "asyncHandler",
+      "asyncHandler"
+    ]
+  },
+  {
     "method": "GET",
     "path": "/api/shopping/vendor/returns",
     "middleware": [
@@ -3044,6 +3351,16 @@
       "apiRateLimit",
       "protect",
       "userOnly",
+      "asyncHandler"
+    ]
+  },
+  {
+    "method": "POST",
+    "path": "/api/uploads/sign",
+    "middleware": [
+      "apiRateLimit",
+      "protect",
+      "anonymous",
       "asyncHandler"
     ]
   },
@@ -4130,6 +4447,18 @@
   },
   {
     "method": "GET",
+    "path": "/api/v1/healthcare/doctors/me/patients/:patientId/vitals",
+    "middleware": [
+      "apiRateLimit",
+      "protect",
+      "providerOnly",
+      "anonymous",
+      "requireTreatingDoctor",
+      "asyncHandler"
+    ]
+  },
+  {
+    "method": "GET",
     "path": "/api/v1/healthcare/doctors/me/prescriptions",
     "middleware": [
       "apiRateLimit",
@@ -4706,6 +5035,39 @@
       "protect",
       "anonymous",
       "joinVideoCall"
+    ]
+  },
+  {
+    "method": "GET",
+    "path": "/api/v1/healthcare/vitals/",
+    "middleware": [
+      "apiRateLimit",
+      "protect",
+      "anonymous",
+      "userOnly",
+      "asyncHandler"
+    ]
+  },
+  {
+    "method": "POST",
+    "path": "/api/v1/healthcare/vitals/",
+    "middleware": [
+      "apiRateLimit",
+      "protect",
+      "anonymous",
+      "userOnly",
+      "asyncHandler"
+    ]
+  },
+  {
+    "method": "DELETE",
+    "path": "/api/v1/healthcare/vitals/:id",
+    "middleware": [
+      "apiRateLimit",
+      "protect",
+      "anonymous",
+      "userOnly",
+      "asyncHandler"
     ]
   },
   {

@@ -295,6 +295,12 @@ const providerSchema = new mongoose.Schema(
       type: Number, // PKR starting price shown on provider cards
       default: 0,
     },
+    // A home-service provider's SERVICE BASE — the area they work from, used
+    // for "near you" ranking. It is an area, not a position: stored rounded to
+    // ~500 m (services/geo.js coarsen) and overwritten in place, never
+    // appended. The live trip position is NOT stored anywhere (NFR-08; see
+    // sockets/lastLocationStore.js). The default below is a placeholder, which
+    // `locationSource: 'default'` says honestly.
     currentLocation: {
       type: {
         type: String,
@@ -303,8 +309,25 @@ const providerSchema = new mongoose.Schema(
       },
       coordinates: {
         type: [Number], // [lng, lat]
-        default: [74.3587, 31.5204], // Lahore centre fallback
+        default: [74.3587, 31.5204], // Lahore centre placeholder — see locationSource
       },
+    },
+    // Where currentLocation came from:
+    //   default   — the placeholder; distance to this provider is unknown
+    //   city      — their city's centroid; distance is approximate
+    //   profile   — pinned by the provider on the availability screen
+    //   go_online — sampled once when going online (only if they opted in)
+    //   seed      — demo data
+    locationSource: {
+      type: String,
+      enum: ['default', 'city', 'profile', 'go_online', 'seed'],
+      default: 'default',
+    },
+    locationUpdatedAt: Date,
+    // Opt-in: refresh the base from the phone each time they go online.
+    autoUpdateBaseOnOnline: {
+      type: Boolean,
+      default: false,
     },
     lastSeen: {
       type: Date,

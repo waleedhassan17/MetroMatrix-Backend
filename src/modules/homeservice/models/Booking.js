@@ -48,6 +48,32 @@ const bookingSchema = new mongoose.Schema(
         },
       },
     },
+    // False when the customer's address had no pinned location: the provider
+    // map then has only the typed address to go on (coordinates stay [0, 0]).
+    addressLocated: { type: Boolean, default: undefined },
+    // Which search produced this booking (provider search's searchId and the
+    // card's position) — how the matching model learns which rankings worked.
+    rankingContext: {
+      searchId: { type: String, default: null },
+      position: { type: Number, default: null },
+    },
+    // One-shot notification stamps, claimed atomically so a retry, a second
+    // realtime dyno or the REST fallback can never send the same alert twice.
+    notifications: {
+      nearbyAt: { type: Date, default: null }, // "about 5 minutes away"
+      reminderAt: { type: Date, default: null }, // "your job starts within the hour"
+    },
+    // Doorstep identity check (services/identityService.js): the live token's
+    // nonce and the 6-digit code, both hashed; cleared once used.
+    identityCheck: {
+      nonceHash: { type: String, default: null },
+      codeHash: { type: String, default: null },
+      expiresAt: { type: Date, default: null },
+      attempts: { type: Number, default: 0 },
+      issuedAt: { type: Date, default: null },
+      verifiedAt: { type: Date, default: null },
+      method: { type: String, enum: ['nfc', 'qr', 'code', null], default: null },
+    },
     status: {
       type: String,
       enum: ALL_STATUSES,
@@ -123,6 +149,7 @@ const bookingSchema = new mongoose.Schema(
 );
 
 bookingSchema.index({ 'address.coordinates': '2dsphere' });
+bookingSchema.index({ 'rankingContext.searchId': 1 }, { sparse: true });
 bookingSchema.index({ customer: 1, status: 1, createdAt: -1 });
 // Backs the duplicate-request guard: "does this customer already have a live
 // booking with this provider?" runs on every Book tap and on every create.

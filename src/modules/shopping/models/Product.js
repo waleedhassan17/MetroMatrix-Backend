@@ -42,16 +42,43 @@ const productSchema = new mongoose.Schema(
     isNewArrival: { type: Boolean, default: false },
     inStock: { type: Boolean, default: true },
     tags: { type: [String], default: [] },
+    // The vendor's own switch: unpublished products stay in their catalogue
+    // but no customer sees them. Also what the vendor's "delete" turns off.
     isActive: { type: Boolean, default: true },
+    // The platform's switch. A product customers can see must be BOTH
+    // published (isActive) and not held by moderation. Absent on products
+    // created before moderation existed, which therefore count as approved.
+    moderation: {
+      status: { type: String, enum: ['approved', 'pending', 'rejected', 'removed'], default: 'approved' },
+      note: { type: String, default: '' },
+      by: { type: mongoose.Schema.Types.ObjectId, default: null },
+      at: { type: Date, default: null },
+    },
+    // "View in your room": a binary glTF (.glb) for Android's Scene Viewer,
+    // optionally a USDZ for iPhone's AR Quick Look. Set only through
+    // PATCH /vendor/products/:id/model3d, which checks the files.
+    model3d: {
+      glbUrl: { type: String, default: null },
+      usdzUrl: { type: String, default: null },
+      sizeBytes: { type: Number, default: null },
+      attachedAt: { type: Date, default: null },
+    },
   },
   { timestamps: true }
 );
 
 productSchema.index({ brandId: 1, categoryId: 1 });
-productSchema.index({ name: 'text', description: 'text', tags: 'text' });
+// Weighted for natural-language search: a word in the name counts ten times one
+// in the description. MongoDB allows ONE text index per collection, so the old
+// unweighted one is dropped by scripts/sync-indexes.js (SUPERSEDED).
+productSchema.index(
+  { name: 'text', tags: 'text', description: 'text' },
+  { name: 'product_text_v2', weights: { name: 10, tags: 5, description: 1 }, default_language: 'english' }
+);
 productSchema.index({ isFeatured: 1 });
 productSchema.index({ isNewArrival: 1 });
 productSchema.index({ createdAt: -1 });
+productSchema.index({ 'moderation.status': 1, createdAt: -1 });
 
 productSchema.methods.syncStockFlag = function () {
   this.inStock = this.variants.some((v) => v.stockQuantity > 0);

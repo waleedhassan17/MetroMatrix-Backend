@@ -82,10 +82,12 @@ const errorHandler = (err, req, res, next) => {
     return res.status(status).json(body);
   }
 
-  // Legacy shape for the user/provider apps, unchanged.
+  // Legacy shape for the user/provider apps, plus the request id to quote
+  // when reporting a problem (it finds the request in the logs).
   res.status(status).json({
     success: false,
     error: message || 'Server Error',
+    ...(req.id && { requestId: req.id }),
     ...(process.env.NODE_ENV === 'development' && { stack: err.stack }),
   });
 };

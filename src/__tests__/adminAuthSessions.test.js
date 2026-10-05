@@ -7,6 +7,7 @@
  * faked, so token expiry / lockout windows can be jumped over while the DB
  * driver's own timers stay real.
  */
+const mongoose = require('mongoose');
 const { connect, clear, disconnect } = require('../../test/helpers/db');
 const { createAdmin, DEFAULT_PASSWORD } = require('../../test/helpers/factories');
 const { api, signIn } = require('../../test/helpers/agent');
@@ -274,6 +275,17 @@ describe('restricted sessions', () => {
       .set('Authorization', s.bearer())
       .send({ currentPassword: DEFAULT_PASSWORD, newPassword: 'A-Brand-New-Passphrase-7' });
     expect((await api().get('/api/admin/users').set('Authorization', s.bearer())).status).toBe(200);
+  });
+
+  it('an account with no recorded password change goes straight in; its expiry clock starts at that sign-in', async () => {
+    const admin = await createAdmin({ createdAt: new Date(Date.now() - 300 * 24 * 60 * MIN) });
+    await mongoose.connection.collection('admins').updateOne({ _id: admin._id }, { $unset: { passwordChangedAt: 1 } });
+    const s = await signIn(admin);
+    expect(s.restrict).toBeNull();
+    expect((await api().get('/api/admin/users').set('Authorization', s.bearer())).status).toBe(200);
+    const after = await mongoose.connection.collection('admins').findOne({ _id: admin._id });
+    expect(after.passwordChangedAt).toBeInstanceOf(Date);
+    expect(Date.now() - after.passwordChangedAt.getTime()).toBeLessThan(60 * 1000);
   });
 
   it('security.passwordExpiry forces a change once the password is older than the limit', async () => {

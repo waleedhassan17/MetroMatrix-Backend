@@ -5,11 +5,14 @@
  */
 jest.mock('../models/Booking', () => ({ find: jest.fn(), updateMany: jest.fn() }));
 jest.mock('../models/HSNotification', () => ({ insertMany: jest.fn().mockResolvedValue([]) }));
-jest.mock('../../../sockets', () => ({ emitToBooking: jest.fn().mockResolvedValue(true) }));
+jest.mock('../../../sockets', () => ({
+  emitToBooking: jest.fn().mockResolvedValue(true),
+  pushToUser: jest.fn().mockResolvedValue(true),
+}));
 
 const Booking = require('../models/Booking');
 const HSNotification = require('../models/HSNotification');
-const { emitToBooking } = require('../../../sockets');
+const { emitToBooking, pushToUser } = require('../../../sockets');
 const { expireStale, RULES } = require('../services/expiryService');
 const { escapeRegex, buildPipeline } = require('../controllers/providerSearchController');
 const { STATUS } = require('../services/statusMap');
@@ -84,6 +87,9 @@ describe('expireStale', () => {
     expect(toCustomer.message).toMatch(/Ahmad Khan didn't respond/);
     expect(toProvider.message).toMatch(/expired before you responded/);
     expect(emitToBooking).toHaveBeenCalledWith('b1', 'booking_status_changed', expect.objectContaining({ status: STATUS.CANCELLED }));
+    // …and both people are pushed, not just told in-app.
+    expect(pushToUser).toHaveBeenCalledWith('c1', 'user', expect.objectContaining({ type: 'booking_cancelled', title: 'Request expired' }));
+    expect(pushToUser).toHaveBeenCalledWith('p1', 'provider', expect.objectContaining({ type: 'booking_cancelled' }));
   });
 
   it('notifies only about rows it actually closed (a row accepted meanwhile is left alone)', async () => {
@@ -129,11 +135,15 @@ describe('provider search input', () => {
   it('with a real customer location, each provider\'s own service radius applies', () => {
     const pipeline = buildPipeline({ ...base, hasLocation: true });
     expect(pipeline[0].$geoNear.near.coordinates).toEqual([74.35, 31.52]);
-    expect(JSON.stringify(pipeline[1])).toMatch(/serviceRadius/);
+    const radiusStage = pipeline.find((st) => st.$match && JSON.stringify(st).includes('serviceRadius'));
+    expect(radiusStage).toBeDefined();
   });
 
   it('without a location, distance neither filters nor ranks', () => {
     const pipeline = buildPipeline({ ...base, hasLocation: false, sortBy: 'distance' });
+    // No $geoNear at all: the whole platform, not a ring around the city centre.
+    expect(pipeline[0].$geoNear).toBeUndefined();
+    expect(pipeline[0].$match).toEqual(base.match);
     expect(JSON.stringify(pipeline)).not.toMatch(/serviceRadius/);
     const sortStage = pipeline.find((s) => s.$sort);
     expect(sortStage.$sort.distanceMeters).toBeUndefined();

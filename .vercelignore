@@ -13,3 +13,10 @@ coverage/
 .env
 .env.*
 wallet-qa-results.json
+
+# Python ML batch jobs run in GitHub Actions, never in the function.
+# ANCHORED with a leading slash: a bare `ml/` also matches src/modules/ml/,
+# which IS runtime code — excluding it took the whole API down
+# ("Cannot find module '../../ml/models/MlSearchImpression'").
+/ml/
+/.github/

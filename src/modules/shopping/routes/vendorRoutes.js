@@ -22,6 +22,8 @@ router.post('/products', catalogCtrl.createProduct);
 router.patch('/products/:productId', catalogCtrl.updateProduct);
 router.delete('/products/:productId', catalogCtrl.deleteProduct);
 router.post('/products/:productId/images', catalogCtrl.addProductImages);
+router.patch('/products/:productId/model3d', catalogCtrl.attachModel3d);
+router.delete('/products/:productId/model3d', catalogCtrl.removeModel3d);
 
 router.get('/categories', catalogCtrl.getMyCategories);
 router.post('/categories', catalogCtrl.createCategory);

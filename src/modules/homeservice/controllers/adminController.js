@@ -1,4 +1,5 @@
 const asyncHandler = require('express-async-handler');
+const { assertOwnedAsset } = require('../../../utils/assetUrl');
 const Booking = require('../models/Booking');
 const Dispute = require('../models/Dispute');
 const PayoutRequest = require('../models/PayoutRequest');
@@ -207,6 +208,18 @@ const refundBooking = asyncHandler(async (req, res) => {
 const raiseDispute = asyncHandler(async (req, res) => {
   const b = req.booking;
   const { reason, description, evidence } = req.body;
+  // Photos must be the caller's own uploads (POST /api/uploads/sign, purpose
+  // 'dispute_evidence'). The app used to send the phone's file:// paths, which
+  // were stored as "evidence" nobody else could ever open.
+  let cleanEvidence = [];
+  try {
+    cleanEvidence = (Array.isArray(evidence) ? evidence : [])
+      .slice(0, 6)
+      .map((u) => assertOwnedAsset(u, { purpose: 'dispute_evidence', ownerId: req.user._id }));
+  } catch (e) {
+    res.status(400);
+    throw new Error(e.message);
+  }
   if (!reason || !String(reason).trim()) {
     res.status(400);
     throw new Error('A dispute reason is required');
@@ -229,7 +242,7 @@ const raiseDispute = asyncHandler(async (req, res) => {
     againstRole: req.bookingRole === 'customer' ? 'provider' : 'customer',
     reason,
     description: description || '',
-    evidence: Array.isArray(evidence) ? evidence : [],
+    evidence: cleanEvidence,
   });
   await require('../../../services/notificationService').notifyDisputeOpened(dispute);
   ok(res, { disputeId: String(dispute._id), status: dispute.status }, 'Dispute raised');
@@ -624,8 +637,14 @@ const HS_SETTING_LIMITS = {
   defaultSearchRadiusKm: { min: 1, max: 100, label: 'Search radius' },
   minPayoutAmount: { min: 0, max: 1000000, label: 'Minimum payout' },
   avgUrbanSpeedKmh: { min: 5, max: 120, label: 'Average speed' },
+  // How recently a provider must have been seen to count as "available now".
+  onlineStaleMinutes: { min: 5, max: 240, label: 'Online freshness (minutes)' },
 };
 const WEIGHT_KEYS = ['distance', 'rating', 'availability'];
+// Optional fourth weight (completion quality). When it is sent, all four must
+// add up to 1; when it is not, the three above must, and quality weighs 0.
+const OPTIONAL_WEIGHT_KEYS = ['quality'];
+const RANKING_MODES = ['heuristic', 'shadow', 'blend', 'model'];
 
 function validateHomeserviceSettings(body) {
   const patch = {};
@@ -638,15 +657,38 @@ function validateHomeserviceSettings(body) {
     } else patch[key] = v;
   }
   if (body.matchingWeights !== undefined) {
-    const w = body.matchingWeights;
-    const values = WEIGHT_KEYS.map((k) => (w && typeof w === 'object' ? w[k] : undefined));
+    const w = body.matchingWeights && typeof body.matchingWeights === 'object' ? body.matchingWeights : {};
+    const keys = [...WEIGHT_KEYS, ...OPTIONAL_WEIGHT_KEYS.filter((k) => w[k] !== undefined)];
+    const values = keys.map((k) => w[k]);
     if (values.some((v) => typeof v !== 'number' || !Number.isFinite(v) || v < 0 || v > 1)) {
       problems.push({ field: 'matchingWeights', message: 'Each matching weight must be a number from 0 to 1' });
     } else if (Math.abs(values.reduce((a, b) => a + b, 0) - 1) > 0.01) {
       problems.push({ field: 'matchingWeights', message: 'The matching weights must add up to 1' });
-    } else patch.matchingWeights = Object.fromEntries(WEIGHT_KEYS.map((k, i) => [k, values[i]]));
+    } else {
+      patch.matchingWeights = { quality: 0, ...Object.fromEntries(keys.map((k, i) => [k, values[i]])) };
+    }
   }
-  const unknown = Object.keys(body).filter((k) => k !== 'reason' && k !== 'matchingWeights' && !HS_SETTING_LIMITS[k]);
+  if (body.ranking !== undefined) {
+    const r = body.ranking && typeof body.ranking === 'object' ? body.ranking : null;
+    const clean = {};
+    if (!r) problems.push({ field: 'ranking', message: 'Ranking must be an object' });
+    else {
+      if (r.mode !== undefined) {
+        if (!RANKING_MODES.includes(r.mode)) problems.push({ field: 'ranking.mode', message: `Ranking mode must be one of ${RANKING_MODES.join(', ')}` });
+        else clean.mode = r.mode;
+      }
+      if (r.blendAlpha !== undefined) {
+        if (typeof r.blendAlpha !== 'number' || r.blendAlpha < 0 || r.blendAlpha > 1) problems.push({ field: 'ranking.blendAlpha', message: 'Blend alpha must be a number from 0 to 1' });
+        else clean.blendAlpha = r.blendAlpha;
+      }
+      if (r.explorationBoost !== undefined) {
+        if (typeof r.explorationBoost !== 'number' || r.explorationBoost < 0 || r.explorationBoost > 0.5) problems.push({ field: 'ranking.explorationBoost', message: 'Exploration boost must be a number from 0 to 0.5' });
+        else clean.explorationBoost = r.explorationBoost;
+      }
+      patch.ranking = clean;
+    }
+  }
+  const unknown = Object.keys(body).filter((k) => !['reason', 'matchingWeights', 'ranking'].includes(k) && !HS_SETTING_LIMITS[k]);
   for (const key of unknown) problems.push({ field: key, message: `Unknown home-services setting '${key}'` });
   return { patch, problems };
 }

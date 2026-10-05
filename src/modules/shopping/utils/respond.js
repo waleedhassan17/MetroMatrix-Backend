@@ -20,7 +20,9 @@ const CODE_FOR_STATUS = {
 
 const ok = (res, data, status = 200) => res.status(status).json({ success: true, data });
 
-const paginated = (res, { data, page, limit, total }) => {
+// `extra`: additional top-level fields for customer routes (e.g. the
+// natural-language search's `interpretedAs`).
+const paginated = (res, { data, page, limit, total, extra }) => {
   const meta = {
     page: Number(page),
     limit: Number(limit),
@@ -28,7 +30,7 @@ const paginated = (res, { data, page, limit, total }) => {
     pages: Math.max(1, Math.ceil(total / Number(limit))),
   };
   if (isAdminRequest(res.req)) return res.json({ success: true, data, meta });
-  return res.json({ success: true, data, pagination: meta });
+  return res.json({ success: true, ...(extra || {}), data, pagination: meta });
 };
 
 const fail = (res, status, error, errors) => {

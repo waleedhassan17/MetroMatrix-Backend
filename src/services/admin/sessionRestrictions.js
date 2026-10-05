@@ -6,7 +6,10 @@ const DAY_MS = 24 * 60 * 60 * 1000;
  * Whether this admin's sessions are limited to fixing their own account
  * before doing anything else:
  *   'password_change' — temporary/seeded password (mustChangePassword) or the
- *                       password is older than security.passwordExpiry days;
+ *                       password is older than security.passwordExpiry days,
+ *                       counted from the last RECORDED change. Accounts from
+ *                       before changes were recorded start that clock at their
+ *                       first sign-in (completeSignIn), not at createdAt;
  *   'totp_enrol'      — security.twoFactorEnabled requires super admins to use
  *                       two-factor sign-in and this one hasn't enrolled yet.
  * Computed on every request from the admin document and current settings, so
@@ -16,7 +19,10 @@ const DAY_MS = 24 * 60 * 60 * 1000;
 function sessionRestriction(admin, security, now = Date.now()) {
   if (admin.mustChangePassword) return 'password_change';
   if (security.passwordExpiry > 0) {
-    const changedAt = admin.passwordChangedAt || admin.createdAt;
+    // No createdAt fallback: an account older than the policy whose password
+    // age was never recorded would otherwise be locked into a forced change
+    // on its very first sign-in after the release.
+    const changedAt = admin.passwordChangedAt;
     if (changedAt && now - new Date(changedAt).getTime() > security.passwordExpiry * DAY_MS) return 'password_change';
   }
   if (security.twoFactorEnabled && admin.isSuperAdmin && !admin.twoFactor?.enabled) return 'totp_enrol';

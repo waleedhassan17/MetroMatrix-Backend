@@ -13,6 +13,10 @@ const dbName = `test_${crypto.randomBytes(6).toString('hex')}`;
 const url = new URL(base);
 url.pathname = `/${dbName}`;
 process.env.MONGODB_URI = url.toString();
+// The module integration suites (*.integration.test.js and the MongoDB blocks
+// in src/modules/**) are gated on MONGO_TEST_URI; point them at the same
+// in-memory replica set so they run here instead of being skipped.
+process.env.MONGO_TEST_URI = url.toString();
 
 const LOCAL_HOSTS = new Set(['127.0.0.1', 'localhost', '[::1]']);
 const assertLocal = (uri) => {

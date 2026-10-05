@@ -259,6 +259,16 @@ const checkout = async (user, { addressId, shippingAddress, paymentMethod, deliv
       }
     }
 
+    // Vendors hear about their new orders; best-effort, never fails checkout.
+    await require('./orderNotifications').announceOrdersPlaced(orders, user);
+    // Purchases feed "frequently bought together" and personal recommendations.
+    const { recordServerEvent } = require('../../ml/services/eventService');
+    for (const order of orders) {
+      for (const item of order.items || []) {
+        recordServerEvent({ userId: user._id, module: 'shopping', type: 'order', refId: item.productId, meta: { context: String(order._id) } });
+      }
+    }
+
     return serializeGroup(group, orders);
   } catch (err) {
     // Compensating rollback of stock decrements

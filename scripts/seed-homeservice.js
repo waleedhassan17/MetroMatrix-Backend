@@ -226,6 +226,8 @@ async function main() {
         isOnline,
         serviceRadius: 15,
         currentLocation: { type: 'Point', coordinates: [spot[2], spot[1]] },
+        locationSource: 'seed',
+        locationUpdatedAt: new Date(),
         ratings: { average: 0, count: 0 },
         totalBookings: 0,
         completedBookings: 0,

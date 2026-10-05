@@ -5964,3 +5964,234 @@ paths:
         - bearerAuth: []
       x-guards:
         - requirePermission(canManageHealthcare)
+  /api/admin/platform/realtime:
+    get:
+      tags:
+        - Platform analytics
+      operationId: getAdminPlatformRealtime
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/GenericEnvelope'
+        '400':
+          $ref: '#/components/responses/ValidationFailed'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+      security:
+        - bearerAuth: []
+      x-guards:
+        - requirePermission(canViewAnalytics)
+  /api/admin/platform/demand:
+    get:
+      tags:
+        - Platform analytics
+      operationId: getAdminPlatformDemand
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/GenericEnvelope'
+        '400':
+          $ref: '#/components/responses/ValidationFailed'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+      security:
+        - bearerAuth: []
+      x-guards:
+        - requirePermission(canViewAnalytics)
+  /api/admin/platform/performance:
+    get:
+      tags:
+        - Platform analytics
+      operationId: getAdminPlatformPerformance
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/GenericEnvelope'
+        '400':
+          $ref: '#/components/responses/ValidationFailed'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+      security:
+        - bearerAuth: []
+      x-guards:
+        - requirePermission(canViewAnalytics)
+  /api/admin/ml/models:
+    get:
+      tags:
+        - Machine learning
+      operationId: listAdminMlModels
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/GenericEnvelope'
+        '400':
+          $ref: '#/components/responses/ValidationFailed'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+      security:
+        - bearerAuth: []
+      x-guards:
+        - requirePermission(canViewAnalytics)
+  /api/admin/ml/models/{id}/activate:
+    post:
+      tags:
+        - Machine learning
+      operationId: activateAdminMlModel
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/GenericEnvelope'
+        '400':
+          $ref: '#/components/responses/ValidationFailed'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+      security:
+        - bearerAuth: []
+      x-guards:
+        - requirePermission(canManageSettings)
+  /api/admin/ml/models/{id}/archive:
+    post:
+      tags:
+        - Machine learning
+      operationId: archiveAdminMlModel
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/GenericEnvelope'
+        '400':
+          $ref: '#/components/responses/ValidationFailed'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+      security:
+        - bearerAuth: []
+      x-guards:
+        - requirePermission(canManageSettings)
+  /api/admin/ml/runs:
+    get:
+      tags:
+        - Machine learning
+      operationId: listAdminMlRuns
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/GenericEnvelope'
+        '400':
+          $ref: '#/components/responses/ValidationFailed'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+      security:
+        - bearerAuth: []
+      x-guards:
+        - requirePermission(canViewAnalytics)
+  /api/shopping/admin/products:
+    get:
+      tags:
+        - Shopping
+      operationId: listAdminShoppingProducts
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/GenericEnvelope'
+        '400':
+          $ref: '#/components/responses/ValidationFailed'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+      security:
+        - bearerAuth: []
+      x-guards:
+        - requirePermission(canManageShopping)
+  /api/shopping/admin/products/{productId}/moderation:
+    patch:
+      tags:
+        - Shopping
+      operationId: moderateAdminShoppingProduct
+      parameters:
+        - name: productId
+          in: path
+          required: true
+          schema:
+            type: string
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/GenericEnvelope'
+        '400':
+          $ref: '#/components/responses/ValidationFailed'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+      security:
+        - bearerAuth: []
+      x-guards:
+        - requirePermission(canManageShopping)

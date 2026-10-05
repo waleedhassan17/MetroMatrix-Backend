@@ -9,6 +9,8 @@ const { getShoppingSettings } = require('../services/settingsService');
 const { slugify } = require('../utils/ids');
 const { escapeRegex } = require('../services/catalogService');
 const { ok, paginated, fail, parsePagination } = require('../utils/respond');
+const { assertOwnedAsset } = require('../../../utils/assetUrl');
+const { inspectGlb, inspectUsdz, ModelFileError } = require('../services/model3dService');
 
 const PRODUCT_EDITABLE = [
   'sku',
@@ -24,6 +26,9 @@ const PRODUCT_EDITABLE = [
   'tags',
   'isActive',
 ];
+
+/** Fields whose change customers would read — edits to these re-enter review. */
+const MODERATED_FIELDS = ['name', 'description', 'images', 'tags', 'categoryId'];
 
 /**
  * ── Products (scoped to req.brand) ─────────────────────────────────
@@ -99,6 +104,8 @@ const createProduct = asyncHandler(async (req, res) => {
   });
   const product = new Product(payload);
   product.syncStockFlag();
+  const settings = await getShoppingSettings();
+  product.moderation = { status: settings.autoApproveProducts ? 'approved' : 'pending', note: '', at: new Date() };
   await product.save();
   return ok(res, product, 201);
 });
@@ -119,10 +126,25 @@ const updateProduct = asyncHandler(async (req, res) => {
   );
   if (validationError) return fail(res, 400, validationError);
 
+  // A product support REMOVED cannot be put back by its vendor.
+  if (product.moderation && product.moderation.status === 'removed') {
+    return fail(res, 403, `This product was removed by MetroMatrix${product.moderation.note ? `: ${product.moderation.note}` : ''}`);
+  }
   PRODUCT_EDITABLE.forEach((f) => {
     if (req.body[f] !== undefined) product[f] = req.body[f];
   });
   if (req.body.variants !== undefined) product.syncStockFlag();
+  // What customers read changed → back to review when products need approval.
+  // A rejected product is resubmitted by editing it. Stock and the publish
+  // switch alone never need review.
+  const contentChanged = MODERATED_FIELDS.some((f) => req.body[f] !== undefined);
+  if (contentChanged) {
+    const settings = await getShoppingSettings();
+    const status = product.moderation ? product.moderation.status : 'approved';
+    if (!settings.autoApproveProducts || status === 'rejected') {
+      product.moderation = { status: settings.autoApproveProducts ? 'approved' : 'pending', note: '', at: new Date() };
+    }
+  }
   await product.save();
   return ok(res, product);
 });
@@ -147,6 +169,53 @@ const addProductImages = asyncHandler(async (req, res) => {
     const result = await uploadBase64Image(img, 'products');
     product.images.push(result.secure_url || result.url);
   }
+  await product.save();
+  return ok(res, product);
+});
+
+// @desc  PATCH /api/shopping/vendor/products/:productId/model3d { glbUrl, usdzUrl? }
+// The files are uploaded first (POST /api/uploads/sign, purpose product_model3d);
+// here they are checked — ours, this vendor's, and really a glTF 2.0 / USDZ.
+const attachModel3d = asyncHandler(async (req, res) => {
+  const product = await Product.findOne({ _id: req.params.productId, brandId: req.brand._id });
+  if (!product) return fail(res, 404, 'Product not found');
+  if (product.moderation && product.moderation.status === 'removed') {
+    return fail(res, 403, 'This product was removed by MetroMatrix');
+  }
+  const { glbUrl: rawGlb, usdzUrl: rawUsdz } = req.body || {};
+  let glbUrl;
+  let usdzUrl = null;
+  try {
+    glbUrl = assertOwnedAsset(rawGlb, { purpose: 'product_model3d', ownerId: req.user._id });
+    if (rawUsdz) usdzUrl = assertOwnedAsset(rawUsdz, { purpose: 'product_model3d', ownerId: req.user._id });
+  } catch (e) {
+    return fail(res, 400, e.message);
+  }
+  if (!/\.glb$/i.test(new URL(glbUrl).pathname)) return fail(res, 400, 'The 3D model must be a .glb file');
+  if (usdzUrl && !/\.usdz$/i.test(new URL(usdzUrl).pathname)) return fail(res, 400, 'The iPhone model must be a .usdz file');
+  let sizeBytes;
+  try {
+    ({ sizeBytes } = await inspectGlb(glbUrl));
+    if (usdzUrl) await inspectUsdz(usdzUrl);
+  } catch (e) {
+    if (e instanceof ModelFileError) return fail(res, 422, e.message);
+    throw e;
+  }
+  product.model3d = { glbUrl, usdzUrl, sizeBytes, attachedAt: new Date() };
+  // Customers see the model: same review rule as any content edit.
+  const settings = await getShoppingSettings();
+  if (!settings.autoApproveProducts) {
+    product.moderation = { status: 'pending', note: '', at: new Date() };
+  }
+  await product.save();
+  return ok(res, product);
+});
+
+// @desc  DELETE /api/shopping/vendor/products/:productId/model3d
+const removeModel3d = asyncHandler(async (req, res) => {
+  const product = await Product.findOne({ _id: req.params.productId, brandId: req.brand._id });
+  if (!product) return fail(res, 404, 'Product not found');
+  product.model3d = { glbUrl: null, usdzUrl: null, sizeBytes: null, attachedAt: null };
   await product.save();
   return ok(res, product);
 });
@@ -303,6 +372,8 @@ const bulkUpdateStock = asyncHandler(async (req, res) => {
 });
 
 module.exports = {
+  attachModel3d,
+  removeModel3d,
   getMyProducts,
   createProduct,
   updateProduct,

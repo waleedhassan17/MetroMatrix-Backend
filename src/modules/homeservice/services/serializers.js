@@ -23,6 +23,7 @@ const CATEGORY_TO_SUBTYPE = {
 
 const { pktDateString } = require('./time');
 const { billOf, quotedBill } = require('./money');
+const { isRealPoint } = require('./geo');
 
 const DEFAULT_AVATAR = 'https://ui-avatars.com/api/?background=4F46E5&color=fff&name=';
 
@@ -31,7 +32,12 @@ function avatar(name, photo) {
 }
 
 function coords(geo) {
-  const c = geo && geo.coordinates ? geo.coordinates : [74.3587, 31.5204];
+  let c = geo && Array.isArray(geo.coordinates) && geo.coordinates.length === 2 ? geo.coordinates : null;
+  // [0, 0] is the booking schema's placeholder for "no location" (valid
+  // GeoJSON, so the 2dsphere index accepts it), never a real address. Screens
+  // that need SOME point keep getting the city centre they always got; use
+  // geo.latLngOrNull where "unknown" must be said honestly.
+  if (!c || (Number(c[0]) === 0 && Number(c[1]) === 0)) c = [74.3587, 31.5204];
   return { latitude: c[1], longitude: c[0] };
 }
 
@@ -169,6 +175,7 @@ function toSavedAddress(a) {
     icon: a.icon || 'location',
     isDefault: !!a.isDefault,
     coordinates: coords(a.coordinates),
+    located: isRealPoint(a.coordinates),
   };
 }
 
@@ -191,6 +198,7 @@ function toJob(b, now = new Date()) {
     price: billOf(b),
     status: toJobBucket(b.status, b.scheduledFor, now),
     coordinates: coords(b.address && b.address.coordinates),
+    addressLocated: isRealPoint(b.address && b.address.coordinates),
     specialInstructions: b.instructions || b.description || '',
   };
 }

@@ -242,8 +242,12 @@ const endVideoCall = async (req, res, next) => {
         duration: videoCall.duration,
       });
 
+      // Doctor inbox rows are keyed by the doctor's PROVIDER id; this used to
+      // pass the Doctor id, so the row landed in nobody's list.
+      const doctorRow = await require('../models/Doctor').findById(appointment.doctorId).select('providerId').lean();
       await createNotification({
-        userId: appointment.doctorId,
+        userId: (doctorRow && doctorRow.providerId) || appointment.doctorId,
+        audience: 'doctor',
         title: 'Video Call Ended',
         message: 'Patient has ended the video call',
         type: 'appointment_cancelled',

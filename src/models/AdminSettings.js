@@ -125,6 +125,12 @@ const adminSettingsSchema = new mongoose.Schema(
         type: Boolean,
         default: false,
       },
+      // New and edited products go live at once (true), or wait for an admin
+      // in the product moderation queue (false).
+      autoApproveProducts: {
+        type: Boolean,
+        default: true,
+      },
       // Delivery speed tiers offered at checkout. `surcharge` is charged on
       // top of the per-brand shipping fee above. These used to be a hardcoded
       // array in the app, so the price shown was never the price charged.
@@ -194,6 +200,20 @@ const adminSettingsSchema = new mongoose.Schema(
         distance: { type: Number, default: 0.4, min: 0, max: 1 },
         rating: { type: Number, default: 0.4, min: 0, max: 1 },
         availability: { type: Number, default: 0.2, min: 0, max: 1 },
+        quality: { type: Number, default: 0.15, min: 0, max: 1 },
+      },
+      // How the learned matching model is used in provider search.
+      ranking: {
+        mode: { type: String, enum: ['heuristic', 'shadow', 'blend', 'model'], default: 'heuristic' },
+        blendAlpha: { type: Number, default: 0.7, min: 0, max: 1 },
+        explorationBoost: { type: Number, default: 0.05, min: 0, max: 0.5 },
+      },
+      // Presence freshness for "available now" in provider search.
+      onlineStaleMinutes: {
+        type: Number,
+        default: 30,
+        min: 5,
+        max: 240,
       },
       minPayoutAmount: {
         type: Number,

@@ -182,19 +182,34 @@ async function expireStale(scope = {}, now = new Date(), opts = {}) {
         );
       }
 
-      // Anyone watching one of these bookings right now sees it close.
+      // Anyone watching one of these bookings right now sees it close, and both
+      // parties get a push — a customer whose request quietly expired used to
+      // find out only by opening the app. Bounded like the room events: a
+      // backlog sweep of hundreds of old rows is not news to push about.
       if (closedBookings.length <= EMIT_LIMIT) {
-        const { emitToBooking } = require('../../../sockets');
-        await Promise.allSettled(
-          closedBookings.map((b) =>
+        const { emitToBooking, pushToUser } = require('../../../sockets');
+        await Promise.allSettled([
+          ...closedBookings.map((b) =>
             emitToBooking(b._id, 'booking_status_changed', {
               bookingId: String(b._id),
               roomId: String(b._id),
               status: STATUS.CANCELLED,
               changedAt: now.toISOString(),
             })
-          )
-        );
+          ),
+          // Wrapped so a synchronous throw from one push can never abort the
+          // sweep — the bookings are already closed.
+          ...notifications.map((n) =>
+            Promise.resolve().then(() =>
+              pushToUser(n.recipient, n.recipientRole === 'provider' ? 'provider' : 'user', {
+                type: 'booking_cancelled',
+                title: n.title,
+                body: n.message,
+                data: { ...n.data, audience: n.recipientRole === 'provider' ? 'provider' : 'customer' },
+              })
+            )
+          ),
+        ]);
       }
     }
   } catch (e) {

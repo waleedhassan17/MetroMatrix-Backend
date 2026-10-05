@@ -2,20 +2,11 @@ const asyncHandler = require('express-async-handler');
 const { getLastLocation } = require('../../../sockets/lastLocationStore');
 const { toTrackingStatus } = require('../services/statusMap');
 const { estimatedTravelMinutes } = require('../services/matchingService');
-const { avatar, SUBTYPE_TO_CATEGORY, coords } = require('../services/serializers');
+const { avatar, SUBTYPE_TO_CATEGORY } = require('../services/serializers');
+const { haversineMeters, latLngOrNull } = require('../services/geo');
+const { notifyNearbyOnce, shouldNotifyNearby } = require('../services/nearbyService');
 
 const ok = (res, data, message) => res.json({ success: true, data, message });
-
-function haversineMeters(a, b) {
-  const R = 6371000;
-  const toRad = (d) => (d * Math.PI) / 180;
-  const dLat = toRad(b.latitude - a.latitude);
-  const dLng = toRad(b.longitude - a.longitude);
-  const s =
-    Math.sin(dLat / 2) ** 2 +
-    Math.cos(toRad(a.latitude)) * Math.cos(toRad(b.latitude)) * Math.sin(dLng / 2) ** 2;
-  return Math.round(2 * R * Math.asin(Math.sqrt(s)));
-}
 
 /**
  * GET /api/bookings/:bookingId/tracking — TrackingData cold-load fallback.
@@ -27,14 +18,16 @@ const getTrackingData = asyncHandler(async (req, res) => {
   const b = req.booking;
   const p = b.provider;
 
-  const userLocation = coords(b.address && b.address.coordinates);
+  // Only real points. The provider's position is the LIVE one or nothing:
+  // falling back to their stored service base would present an area they
+  // work from as "where they are now" — wrong, and a privacy leak.
+  const userLocation = latLngOrNull(b.address && b.address.coordinates);
   const last = getLastLocation(String(b._id));
-  const providerLocation = last
-    ? { latitude: last.lat, longitude: last.lng }
-    : coords(p.currentLocation);
+  const providerLocation = last ? { latitude: last.lat, longitude: last.lng } : null;
 
-  const distanceMeters = haversineMeters(providerLocation, userLocation);
-  const etaMin = estimatedTravelMinutes(distanceMeters);
+  const distanceMeters =
+    providerLocation && userLocation ? haversineMeters(providerLocation, userLocation) : null;
+  const etaMin = distanceMeters !== null ? estimatedTravelMinutes(distanceMeters) : null;
 
   ok(res, {
     provider: {
@@ -52,16 +45,19 @@ const getTrackingData = asyncHandler(async (req, res) => {
     },
     providerLocation,
     userLocation,
-    route: {
-      coordinates: [providerLocation, userLocation],
-      distance: `${(distanceMeters / 1000).toFixed(1)} km`,
-      distanceValue: distanceMeters,
-      duration: `${etaMin} mins`,
-      durationValue: etaMin * 60,
-    },
+    route:
+      distanceMeters !== null
+        ? {
+            coordinates: [providerLocation, userLocation],
+            distance: `${(distanceMeters / 1000).toFixed(1)} km`,
+            distanceValue: distanceMeters,
+            duration: `${etaMin} mins`,
+            durationValue: etaMin * 60,
+          }
+        : null,
     trackingStatus: {
-      status: toTrackingStatus(b.status, distanceMeters),
-      message: trackingMessage(b.status, distanceMeters),
+      status: toTrackingStatus(b.status, distanceMeters === null ? Infinity : distanceMeters),
+      message: trackingMessage(b.status, distanceMeters === null ? Infinity : distanceMeters),
       timestamp: new Date().toISOString(),
     },
     bookingId: String(b._id),
@@ -124,10 +120,20 @@ const updateProviderLocation = asyncHandler(async (req, res) => {
           console.error(`[tracking] location publish failed booking=${b._id}: ${e.message}`);
         }
       }
-      const dest = coords(b.address && b.address.coordinates);
-      const meters = haversineMeters({ latitude, longitude }, dest);
-      distance = `${(meters / 1000).toFixed(1)} km`;
-      duration = `${estimatedTravelMinutes(meters)} mins`;
+      // No distance to an address the customer never pinned — '—' is honest.
+      const dest = latLngOrNull(b.address && b.address.coordinates);
+      if (dest) {
+        const meters = haversineMeters({ latitude, longitude }, dest);
+        distance = `${(meters / 1000).toFixed(1)} km`;
+        duration = `${estimatedTravelMinutes(meters)} mins`;
+        // Same "about 5 minutes away" alert the realtime service raises —
+        // idempotent, so whichever path sees the position first sends it.
+        if (b.status === 'EN_ROUTE' && shouldNotifyNearby(meters)) {
+          await notifyNearbyOnce(b._id, { distanceMeters: meters, etaMinutes: estimatedTravelMinutes(meters) }).catch(
+            (e) => console.error(`[tracking] nearby alert failed booking=${b._id}: ${e.message}`)
+          );
+        }
+      }
     }
   }
 

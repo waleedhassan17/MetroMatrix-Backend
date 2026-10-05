@@ -32,6 +32,14 @@ const PUBLISH_TIMEOUT_MS = 2000;
 
 let warnedMissingConfig = false;
 
+/** Headers for the internal bridge; the request id lets one tap be traced through both services. */
+function bridgeHeaders() {
+  const headers = { 'Content-Type': 'application/json', 'x-internal-key': INTERNAL_API_KEY };
+  const requestId = require('../gateway/requestContext').currentRequestId();
+  if (requestId) headers['x-request-id'] = requestId;
+  return headers;
+}
+
 function configured() {
   if (REALTIME_URL && INTERNAL_API_KEY) return true;
   if (!warnedMissingConfig) {
@@ -64,10 +72,7 @@ async function emitToRoom(roomId, event, payload = {}) {
   try {
     const response = await fetch(`${REALTIME_URL.replace(/\/$/, '')}/api/internal/emit`, {
       method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'x-internal-key': INTERNAL_API_KEY,
-      },
+      headers: bridgeHeaders(),
       body: JSON.stringify({ roomId: String(roomId), event, payload }),
       signal: controller.signal,
     });
@@ -114,10 +119,7 @@ async function emitToUser(userId, event, payload = {}) {
   try {
     const response = await fetch(`${REALTIME_URL.replace(/\/$/, '')}/api/internal/emit`, {
       method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'x-internal-key': INTERNAL_API_KEY,
-      },
+      headers: bridgeHeaders(),
       body: JSON.stringify({ userId: String(userId), event, payload }),
       signal: controller.signal,
     });
@@ -175,10 +177,7 @@ async function pushToUser(userId, role, { type, title, body, data } = {}) {
   try {
     const response = await fetch(`${REALTIME_URL.replace(/\/$/, '')}/api/internal/push`, {
       method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'x-internal-key': INTERNAL_API_KEY,
-      },
+      headers: bridgeHeaders(),
       body: JSON.stringify({ userId: String(userId), role, type, title, body, data }),
       signal: controller.signal,
     });

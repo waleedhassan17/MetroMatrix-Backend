@@ -14,7 +14,7 @@ const healthRecordSchema = new mongoose.Schema(
     },
     category: {
       type: String,
-      enum: ['prescriptions', 'lab_reports', 'imaging', 'vaccination'],
+      enum: ['prescriptions', 'medications', 'lab_reports', 'imaging', 'vaccination'],
       required: [true, 'Category is required'],
     },
     date: {

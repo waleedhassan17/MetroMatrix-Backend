@@ -8,7 +8,7 @@
 const express = require('express');
 const router = express.Router();
 
-const { protect, userOnly, providerOnly } = require('../../../middleware/authMiddleware');
+const { protect, userOnly, providerOnly, optionalAuth } = require('../../../middleware/authMiddleware');
 const { loadBookingWithAccess } = require('../middleware/bookingAccess');
 
 const bookingC = require('../controllers/bookingController');
@@ -23,9 +23,10 @@ const hsNotifC = require('../controllers/hsNotificationController');
 const trackingC = require('../controllers/trackingController');
 const adminC = require('../controllers/adminController');
 const favoritesC = require('../controllers/favoritesController');
+const identityC = require('../controllers/identityController');
 
 // ---------- Provider discovery (public) ----------
-router.get('/providers', searchC.searchProviders); // falls through if not HS
+router.get('/providers', optionalAuth, searchC.searchProviders); // falls through if not HS; a signed-in customer's searches feed personalisation
 router.get('/providers/:providerId/reviews', searchC.getProviderReviews);
 router.get('/providers/:providerId', searchC.getProviderDetails); // falls through if not HS
 
@@ -43,6 +44,8 @@ router.patch('/bookings/:id/status', protect, loadBookingWithAccess, bookingC.pa
 router.post('/bookings/:id/complete', protect, loadBookingWithAccess, bookingC.completeBookingByCustomer);
 router.post('/bookings/:id/cancel', protect, loadBookingWithAccess, bookingC.cancelBooking);
 router.post('/bookings/:id/dispute', protect, loadBookingWithAccess, adminC.raiseDispute);
+// Doorstep identity check: the customer scans / taps / types the provider's proof.
+router.post('/bookings/:id/verify-identity', protect, userOnly, loadBookingWithAccess, identityC.verifyIdentity);
 router.get('/bookings/:id', protect, loadBookingWithAccess, bookingC.getBooking);
 
 // ---------- Customer: user aggregate ----------
@@ -105,6 +108,7 @@ router.post('/provider/jobs/:jobId/accept', protect, providerOnly, loadBookingWi
 router.post('/provider/jobs/:jobId/reject', protect, providerOnly, loadBookingWithAccess, jobC.rejectJob);
 router.post('/provider/jobs/:jobId/start', protect, providerOnly, loadBookingWithAccess, jobC.startJob);
 router.post('/provider/jobs/:jobId/arrived', protect, providerOnly, loadBookingWithAccess, jobC.arriveJob);
+router.post('/provider/jobs/:jobId/identity-token', protect, providerOnly, loadBookingWithAccess, identityC.issueIdentityToken);
 router.post('/provider/jobs/:jobId/start-work', protect, providerOnly, loadBookingWithAccess, jobC.startWork);
 router.post('/provider/jobs/:jobId/complete-work', protect, providerOnly, loadBookingWithAccess, jobC.completeWork);
 router.post('/provider/jobs/:jobId/complete', protect, providerOnly, loadBookingWithAccess, jobC.completeJob);
@@ -120,6 +124,8 @@ router.get('/provider/profile', protect, providerOnly, jobC.getProviderProfile);
 router.patch('/provider/profile', protect, providerOnly, jobC.updateProviderProfile);
 router.patch('/provider/status', protect, providerOnly, jobC.updateOnlineStatus);
 router.patch('/provider/online-status', protect, providerOnly, jobC.updateOnlineStatus);
+router.put('/provider/location/base', protect, providerOnly, jobC.setProviderBase);
+router.post('/provider/heartbeat', protect, providerOnly, jobC.heartbeat);
 router.get('/provider/earnings', protect, providerOnly, earningsC.getEarnings);
 router.post('/provider/earnings/payout', protect, providerOnly, earningsC.requestPayout);
 router.post('/provider/payout-request', protect, providerOnly, earningsC.requestPayout);

@@ -116,7 +116,7 @@ function assertSameActor(booking, nextStatus, actor) {
  *   customer changing their mind.
  */
 async function transition(booking, nextStatus, actor, opts = {}) {
-  const { note, reason, code, save = true } = opts;
+  const { note, reason, code, save = true, suppressPush = false } = opts;
   const current = booking.status;
 
   if (!ALLOWED_TRANSITIONS[current]) {
@@ -241,7 +241,7 @@ async function transition(booking, nextStatus, actor, opts = {}) {
   }
 
   await saveIfStillIn(booking, current);
-  await announceTransition(booking, nextStatus, actor, { reason, note, code });
+  await announceTransition(booking, nextStatus, actor, { reason, note, code, suppressPush });
   return booking;
 }
 
@@ -266,24 +266,25 @@ function whenLabel(booking) {
 }
 
 /**
- * The push for a transition, addressed to whoever did NOT cause it — or null
- * when a push would be noise (the two of them are standing together, or the
- * platform tidied up a request nobody was waiting on).
+ * The pushes for a transition, addressed to whoever did NOT cause it.
  *
  * The in-app notification (notificationService) and the room event reach a
  * person who has the app open. This is for everyone else: a customer who
- * booked and put the phone away learns their provider accepted, set off and
- * arrived without having to keep checking.
+ * booked and put the phone away learns their provider accepted, set off,
+ * arrived and started without having to keep checking — and a provider learns
+ * when a job they were holding disappeared, whoever removed it.
+ *
+ * Returns a list: support's cancellations reach both parties.
  */
 function pushFor(booking, nextStatus, actor, ctx) {
   const provider = ctx.providerName || 'Your provider';
   const customer = ctx.customerName || 'The customer';
   const service = (ctx.service || 'service').toLowerCase();
   const when = whenLabel(booking);
-  const toCustomer = (title, body) => ({
+  const toCustomer = (title, body, type = 'booking_update') => ({
     userId: idOf(booking.customer),
     role: 'user',
-    type: 'booking_update',
+    type,
     title,
     body,
   });
@@ -297,26 +298,53 @@ function pushFor(booking, nextStatus, actor, ctx) {
 
   switch (nextStatus) {
     case STATUS.ACCEPTED:
-      return toCustomer(
-        'Booking accepted',
-        `${provider} accepted your ${service} booking${when ? ` for ${when}` : ''}.`
-      );
+      return [
+        toCustomer(
+          'Booking accepted',
+          `${provider} accepted your ${service} booking${when ? ` for ${when}` : ''}.`
+        ),
+      ];
     case STATUS.REJECTED:
-      return toCustomer('Booking declined', `${provider} can't take this job. Pick another provider.`);
+      return [toCustomer('Booking declined', `${provider} can't take this job. Pick another provider.`)];
     case STATUS.EN_ROUTE:
-      return toCustomer('On the way', `${provider} is on the way to you.`);
+      return [toCustomer('On the way', `${provider} is on the way to you.`)];
     case STATUS.ARRIVED:
-      return toCustomer('Your provider has arrived', `${provider} is at your address.`);
+      return [toCustomer('Your provider has arrived', `${provider} is at your address.`)];
+    case STATUS.IN_PROGRESS:
+      return [toCustomer('Work started', `${provider} has started on your ${service} job.`)];
     case STATUS.COMPLETED:
-      return actor.role === 'customer'
-        ? toProvider('booking_update', 'Job confirmed', `${customer} confirmed the ${service} job is done.`)
-        : toCustomer('Job completed', `${provider} finished the job. Review the bill and pay when you're ready.`);
-    case STATUS.CANCELLED:
-      return actor.role === 'customer'
-        ? toProvider('booking_cancelled', 'Booking cancelled', `${customer} cancelled the ${service} booking${when ? ` for ${when}` : ''}.`)
-        : null;
+      return [
+        actor.role === 'customer'
+          ? toProvider('booking_update', 'Job confirmed', `${customer} confirmed the ${service} job is done.`)
+          : toCustomer('Job completed', `${provider} finished the job. Review the bill and pay when you're ready.`),
+      ];
+    case STATUS.CANCELLED: {
+      const slot = when ? ` for ${when}` : '';
+      if (actor.role === 'customer') {
+        return [toProvider('booking_cancelled', 'Booking cancelled', `${customer} cancelled the ${service} booking${slot}.`)];
+      }
+      if (actor.role === 'provider') {
+        return [toCustomer('Booking cancelled', `${provider} cancelled your ${service} booking${slot}.`, 'booking_cancelled')];
+      }
+      if (actor.role === 'admin') {
+        const body = `MetroMatrix support cancelled the ${service} booking${slot}.`;
+        return [
+          toCustomer('Booking cancelled', body, 'booking_cancelled'),
+          toProvider('booking_cancelled', 'Booking cancelled', body),
+        ];
+      }
+      // The platform: a rival provider accepted the same job first. The
+      // customer chose that provider; only the losing one needs telling.
+      return [
+        toProvider(
+          'booking_cancelled',
+          'Request no longer available',
+          `${customer} went with another provider for this ${service} job.`
+        ),
+      ];
+    }
     default:
-      return null;
+      return [];
   }
 }
 
@@ -327,7 +355,9 @@ function pushFor(booking, nextStatus, actor, ctx) {
  * run side by side, so the slowest one bounds the wait instead of the sum of
  * them (each publish can take up to 2s).
  */
-async function announceTransition(booking, nextStatus, actor, { reason, note, code } = {}) {
+// `suppressPush`: the person a push would tell already knows (e.g. the
+// customer who just verified the provider at their door is told "arrived").
+async function announceTransition(booking, nextStatus, actor, { reason, note, code, suppressPush = false } = {}) {
   const ctx = {
     customerName: booking.customer?.fullName,
     providerName: booking.provider?.fullName,
@@ -372,13 +402,13 @@ async function announceTransition(booking, nextStatus, actor, { reason, note, co
           code,
         });
       } else {
-        await notify.notifyBookingStatus(booking, nextStatus, ctx);
+        await notify.notifyBookingStatus(booking, nextStatus, ctx, actor);
       }
     })()
   );
 
-  const push = pushFor(booking, nextStatus, actor, ctx);
-  if (push && isRealId(push.userId)) {
+  for (const push of suppressPush ? [] : pushFor(booking, nextStatus, actor, ctx)) {
+    if (!isRealId(push.userId)) continue;
     tasks.push(
       (async () => {
         const { pushToUser } = require('../../../sockets');
@@ -473,6 +503,7 @@ async function releaseCompetingRequests(acceptedBooking, opts = {}) {
 module.exports = {
   transition,
   announceTransition,
+  pushFor,
   saveIfStillIn,
   releaseCompetingRequests,
   StatusError,
