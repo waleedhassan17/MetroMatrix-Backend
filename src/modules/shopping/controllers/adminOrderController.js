@@ -68,7 +68,11 @@ const getOrderDetail = asyncHandler(async (req, res) => {
 
   const json = order.toJSON();
   json.statusHistory = order.statusHistory;
-  if (order.brandId && typeof order.brandId === 'object') json.brandName = order.brandId.name;
+  if (order.brandId && typeof order.brandId === 'object') {
+    json.brandName = order.brandId.name;
+    // The vendor behind the brand, so the console can open them (null: the platform runs the brand).
+    json.brandOwnerId = order.brandId.owner ? String(order.brandId.owner) : null;
+  }
   if (order.userId && typeof order.userId === 'object') {
     json.customerName = order.userId.name || order.userId.fullName || '';
     json.customerEmail = order.userId.email;
