@@ -196,3 +196,49 @@ describe('audit-prod-hygiene', () => {
     expect((await Admin.findOne({ email: 'boss@gmail.com' })).isActive).toBe(true);
   }, 60000);
 });
+
+describe('06-remove-commission', () => {
+  const wallet = new mongoose.Types.ObjectId();
+  beforeEach(async () => {
+    await db().collection('adminsettings').insertOne({
+      shopping: { commissionPercent: 10, shippingFeePerBrand: 150 },
+      healthcare: { commissionPercent: 10, cancellationWindowHours: 2 },
+      homeservice: { commissionPercent: 10, minPayoutAmount: 500 },
+    });
+    await db().collection('wallettransactions').insertMany([
+      { wallet, type: 'debit', amount: 120, source: 'commission', status: 'pending' },
+      { wallet, type: 'debit', amount: 80, source: 'commission', status: 'completed' },
+      { wallet, type: 'debit', amount: 50, source: 'payout', status: 'pending' },
+    ]);
+  });
+
+  it('--dry changes nothing', async () => {
+    const res = run('06-remove-commission.js', confirm(), '--dry');
+    expect(res.code).toBe(0);
+    expect(res.out).toMatch(/waived: 1 \(total 120\)/);
+    expect((await db().collection('adminsettings').findOne()).shopping.commissionPercent).toBe(10);
+    expect(await db().collection('wallettransactions').countDocuments({ status: 'pending' })).toBe(2);
+  });
+
+  it('unsets the settings, waives only pending commission debits with an audit row, and is idempotent', async () => {
+    expect(run('06-remove-commission.js', confirm()).code).toBe(0);
+    const s = await db().collection('adminsettings').findOne();
+    expect(s.shopping).toEqual({ shippingFeePerBrand: 150 });
+    expect(s.healthcare).toEqual({ cancellationWindowHours: 2 });
+    expect(s.homeservice).toEqual({ minPayoutAmount: 500 });
+
+    const txs = db().collection('wallettransactions');
+    const waived = await txs.findOne({ amount: 120 });
+    expect(waived.status).toBe('failed');
+    expect(waived.metadata.waived).toBe(true);
+    expect((await txs.findOne({ amount: 80 })).status).toBe('completed'); // already taken: history
+    expect((await txs.findOne({ amount: 50 })).status).toBe('pending'); // not a commission
+
+    const audits = await db().collection('adminauditlogs').find({ action: 'wallet.commission.waive' }).toArray();
+    expect(audits).toHaveLength(1);
+    expect(String(audits[0].targetId)).toBe(String(waived._id));
+
+    expect(run('06-remove-commission.js', confirm()).code).toBe(0);
+    expect(await db().collection('adminauditlogs').countDocuments({ action: 'wallet.commission.waive' })).toBe(1);
+  });
+});

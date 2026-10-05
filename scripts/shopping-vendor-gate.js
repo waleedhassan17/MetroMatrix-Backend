@@ -187,8 +187,8 @@ const short = (d) => JSON.stringify(d).slice(0, 110);
   const vendorAfter = await bal(cougar.owner, 'Provider');
   const net = delivered.vendorPayout?.amount ?? 0;
   const comm = delivered.vendorPayout?.commission ?? 0;
-  step('3.16', 'earnings credited on delivery, minus commission',
-    vendorAfter - vendorBefore === net && net > 0,
+  step('3.16', 'earnings credited on delivery, in full (no commission)',
+    vendorAfter - vendorBefore === net && net === delivered.total && comm === 0,
     `${vendorBefore} → ${vendorAfter} (+${vendorAfter - vendorBefore}, net ${net}, commission ${comm})`);
   const w = await Wallet.findOne({ owner: cougar.owner, ownerType: 'Provider' });
   step('3.17', 'earnings are in the shared polymorphic wallet (ownerType Provider), not a shopping-only balance',
@@ -197,7 +197,7 @@ const short = (d) => JSON.stringify(d).slice(0, 110);
   step('3.18', 'the same balance is visible on the shared /wallet/me endpoint',
     apiWallet.data?.wallet?.balance === vendorAfter, `api ${apiWallet.data?.wallet?.balance} db ${vendorAfter}`);
 
-  /* ── 7. return loop: stock restored AND customer refunded, commission reversed ── */
+  /* ── 7. return loop: stock restored AND customer refunded, vendor earning reversed ── */
   console.log('\n  ── return loop (money + stock) ──');
   const item = delivered.items[0];
   const stockBefore = (await Product.findById(item.productId)).variants.id(item.variantId).stockQuantity;
@@ -222,7 +222,7 @@ const short = (d) => JSON.stringify(d).slice(0, 110);
     custAfter - custBefore === delivered.total, `${custBefore} → ${custAfter} (+${custAfter - custBefore}, total ${delivered.total})`);
   step('3.23', "refund reverses the vendor's earning",
     vBeforeRet - vAfterRet === net, `${vBeforeRet} → ${vAfterRet} (−${vBeforeRet - vAfterRet}, expected −${net})`);
-  step('3.24', 'refund reverses the commission from the Platform ledger',
+  step('3.24', 'the refund leaves the Platform wallet alone (no commission to reverse)',
     platBefore - platAfter === comm, `${platBefore} → ${platAfter} (expected −${comm})`);
 
   /* ── 8. analytics hand-verified against the DB ── */

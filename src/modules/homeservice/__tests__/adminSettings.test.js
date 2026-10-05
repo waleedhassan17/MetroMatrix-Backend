@@ -17,14 +17,26 @@ beforeEach(async () => {
 const patch = (body) => api().patch('/api/admin/homeservice/settings').set('Authorization', s.bearer()).send(body);
 
 it('stores valid values', async () => {
-  const res = await patch({ commissionPercent: 12, matchingWeights: { distance: 0.5, rating: 0.3, availability: 0.2 }, reason: 'Q4 pricing' });
+  const res = await patch({ minPayoutAmount: 800, matchingWeights: { distance: 0.5, rating: 0.3, availability: 0.2 }, reason: 'Q4 pricing' });
   expect(res.status).toBe(200);
-  expect(res.body.data).toMatchObject({ commissionPercent: 12, matchingWeights: { distance: 0.5, rating: 0.3, availability: 0.2 } });
+  expect(res.body.data).toMatchObject({ minPayoutAmount: 800, matchingWeights: { distance: 0.5, rating: 0.3, availability: 0.2 } });
+  expect(res.body.data.commissionPercent).toBeUndefined();
+});
+
+it('has no commission: a stored legacy value is never returned, and setting one is refused', async () => {
+  const AdminSettings = require('../../../models/AdminSettings');
+  await AdminSettings.collection.updateOne({}, { $set: { 'homeservice.commissionPercent': 10 } }, { upsert: true });
+  const read = await api().get('/api/admin/homeservice/settings').set('Authorization', s.bearer());
+  expect(read.body.data.commissionPercent).toBeUndefined();
+
+  const res = await patch({ commissionPercent: 5 });
+  expect(res.status).toBe(400);
+  expect(res.body.error.details.fields.map((f) => f.field)).toContain('commissionPercent');
 });
 
 it.each([
-  [{ commissionPercent: -5 }, 'commissionPercent'],
-  [{ commissionPercent: 'abc' }, 'commissionPercent'],
+  [{ minPayoutAmount: -5 }, 'minPayoutAmount'],
+  [{ minPayoutAmount: 'abc' }, 'minPayoutAmount'],
   [{ minPayoutAmount: 5_000_000 }, 'minPayoutAmount'],
   [{ matchingWeights: { distance: 0.9, rating: 0.9, availability: 0.9 } }, 'matchingWeights'],
   [{ matchingWeights: { distance: 0.5 } }, 'matchingWeights'],
@@ -35,5 +47,5 @@ it.each([
   expect(res.body.error.code).toBe('VALIDATION_FAILED');
   expect(res.body.error.details.fields.map((f) => f.field)).toContain(field);
   const after = await api().get('/api/admin/homeservice/settings').set('Authorization', s.bearer());
-  expect(after.body.data.commissionPercent).toBe(10);
+  expect(after.body.data.minPayoutAmount).toBe(500);
 });

@@ -116,7 +116,7 @@ beforeEach(() => {
     b.payment.status = 'paid';
     b.payment.method = 'wallet';
     b.payment.paidAt = new Date();
-    return { transaction: { _id: 'tx-1' }, commission: 200 };
+    return { transaction: { _id: 'tx-1' } };
   });
 });
 

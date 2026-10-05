@@ -166,7 +166,7 @@ const bal = async (owner, type) => {
     !!payTxn && payTxn.amount === group.total,
     payTxn ? `amount ${payTxn.amount}, relatedTo ${payTxn.relatedTo.kind}:${String(payTxn.relatedTo.id).slice(-6)}` : 'not found');
 
-  // Vendor credit + commission happen at DELIVERY by design, so drive both
+  // Vendor credit happens at DELIVERY by design, so drive both
   // child orders there and then check the money landed correctly.
   const vLogin = async (email) => (await api.post('/auth/provider/login', { email, password: demoPassword() })).data?.accessToken;
   const tokC = await vLogin('vendor.cougar@metromatrix.pk');
@@ -196,14 +196,14 @@ const bal = async (owner, type) => {
   console.log(`  Outfitters:${vendorBefore.outf} → ${vendorAfter.outf}  (+${vendorAfter.outf - vendorBefore.outf}, net ${expectNet.outf}, commission ${expectComm.outf})`);
   console.log(`  Platform:  ${platformBefore} → ${platformAfter}  (+${platformAfter - platformBefore})\n`);
 
-  step('8.11', 'each vendor credited its share minus commission',
+  step('8.11', 'each vendor credited its full share (no commission)',
     vendorAfter.cougar - vendorBefore.cougar === expectNet.cougar &&
     vendorAfter.outf - vendorBefore.outf === expectNet.outf,
     `cougar +${vendorAfter.cougar - vendorBefore.cougar}/${expectNet.cougar}, outfitters +${vendorAfter.outf - vendorBefore.outf}/${expectNet.outf}`);
-  step('8.12', 'commission landed in the Platform ledger',
-    platformAfter - platformBefore === totalCommission && totalCommission > 0,
-    `+${platformAfter - platformBefore} (expected ${totalCommission})`);
-  step('8.13', 'CONSERVATION: customer debit == vendor credits + commission',
+  step('8.12', 'nothing reaches the Platform wallet (no commission)',
+    platformAfter - platformBefore === 0 && totalCommission === 0,
+    `+${platformAfter - platformBefore} (expected 0)`);
+  step('8.13', 'CONSERVATION: customer debit == vendor credits',
     (balBefore - balAfter) === (expectNet.cougar + expectNet.outf + totalCommission),
     `${balBefore - balAfter} == ${expectNet.cougar} + ${expectNet.outf} + ${totalCommission}`);
 

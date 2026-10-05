@@ -41,12 +41,11 @@ function normalizePeriod(raw) {
  * period chips changed nothing. It now picks the headline figure
  * (`periodEarnings`) and the chart (`series`): the last 7 days by day, or the
  * last 6 / 12 months by month. Every calendar boundary is Pakistan time.
- * All figures are what the provider keeps: paid jobs, net of commission.
+ * All figures are what the provider keeps: paid jobs (there is no commission).
  */
 const getEarnings = asyncHandler(async (req, res) => {
   const providerId = new mongoose.Types.ObjectId(String(req.user._id));
   const settings = await getHomeserviceSettings();
-  const commissionFactor = 1 - settings.commissionPercent / 100;
   const period = normalizePeriod(req.query.period);
 
   const now = new Date();
@@ -145,7 +144,7 @@ const getEarnings = asyncHandler(async (req, res) => {
   ]);
 
   const t = totals[0] || { gross: 0, jobs: 0, grossThisMonth: 0, grossPeriod: 0, jobsPeriod: 0 };
-  const net = (v) => Math.round(v * commissionFactor);
+  const net = (v) => Math.round(v);
 
   const [payouts, pendingPayoutAgg, wallet, pendingComm, outcomes, onTime, repeat] = await Promise.all([
     PayoutRequest.find({ provider: providerId }).sort({ createdAt: -1 }).limit(5),
@@ -249,15 +248,14 @@ const getEarnings = asyncHandler(async (req, res) => {
     walletBalance: wallet.balance,
     pendingCommission: pendingComm,
     minPayoutAmount: settings.minPayoutAmount,
-    commissionPercent: settings.commissionPercent,
   }, 'Earnings data fetched');
 });
 
 /**
  * POST /api/provider/earnings/payout (also /api/provider/payout-request)
  * — { amount, method, accountDetails? }. Rejected when the amount exceeds the
- * available balance (wallet minus unsettled cash commissions minus payouts
- * already pending).
+ * available balance (wallet minus payouts already pending, minus any legacy
+ * cash commission migration 06 has not yet waived).
  */
 const requestPayout = asyncHandler(async (req, res) => {
   const { amount, method, accountDetails } = req.body;

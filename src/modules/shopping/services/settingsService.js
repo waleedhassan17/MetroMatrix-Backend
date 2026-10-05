@@ -40,8 +40,9 @@ const DEFAULT_DELIVERY_TIERS = Object.freeze([
   },
 ]);
 
+// No commission: vendors are paid the full order value (removed Oct 2026; a
+// stored value is ignored and removed by migration 06).
 const SHOPPING_SETTINGS_DEFAULTS = Object.freeze({
-  commissionPercent: 10,
   shippingFeePerBrand: 150,
   freeShippingThreshold: 3000,
   lowStockThreshold: 5,
@@ -101,15 +102,17 @@ const resolveDeliveryTier = (settings, tierId) => {
   return tier;
 };
 
+const dropLegacy = ({ commissionPercent, ...rest }) => rest; // eslint-disable-line no-unused-vars
+
 const getShoppingSettings = async () => {
   const settings = await AdminSettings.getSettings();
-  const stored = settings.shopping ? settings.shopping.toObject() : {};
+  const stored = dropLegacy(settings.shopping ? settings.shopping.toObject() : {});
   return withTierFallback({ ...SHOPPING_SETTINGS_DEFAULTS, ...stored });
 };
 
 const updateShoppingSettings = async (patch, adminId) => {
   const settings = await AdminSettings.getSettings();
-  const current = settings.shopping ? settings.shopping.toObject() : {};
+  const current = dropLegacy(settings.shopping ? settings.shopping.toObject() : {});
   const allowed = {};
   Object.keys(SHOPPING_SETTINGS_DEFAULTS).forEach((key) => {
     if (patch[key] === undefined) return;
@@ -125,7 +128,7 @@ const updateShoppingSettings = async (patch, adminId) => {
   settings.shopping = { ...current, ...allowed };
   settings.lastUpdatedBy = adminId;
   await settings.save();
-  return withTierFallback({ ...SHOPPING_SETTINGS_DEFAULTS, ...settings.shopping.toObject() });
+  return withTierFallback({ ...SHOPPING_SETTINGS_DEFAULTS, ...dropLegacy(settings.shopping.toObject()) });
 };
 
 module.exports = {

@@ -403,9 +403,8 @@ async function main() {
     created += 1;
 
     // Debit customer / credit provider wallet for paid bookings, matching
-    // the real payment flow's commission math (10% platform default).
+    // the real payment flow (the provider is paid in full; no commission).
     if (paid) {
-      const commission = Math.round(price * 0.1);
       const custWallet = await WalletService.getOrCreateWallet(customer._id, 'User');
       const provWallet = await WalletService.getOrCreateWallet(provider._id, 'Provider');
       if (booking.payment.method === 'wallet' && custWallet.balance >= price) {
@@ -418,10 +417,10 @@ async function main() {
           status: 'completed',
         });
       }
-      await provWallet.credit(price - commission);
+      await provWallet.credit(price);
       await WalletService.recordTransaction(provWallet._id, {
         type: 'credit',
-        amount: price - commission,
+        amount: price,
         description: `Earnings — booking ${booking._id}`,
         source: 'service_payment',
         status: 'completed',

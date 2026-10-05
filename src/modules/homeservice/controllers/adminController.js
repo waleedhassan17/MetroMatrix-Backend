@@ -538,7 +538,6 @@ const analytics = asyncHandler(async (req, res) => {
   const from = req.query.from
     ? new Date(req.query.from)
     : new Date(to.getTime() - 30 * 86400000);
-  const settings = await getHomeserviceSettings();
   const range = { createdAt: { $gte: from, $lte: to } };
   const grossExpr = { $ifNull: ['$pricing.finalPrice', '$pricing.estimatedPrice'] };
 
@@ -608,7 +607,6 @@ const analytics = asyncHandler(async (req, res) => {
     byCategory: byCategory.map((x) => ({ category: x._id, count: x.count, gross: x.gross })),
     byStatus: byStatus.map((x) => ({ status: x._id, count: x.count })),
     revenue,
-    commission: Math.round(revenue * (settings.commissionPercent / 100)),
     // null, not 0, when there is nothing to measure: "0 min" and "0 %" read as facts.
     averageCompletionMinutes: completionAgg[0] ? Math.round(completionAgg[0].avgMinutes) : null,
     cancellationRate: totalInRange ? Math.round((cancelled / totalInRange) * 100) : null,
@@ -629,11 +627,11 @@ const getSettings = asyncHandler(async (req, res) => {
   ok(res, await getHomeserviceSettings(), 'Settings fetched');
 });
 
-// Limits for each editable value. These drive live money (commission, the
-// payout floor) and matching, so nothing outside them is stored — before this
-// a commission of -50 or "abc" was saved as given.
+// Limits for each editable value. These drive live money (the payout floor)
+// and matching, so nothing outside them is stored. There is no commission
+// setting: the platform takes no share, and a client still sending one gets a
+// validation error rather than a silent ignore.
 const HS_SETTING_LIMITS = {
-  commissionPercent: { min: 0, max: 100, label: 'Commission' },
   defaultSearchRadiusKm: { min: 1, max: 100, label: 'Search radius' },
   minPayoutAmount: { min: 0, max: 1000000, label: 'Minimum payout' },
   avgUrbanSpeedKmh: { min: 5, max: 120, label: 'Average speed' },

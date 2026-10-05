@@ -9,7 +9,6 @@ const { expireStale } = require('../services/expiryService');
 const { billOf, parseProviderAmount, assertPriceEditable, AmountError } = require('../services/money');
 const { pktDayBounds } = require('../services/time');
 const { outcomeStats } = require('../services/providerStats');
-const { getHomeserviceSettings } = require('../services/settingsService');
 const { isRealPoint } = require('../services/geo');
 const { serviceBaseOf, setServiceBase } = require('../services/serviceBase');
 const { touch, WRITE_EVERY_SEC } = require('../services/presenceService');
@@ -355,10 +354,7 @@ const getNavigationData = asyncHandler(async (req, res) => {
 const getDashboard = asyncHandler(async (req, res) => {
   await expireStale({ provider: req.user._id });
 
-  const [provider, settings] = await Promise.all([
-    Provider.findById(req.user._id),
-    getHomeserviceSettings(),
-  ]);
+  const provider = await Provider.findById(req.user._id);
   const all = await Booking.find({ provider: provider._id })
     .populate('customer', 'fullName phoneNumber profilePhoto')
     .sort({ scheduledFor: 1 });
@@ -368,7 +364,6 @@ const getDashboard = asyncHandler(async (req, res) => {
   const { start: startOfDay, end: endOfDay } = pktDayBounds(now);
   const weekAgo = new Date(now.getTime() - 7 * 86400000);
   const twoWeeksAgo = new Date(now.getTime() - 14 * 86400000);
-  const keep = 1 - settings.commissionPercent / 100;
 
   const pending = all.filter((b) => b.status === STATUS.PENDING);
   const today = all.filter(
@@ -385,13 +380,13 @@ const getDashboard = asyncHandler(async (req, res) => {
   const endedAt = (b) => (b.work && b.work.endedAt) || b.updatedAt;
   const weekCompleted = all.filter((b) => b.status === STATUS.COMPLETED && endedAt(b) >= weekAgo);
 
-  // What the provider actually took home: paid jobs, net of commission.
+  // What the provider took home: paid jobs (no commission is taken).
   const paidBetween = (from, to) =>
     all
       .filter((b) => b.payment.status === 'paid' && b.payment.paidAt >= from && b.payment.paidAt < to)
       .reduce((sum, b) => sum + billOf(b), 0);
-  const weekEarnings = Math.round(paidBetween(weekAgo, now) * keep);
-  const lastWeekEarnings = Math.round(paidBetween(twoWeeksAgo, weekAgo) * keep);
+  const weekEarnings = Math.round(paidBetween(weekAgo, now));
+  const lastWeekEarnings = Math.round(paidBetween(twoWeeksAgo, weekAgo));
   const earningsTrend =
     weekEarnings > lastWeekEarnings ? 'up' : weekEarnings < lastWeekEarnings ? 'down' : 'neutral';
 

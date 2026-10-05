@@ -139,7 +139,6 @@ const platformAnalytics = asyncHandler(async (req, res) => {
   const from = req.query.from
     ? new Date(req.query.from)
     : new Date(to.getTime() - 30 * 86400000);
-  const settings = await getShoppingSettings();
   const range = { createdAt: { $gte: from, $lte: to } };
 
   const orders = await Order.find(range).populate('brandId', 'name');
@@ -147,7 +146,6 @@ const platformAnalytics = asyncHandler(async (req, res) => {
   const returns = orders.filter((o) => ['returned', 'refunded'].includes(o.orderStatus));
 
   const gmv = delivered.reduce((s, o) => s + o.total, 0);
-  const commission = Math.round((gmv * settings.commissionPercent) / 100);
 
   // GMV time series by day
   const buckets = new Map();
@@ -208,7 +206,6 @@ const platformAnalytics = asyncHandler(async (req, res) => {
     gmv,
     gmvSeries,
     revenueByBrand,
-    commission,
     ordersByStatus,
     totalOrders: orders.length,
     newCustomers,

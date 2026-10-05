@@ -7,8 +7,8 @@
  *
  *   1 CONCURRENT OVERSELL      two customers, last unit, simultaneously
  *   2 MULTI-BRAND SPLIT        children reconcile to the group to the rupee
- *   3 WALLET CONSERVATION      debit == vendor credits + platform commission
- *   4 REFUND CORRECTNESS       customer, vendor, commission and stock all reverse
+ *   3 WALLET CONSERVATION      debit == vendor credits (+ Platform, always 0: no commission)
+ *   4 REFUND CORRECTNESS       customer, vendor and stock all reverse
  *   5 DOUBLE-PAY / DOUBLE-REFUND  both rejected with NO ledger change
  *   6 RECONCILIATION           balances == net of completed ledger rows
  *   7 STOCK CONSERVATION       seeded - sold == current, for every variant
@@ -170,7 +170,7 @@ const fund = async (userId, minimum) => {
   const custAfterPay = await bal(u1._id, 'User');
   const debited = custBefore - custAfterPay;
 
-  // Deliver both so the vendor/commission legs settle.
+  // Deliver both so the vendor legs settle.
   for (const o of children) {
     const t = String(o.brandId) === String(cougar._id) ? tvC : tvO;
     for (const s of ['confirmed', 'processing', 'shipped', 'out_for_delivery', 'delivered']) {
@@ -182,8 +182,8 @@ const fund = async (userId, minimum) => {
   const platAfter = (await WalletService.getPlatformWallet()).balance;
   const creditedVendors = (vcAfter - vcBefore) + (voAfter - voBefore);
   const creditedPlatform = platAfter - platBefore;
-  step('3.1', 'WALLET CONSERVATION: customer debit == vendor credits + platform commission',
-    debited === creditedVendors + creditedPlatform,
+  step('3.1', 'WALLET CONSERVATION: customer debit == vendor credits, nothing to the Platform',
+    debited === creditedVendors + creditedPlatform && creditedPlatform === 0,
     `${debited} == ${creditedVendors} + ${creditedPlatform}`);
 
   /* ── 4. REFUND CORRECTNESS ── */
@@ -211,7 +211,7 @@ const fund = async (userId, minimum) => {
     custPost - custPre === refundOrder.total, `+${custPost - custPre} (total ${refundOrder.total})`);
   step('4.2', 'refund reverses the vendor credit exactly',
     vPre - vPost === net, `−${vPre - vPost} (expected −${net})`);
-  step('4.3', 'refund reverses the commission exactly',
+  step('4.3', 'refund leaves the Platform wallet alone (no commission)',
     pPre - pPost === comm, `−${pPre - pPost} (expected −${comm})`);
   step('4.4', 'refund restores stock by the exact quantity',
     stockPost - stockPre === item.quantity, `${stockPre} → ${stockPost} (qty ${item.quantity})`);
@@ -253,7 +253,7 @@ const fund = async (userId, minimum) => {
   const held = wallets.reduce((s, w) => s + w.balance, 0);
 
   // THE statement about the code: everything this sweep moved — an oversell
-  // race, a multi-brand order, vendor payouts, commission, a full refund —
+  // race, a multi-brand order, vendor payouts, a full refund —
   // is fully ledgered.
   step('6.1', 'this sweep introduced ZERO new drift (every rupee it moved is ledgered)',
     driftAfter.total === driftBefore.total,

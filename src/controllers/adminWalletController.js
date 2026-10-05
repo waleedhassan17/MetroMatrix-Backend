@@ -56,7 +56,7 @@ const listWallets = asyncHandler(async (req, res) => {
   // the sentinel Platform id with no backing document).
   const items = await Promise.all(
     wallets.map(async (w) => {
-      let ownerName = 'Platform (commission ledger)';
+      let ownerName = 'Platform';
       let ownerEmail = null;
       if (w.ownerType === 'User') {
         const u = await User.findById(w.owner).select('fullName email');
@@ -262,7 +262,7 @@ const rejectAdjustment = asyncHandler(async (req, res) => {
 });
 
 // GET /api/admin/wallets/reconciliation
-// total user balances + total provider balances + platform commission
+// total user balances + total provider balances + the Platform wallet
 // must equal total topped up minus total paid out.
 const reconciliation = asyncHandler(async (req, res) => {
   const result = await computeReconciliation();

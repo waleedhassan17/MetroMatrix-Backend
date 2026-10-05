@@ -54,7 +54,7 @@ const POOLS = {
   plumbers: [6, 7, 8, 9, 10],
   'ac-repairers': [11, 12, 13, 14, 15],
 };
-const COMMISSION = 0.1;
+const COMMISSION = 0; // there is no platform commission (removed Oct 2026)
 
 // ---------------------------------------------------------------------------
 // Reporting
@@ -356,7 +356,7 @@ S.S1 = async () => {
   const cBal1 = await c.balance();
   const pBal1 = await p.balance();
   check('customer wallet down by exactly Rs. 1,500', Math.round(cBal0 - cBal1) === 1500, `${cBal0} → ${cBal1}`);
-  check('provider wallet up by the bill minus 10% commission (Rs. 1,350)', Math.round(pBal1 - pBal0) === Math.round(1500 * (1 - COMMISSION)), `${pBal0} → ${pBal1}`);
+  check('provider wallet up by the full bill (Rs. 1,500)', Math.round(pBal1 - pBal0) === Math.round(1500 * (1 - COMMISSION)), `${pBal0} → ${pBal1}`);
 
   const before = (await http.get(`/providers/${p.id}`)).data.data;
   res = await c.post('/reviews', { bookingId, providerId: p.id, rating: 5, feedback: `${TAG} Quick, tidy and explained the fault clearly.`, tags: ['Professional', 'On Time'] });
@@ -416,7 +416,7 @@ S.S2 = async () => {
   const cBal1 = await c.balance();
   check('customer wallet untouched by a cash job', Math.round(cBal0) === Math.round(cBal1), `${cBal0} → ${cBal1}`);
   const pBal1 = await p.balance();
-  check('provider wallet down by the 10% commission (Rs. 120) or it is recorded pending', Math.round(pBal0 - pBal1) === 120 || Math.round(pBal0 - pBal1) === 0, `${pBal0} → ${pBal1}`);
+  check('provider wallet unchanged by a cash payment (no commission)', Math.round(pBal0 - pBal1) === 0, `${pBal0} → ${pBal1}`);
   r = await p.post(`/provider/jobs/${bookingId}/confirm-cash`);
   check('confirming the cash twice is refused', r.status >= 400);
   cs.s.close();

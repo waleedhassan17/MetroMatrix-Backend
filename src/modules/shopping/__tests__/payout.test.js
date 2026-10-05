@@ -1,8 +1,8 @@
 /**
  * payoutVendor / reverseVendorPayout — proves the vendor-earnings leg is
  * wired to WalletService.settlePayout() / reversePayout() (Part C.3) via
- * the delivered/refunded transitions, with commissionRate from settings and
- * relatedTo the order.
+ * the delivered/refunded transitions: the vendor gets the full order total
+ * (there is no platform commission), relatedTo the order.
  */
 jest.mock('../../../services/walletService', () => ({
   getOrCreateWallet: jest.fn(),
@@ -19,7 +19,7 @@ jest.mock('../models/Product', () => ({ updateOne: jest.fn(), findById: jest.fn(
 jest.mock('../models/Order', () => ({ find: jest.fn().mockResolvedValue([]) }));
 jest.mock('../models/OrderGroup', () => ({ findById: jest.fn().mockResolvedValue(null) }));
 jest.mock('../services/settingsService', () => ({
-  getShoppingSettings: jest.fn().mockResolvedValue({ commissionPercent: 8 }),
+  getShoppingSettings: jest.fn().mockResolvedValue({}),
 }));
 
 const WalletService = require('../../../services/walletService');
@@ -46,11 +46,11 @@ function makeOrder(status, over = {}) {
 }
 
 describe('payoutVendor (on delivered)', () => {
-  it('settles the vendor payout with commissionRate and relatedTo the order', async () => {
+  it('pays the vendor the full order total, relatedTo the order', async () => {
     Brand.findById.mockResolvedValue({ owner: 'vendor-1' });
     WalletService.settlePayout.mockResolvedValue({
-      payeeTransaction: { _id: 'tx-1', amount: 4600 },
-      commission: 400,
+      payeeTransaction: { _id: 'tx-1', amount: 5000 },
+      commission: 0,
     });
 
     const order = makeOrder('out_for_delivery');
@@ -62,12 +62,12 @@ describe('payoutVendor (on delivered)', () => {
         payeeId: 'vendor-1',
         amount: 5000,
         source: 'shopping_earning',
-        commissionRate: 8,
         relatedTo: { kind: 'Order', id: 'order-1' },
       })
     );
+    expect(WalletService.settlePayout.mock.calls[0][0].commissionRate).toBeUndefined();
     expect(order.vendorPayout).toEqual(
-      expect.objectContaining({ amount: 4600, commission: 400, walletTransactionId: 'tx-1' })
+      expect.objectContaining({ amount: 5000, commission: 0, walletTransactionId: 'tx-1' })
     );
   });
 

@@ -104,7 +104,8 @@ const orderSchema = new mongoose.Schema(
       },
     ],
     deliveredAt: { type: Date, default: null },
-    // Vendor payout bookkeeping (set when the order reaches delivered)
+    // Vendor payout bookkeeping (set when the order reaches delivered).
+    // commission is 0 since Oct 2026; older orders keep what was taken.
     vendorPayout: {
       amount: Number,
       commission: Number,

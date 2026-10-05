@@ -5,9 +5,9 @@
  * invariants directly rather than trusting an API's 200. Every check is
  * PASS/FAIL with the arithmetic shown.
  *
- *   1. WALLET CONSERVATION   — customer debit == vendor credits + commission
+ *   1. WALLET CONSERVATION   — customer debit == vendor credits (no commission)
  *   2. INSUFFICIENT BALANCE  — over-balance purchase: no debit, no stock change
- *   3. REFUND CORRECTNESS    — refund reverses customer, vendor and commission,
+ *   3. REFUND CORRECTNESS    — refund reverses customer and vendor,
  *                              and restores stock exactly
  *   4. DOUBLE PAY / REFUND   — neither can be replayed onto the ledger
  *   5. TOP-UP IDEMPOTENCY    — replaying a Stripe webhook does not double-credit
@@ -36,7 +36,6 @@ const Order = require('../src/modules/shopping/models/Order');
 const OrderGroup = require('../src/modules/shopping/models/OrderGroup');
 const Product = require('../src/modules/shopping/models/Product');
 const Brand = require('../src/modules/shopping/models/Brand');
-const { getShoppingSettings } = require('../src/modules/shopping/services/settingsService');
 
 const { demoPassword } = require('./lib/seedSafety');
 const CUSTOMER = { email: 'shopper1.qa@metromatrix.pk', password: demoPassword() };
@@ -121,8 +120,7 @@ async function driveToDelivered(orderId, vendorToken) {
   await mongoose.connect(uri);
   console.log(`\nWallet/shopping integrity sweep against ${BASE}\n`);
 
-  const settings = await getShoppingSettings();
-  const commissionPercent = settings.commissionPercent;
+  const commissionPercent = 0; // there is no platform commission (removed Oct 2026)
   const customer = await login(CUSTOMER.email, CUSTOMER.password);
   const customerId = new mongoose.Types.ObjectId(customer.id);
   const addressId = await ensureAddress(customer.token);
@@ -172,7 +170,7 @@ async function driveToDelivered(orderId, vendorToken) {
     const commissionTaken = platformAfter - platformBefore;
     const expectedCommission = kids.reduce((s, o) => s + Math.round((o.total * commissionPercent) / 100), 0);
 
-    check('1c. commission credited to the Platform ledger matches the rate',
+    check('1c. nothing reaches the Platform wallet',
       commissionTaken === expectedCommission,
       `platform +${commissionTaken}, expected ${expectedCommission} (${commissionPercent}%)`);
     check('1d. CONSERVATION: customer debit == vendor credits + commission',
@@ -238,7 +236,7 @@ async function driveToDelivered(orderId, vendorToken) {
     check('3b. vendor credit reversed',
       vendPre - vendPost === delivered.total - commission,
       `-${vendPre - vendPost}, expected -${delivered.total - commission}`);
-    check('3c. commission reversed out of the Platform ledger',
+    check('3c. the refund leaves the Platform wallet alone',
       platPre - platPost === commission, `-${platPre - platPost}, expected -${commission}`);
     check('3d. stock restored exactly (no double-restore)',
       stockPost === stockPreOrder, `stock ${stockPost}, pre-order ${stockPreOrder}`);

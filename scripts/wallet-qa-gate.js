@@ -328,7 +328,7 @@ const advanceToDelivered = async (vendorToken, orderId) => {
     payTxn ? `amount ${payTxn.amount}, relatedTo ${payTxn.relatedTo.kind}` : 'not found'
   );
 
-  // A4g — vendor credit + commission. By DESIGN this happens at DELIVERY,
+  // A4g — vendor credit (in full: no commission). By DESIGN this happens at DELIVERY,
   // not checkout (WALLET_DESIGN.md): the customer's money must not reach the
   // vendor before goods arrive. So drive the orders to delivered, then assert.
   const cougarBrandDoc = await Brand.findById(cougar._id || cougar.id);
@@ -363,7 +363,7 @@ const advanceToDelivered = async (vendorToken, orderId) => {
 
   step(
     'A4g',
-    "each vendor's wallet credited its share minus commission (on delivery, by design)",
+    "each vendor's wallet credited its full share (on delivery, by design)",
     vendorBalAfter.cougar - vendorBalBefore.cougar === expectedCougarNet &&
       vendorBalAfter.outfitters - vendorBalBefore.outfitters === expectedOutfNet &&
       expectedCougarNet > 0 &&
@@ -374,9 +374,9 @@ const advanceToDelivered = async (vendorToken, orderId) => {
 
   step(
     'A4h',
-    'commission landed in the Platform ledger',
-    platformAfter - platformBefore === totalCommission && totalCommission > 0,
-    `platform ${platformBefore} → ${platformAfter} (+${platformAfter - platformBefore}, expected ${totalCommission})`
+    'nothing reaches the Platform wallet (no commission)',
+    platformAfter - platformBefore === 0 && totalCommission === 0,
+    `platform ${platformBefore} → ${platformAfter} (+${platformAfter - platformBefore}, expected 0)`
   );
 
   const earningTxn = await WalletTransaction.findOne({
@@ -514,7 +514,7 @@ const advanceToDelivered = async (vendorToken, orderId) => {
   );
   step(
     'A6c',
-    'commission is reversed out of the Platform ledger',
+    'the refund leaves the Platform wallet alone (no commission)',
     platformBeforeRefund - platformAfterRefund === (freshCougarOrder.vendorPayout?.commission ?? 0),
     `platform ${platformBeforeRefund} → ${platformAfterRefund} (expected −${freshCougarOrder.vendorPayout?.commission ?? 0})`
   );

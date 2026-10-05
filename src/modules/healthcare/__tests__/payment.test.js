@@ -1,5 +1,5 @@
 /**
- * H2 payment logic — refund windows, commission arithmetic, double-payment
+ * H2 payment logic — refund windows, double-payment
  * prevention and insufficient balance (wallet mocked, no DB).
  */
 jest.mock('../../../services/walletService', () => ({
@@ -14,7 +14,6 @@ jest.mock('../models/Doctor', () => ({ findById: jest.fn(), findOne: jest.fn() }
 jest.mock('../models/Appointment', () => ({}));
 jest.mock('./../services/settingsService', () => ({
   getHealthcareSettings: jest.fn().mockResolvedValue({
-    commissionPercent: 10,
     cancellationWindowHours: 12,
     lateCancelRefundPercent: 50,
   }),
@@ -23,7 +22,6 @@ jest.mock('./../services/settingsService', () => ({
 const WalletService = require('../../../services/walletService');
 const {
   computeRefundAmount,
-  computePayout,
   payAppointment,
   PaymentError,
 } = require('../services/paymentService');
@@ -68,19 +66,6 @@ describe('computeRefundAmount — cancellation window boundaries', () => {
     expect(
       computeRefundAmount({ amountPaid: 0, slotStart: now, now, cancelledBy: 'patient' }, SETTINGS)
     ).toBe(0);
-  });
-});
-
-describe('computePayout — commission arithmetic', () => {
-  it('10% of 2000 → 200 commission, 1800 payout', () => {
-    expect(computePayout(2000, 10)).toEqual({ commission: 200, payout: 1800 });
-  });
-  it('rounds commission and reconciles exactly', () => {
-    const { commission, payout } = computePayout(999, 10);
-    expect(commission + payout).toBe(999);
-  });
-  it('0% commission passes everything through', () => {
-    expect(computePayout(1500, 0)).toEqual({ commission: 0, payout: 1500 });
   });
 });
 

@@ -50,7 +50,9 @@ async function computeReconciliation() {
   return {
     totalUserBalance: totals.User,
     totalProviderBalance: totals.Provider,
-    platformCommissionBalance: totals.Platform,
+    // The Platform wallet (it received commission before Oct 2026; nothing new
+    // reaches it now that there is no commission).
+    platformWalletBalance: totals.Platform,
     sumOfAllWallets,
     totalToppedUp,
     totalPaidOut,

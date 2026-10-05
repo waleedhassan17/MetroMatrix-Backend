@@ -315,7 +315,7 @@ const confirmCashPayment = asyncHandler(async (req, res) => {
   const b = req.booking;
   let transaction;
   try {
-    ({ transaction } = await confirmCash(b, req.user));
+    ({ transaction } = await confirmCash(b));
   } catch (e) {
     rethrowAsHttp(res, e);
   }

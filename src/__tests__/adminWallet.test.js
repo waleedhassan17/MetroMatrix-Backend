@@ -193,7 +193,7 @@ describe('reconciliation', () => {
       amount: 400,
       source: 'homeservice_payment',
       relatedTo: { kind: 'Booking', id: new mongoose.Types.ObjectId() },
-      commissionRate: 10,
+      commissionRate: 10, // a pre-Oct-2026 payment: the Platform wallet still holds old commission
     });
     const res = await api().get('/api/admin/wallets/reconciliation').set('Authorization', s.bearer());
     expect(res.status).toBe(200);

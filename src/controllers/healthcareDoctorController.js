@@ -687,7 +687,7 @@ const completeAppointment = asyncHandler(async (req, res) => {
   }
 
   // H2: capture cash-at-clinic payment and credit the doctor's earnings
-  // ledger (fee minus platform commission) — payout happens at completion,
+  // ledger (the full fee) — payout happens at completion,
   // never at payment time.
   try {
     await paymentService.settleCompletedAppointment(completed);

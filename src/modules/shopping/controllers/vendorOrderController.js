@@ -235,7 +235,6 @@ const SOLD_STATUSES = ['confirmed', 'processing', 'shipped', 'out_for_delivery',
 // @desc  GET /api/shopping/vendor/analytics?period=7d|30d|90d|all (or from&to)
 const getBrandAnalytics = asyncHandler(async (req, res) => {
   const { from, to } = rangeFor(req);
-  const settings = await getShoppingSettings();
   const brandId = req.brand._id;
   const match = { brandId, createdAt: { $gte: from, $lte: to } };
 
@@ -245,7 +244,6 @@ const getBrandAnalytics = asyncHandler(async (req, res) => {
   const returns = orders.filter((o) => ['returned', 'refunded'].includes(o.orderStatus));
 
   const totalRevenue = delivered.reduce((s, o) => s + o.total, 0);
-  const commission = Math.round((totalRevenue * settings.commissionPercent) / 100);
   const shippingCollected = delivered.reduce((s, o) => s + o.shippingFee, 0);
   const refundsAmount = returns.reduce((s, o) => s + o.total, 0);
 
@@ -312,9 +310,9 @@ const getBrandAnalytics = asyncHandler(async (req, res) => {
 
   const summary = {
     totalRevenue,
-    totalIncome: totalRevenue - commission,
+    totalIncome: totalRevenue,
     totalExpenses: shippingCollected + refundsAmount,
-    netProfit: totalRevenue - commission - refundsAmount,
+    netProfit: totalRevenue - refundsAmount,
     totalOrders: orders.length,
     avgOrderValue: orders.length ? Math.round(orders.reduce((s, o) => s + o.total, 0) / orders.length) : 0,
     // conversionRate is deliberately absent: it needs traffic data nothing in
@@ -343,7 +341,6 @@ const getBrandDashboard = asyncHandler(async (req, res) => {
 
   const delivered = orders.filter((o) => o.orderStatus === 'delivered');
   const revenue = delivered.reduce((s, o) => s + o.total, 0);
-  const commission = Math.round((revenue * settings.commissionPercent) / 100);
   const shipped = orders.filter((o) => ['shipped', 'out_for_delivery'].includes(o.orderStatus));
   const closed = orders.filter((o) => ['delivered', 'cancelled', 'returned', 'refunded'].includes(o.orderStatus));
 
@@ -369,7 +366,7 @@ const getBrandDashboard = asyncHandler(async (req, res) => {
   return ok(res, {
     kpis: {
       revenue,
-      income: revenue - commission,
+      income: revenue,
       orders: orders.length,
       products: products.length,
       lowStock: lowStockAlerts.length,

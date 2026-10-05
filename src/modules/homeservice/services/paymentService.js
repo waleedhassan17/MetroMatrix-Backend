@@ -5,18 +5,17 @@
  * WalletService.settle() (src/services/walletService.js Part C.3):
  *  - wallet method: settle() customer→provider in one atomic call, with
  *    idempotencyKey `hspay-<bookingId>` (double payment structurally
- *    impossible) and commissionRate from admin settings — the commission
- *    leg lands in the Platform ledger instead of vanishing.
- *  - cash method: no customer wallet movement; the provider confirms receipt
- *    and settlePayout() credits the Platform ledger with the commission by
- *    debiting the provider (net was already collected as cash in person).
- *    If the provider wallet cannot cover it, the commission is recorded as a
- *    PENDING debit that payouts subtract before approving (compensating
- *    design — free Atlas tier has no cross-collection transactions here).
+ *    impossible). The provider receives the full amount.
+ *  - cash method: no wallet movement at all; the provider confirms the cash
+ *    they were handed and the booking is marked paid.
+ *
+ * There is no platform commission (removed Oct 2026). Cash jobs used to leave
+ * a commission debit on the provider's wallet; any still pending are waived by
+ * scripts/migrations/06-remove-commission.js, and pendingCommission() below
+ * only reports what that migration has not yet waived.
  */
 const WalletService = require('../../../services/walletService');
 const WalletTransaction = require('../../../models/WalletTransaction');
-const { getHomeserviceSettings } = require('./settingsService');
 const { STATUS } = require('./statusMap');
 const { billOf } = require('./money');
 
@@ -36,10 +35,6 @@ function assertPayable(booking) {
   }
 }
 
-function commissionOf(amount, commissionPercent) {
-  return Math.round(((amount * commissionPercent) / 100) * 100) / 100;
-}
-
 /**
  * A settlement in flight holds this claim. Stale after a minute, so a request
  * that died mid-way cannot lock a booking forever; the ledger calls below are
@@ -53,8 +48,8 @@ const CLAIM_TTL_MS = 60 * 1000;
  * Wallet payment (customer) and cash confirmation (provider) are two doors
  * into the same room. Each checked "not paid yet" and then moved money, so a
  * customer paying from the wallet in the same second the provider confirmed
- * cash settled the job twice: the customer charged, and the provider debited
- * a second commission. The claim is a conditional update — only one caller
+ * cash settled the job twice (and, while there was a commission, debited the
+ * provider a second time). The claim is a conditional update — only one caller
  * can flip it — taken BEFORE any money moves.
  */
 async function claimSettlement(booking) {
@@ -94,7 +89,6 @@ async function releaseSettlement(booking) {
  */
 async function payWithWallet(booking, customer, amount) {
   assertPayable(booking);
-  const settings = await getHomeserviceSettings();
   await claimSettlement(booking);
 
   let result;
@@ -109,7 +103,6 @@ async function payWithWallet(booking, customer, amount) {
       relatedTo: { kind: 'Booking', id: booking._id },
       description: `Home service payment — booking ${booking._id}`,
       idempotencyKey: `hspay-${booking._id}`,
-      commissionRate: settings.commissionPercent,
     });
   } catch (e) {
     await releaseSettlement(booking);
@@ -127,88 +120,37 @@ async function payWithWallet(booking, customer, amount) {
   if (!booking.pricing.finalPrice) booking.pricing.finalPrice = amount;
   await booking.save();
 
-  return {
-    transaction: result.payerTransaction,
-    commission: result.commission,
-  };
+  return { transaction: result.payerTransaction };
 }
 
 /**
- * Provider confirms cash received. Commission is deducted from the provider
- * wallet (or recorded pending when the balance cannot cover it).
+ * Provider confirms the cash they were paid. Nothing moves in the ledger: the
+ * customer paid the provider in person and the platform takes no share.
  */
-async function confirmCash(booking, provider) {
+async function confirmCash(booking) {
   assertPayable(booking);
-  const settings = await getHomeserviceSettings();
   const amount = billOf(booking);
-  const commission = commissionOf(amount, settings.commissionPercent);
   await claimSettlement(booking);
 
   try {
-    return await settleCash(booking, provider, amount, commission);
+    booking.payment.status = 'paid';
+    booking.payment.method = 'cash';
+    booking.payment.walletTransactionId = null;
+    booking.payment.paidAt = new Date();
+    booking.payment.settlingSince = null;
+    if (!booking.pricing.finalPrice) booking.pricing.finalPrice = amount;
+    await booking.save();
+    return { transaction: { _id: `CASH-${booking._id}` } };
   } catch (e) {
     await releaseSettlement(booking);
     throw e;
   }
 }
 
-async function settleCash(booking, provider, amount, commission) {
-  const wallet = await WalletService.getOrCreateWallet(provider._id, 'Provider');
-  const relatedTo = { kind: 'Booking', id: booking._id };
-
-  let tx = null;
-  if (commission <= 0) {
-    // A zero-commission configuration has nothing to move; the cash itself
-    // changed hands in person.
-  } else if (wallet.balance >= commission) {
-    // Debit the provider AND credit the Platform ledger in one call — the
-    // commission has a real destination instead of just vanishing off the
-    // provider's balance (the bug this module was built to avoid). settle()
-    // creates its own linked transaction docs; use its payer-side one.
-    const result = await WalletService.settle({
-      payerType: 'Provider',
-      payerId: provider._id,
-      payeeType: 'Platform',
-      payeeId: WalletService.PLATFORM_OWNER_ID,
-      amount: commission,
-      source: 'commission',
-      relatedTo,
-      description: `Platform commission (cash) — booking ${booking._id}`,
-      // One commission per booking, however many times confirm is retried.
-      idempotencyKey: `hscash-${booking._id}`,
-      commissionRate: 0,
-    });
-    tx = result.payerTransaction;
-  } else {
-    // Provider can't cover it yet — record a PENDING debit (no wallet
-    // mutation) that payouts subtract before approving (see settlePayout
-    // caller in earningsController). Not routed through settle() because
-    // settle() is all-or-nothing; this business rule needs the partial state.
-    tx = await WalletService.recordTransaction(wallet._id, {
-      type: 'debit',
-      amount: commission,
-      description: `Platform commission (cash) — booking ${booking._id}`,
-      source: 'commission',
-      status: 'pending',
-      relatedTo,
-      metadata: { bookingId: String(booking._id), method: 'cash', grossAmount: amount },
-    });
-  }
-
-  booking.payment.status = 'paid';
-  booking.payment.method = 'cash';
-  booking.payment.walletTransactionId = tx ? tx._id : null;
-  booking.payment.paidAt = new Date();
-  booking.payment.settlingSince = null;
-  if (!booking.pricing.finalPrice) booking.pricing.finalPrice = amount;
-  await booking.save();
-
-  return { transaction: tx || { _id: `CASH-${booking._id}` }, commission };
-}
-
 /**
- * Provider's pending (unsettled) cash commissions — subtracted from the
- * available payout balance.
+ * Cash commissions recorded before commission was removed and not yet waived
+ * by migration 06 — still subtracted from the available payout balance so the
+ * figure matches what requestPayout() enforces. 0 once the migration has run.
  */
 async function pendingCommission(providerId) {
   const wallet = await WalletService.getOrCreateWallet(providerId, 'Provider');
@@ -229,7 +171,6 @@ async function pendingCommission(providerId) {
 module.exports = {
   PaymentError,
   assertPayable,
-  commissionOf,
   payWithWallet,
   confirmCash,
   pendingCommission,

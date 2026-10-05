@@ -899,7 +899,7 @@ components:
       required:
         - totalUserBalance
         - totalProviderBalance
-        - platformCommissionBalance
+        - platformWalletBalance
         - sumOfAllWallets
         - totalToppedUp
         - totalPaidOut
@@ -913,7 +913,7 @@ components:
           type: number
         totalProviderBalance:
           type: number
-        platformCommissionBalance:
+        platformWalletBalance:
           type: number
         sumOfAllWallets:
           type: number

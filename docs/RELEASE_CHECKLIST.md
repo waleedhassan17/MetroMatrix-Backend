@@ -30,6 +30,7 @@ All migrations: `node scripts/migrations/<name>.js --confirm-db=<db name> [--dry
 | 3 | `03-audit-backfill` | Copies the four module audit collections and `Admin.activityLog` into `AdminAuditLog`; unsets `activityLog`/`stats`. Keeps the old collections — re-run with `--drop-legacy` once verified. | Delete `AdminAuditLog` rows with `source: /^backfill:/`. |
 | 4 | `04-provider-status` | Fills `verificationStatus` + `isSuspended` from each provider's history. Does not touch `adminVerified`/`isActive` (login unchanged). | Previous release doesn't read `isSuspended`. |
 | 5 | `05-notification-read-state` | Global `isRead` → per-admin `readBy`; adds `target`/`severity`; builds the dedupe index. | Previous release treats a missing `isRead` as unread. |
+| 6 | `06-remove-commission` | Unsets the three `commissionPercent` settings (there is no platform commission from Oct 2026) and waives cash-job commissions still pending on provider wallets (status `failed`, `metadata.waived`, one `AdminAuditLog` row each). Commission already taken stays as history. | Previous release defaults a missing `commissionPercent` to 10%; set waived debits (`metadata.waived: true`) back to `pending` if needed. |
 
 - [ ] Then `node scripts/sync-indexes.js --dry` and `node scripts/sync-indexes.js` (removes nothing; adds the new provider/notification indexes).
 

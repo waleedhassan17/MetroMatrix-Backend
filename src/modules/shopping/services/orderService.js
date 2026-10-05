@@ -3,7 +3,6 @@ const OrderGroup = require('../models/OrderGroup');
 const Brand = require('../models/Brand');
 const Product = require('../models/Product');
 const WalletService = require('../../../services/walletService');
-const { getShoppingSettings } = require('./settingsService');
 
 /**
  * ── Order state machine (single source of truth) ───────────────────
@@ -167,8 +166,8 @@ const refundToCustomer = async (order, description) => {
 
 /**
  * Vendor payout on delivery: credit the brand owner's Provider wallet with
- * order total minus platform commission, and credit the commission itself
- * to the Platform ledger (WalletService.settlePayout — Part C.3). The
+ * the full order total (there is no platform commission;
+ * WalletService.settlePayout — Part C.3). The
  * customer already paid at checkout; this is the deferred earn-on-delivery
  * leg, not a fresh payer→payee transfer.
  */
@@ -177,7 +176,6 @@ const payoutVendor = async (order) => {
   const brand = await Brand.findById(order.brandId);
   if (!brand || !brand.owner) return; // admin-owned brand: no payout ledger
 
-  const { commissionPercent } = await getShoppingSettings();
   const result = await WalletService.settlePayout({
     payeeType: 'Provider',
     payeeId: brand.owner,
@@ -185,12 +183,11 @@ const payoutVendor = async (order) => {
     source: 'shopping_earning',
     relatedTo: { kind: 'Order', id: order._id },
     description: `Earnings for order ${order.odexId}`,
-    commissionRate: commissionPercent,
   });
 
   order.vendorPayout = {
     amount: result.payeeTransaction.amount,
-    commission: result.commission,
+    commission: 0,
     paidAt: new Date(),
     walletTransactionId: result.payeeTransaction._id,
   };

@@ -17,7 +17,6 @@ jest.mock('../../../models/WalletTransaction', () => ({
 }));
 jest.mock('../services/settingsService', () => ({
   getHomeserviceSettings: jest.fn().mockResolvedValue({
-    commissionPercent: 10,
     minPayoutAmount: 500,
   }),
 }));

@@ -2,7 +2,7 @@
  * Guard: nothing that moves money may read through Redis.
  *
  * WALLET_DESIGN.md explains why the ledger has no cache: a stale balance or
- * commission rate is a wrong payment. This test fails the build if any money
+ * setting is a wrong payment. This test fails the build if any money
  * module starts importing the cache or the Redis client.
  */
 const fs = require('fs');

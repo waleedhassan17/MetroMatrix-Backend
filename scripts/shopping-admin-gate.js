@@ -172,17 +172,17 @@ const short = (d) => JSON.stringify(d).slice(0, 100);
   const sBefore = (await api.get('/shopping/admin/settings', auth(tA))).data?.data || {};
   console.log(`    settings: ${JSON.stringify(sBefore).slice(0, 160)}`);
   step('4.13', 'settings endpoint returns the expected keys',
-    ['commissionPercent', 'shippingFeePerBrand', 'freeShippingThreshold'].every((k) => k in sBefore),
+    ['shippingFeePerBrand', 'freeShippingThreshold'].every((k) => k in sBefore) && !('commissionPercent' in sBefore),
     Object.keys(sBefore).join(', '));
 
-  // commissionPercent — must change the NEXT order's vendor earnings.
-  const origCommission = sBefore.commissionPercent;
+  // There is no commission (removed Oct 2026): sending one stores nothing,
+  // and the next order pays the vendor the full total.
   r = await api.patch('/shopping/admin/settings', { commissionPercent: 25 }, auth(tA));
   const sAfter = (await api.get('/shopping/admin/settings', auth(tA))).data?.data || {};
-  step('4.14', 'commissionPercent persists', r.status === 200 && sAfter.commissionPercent === 25,
-    `${origCommission} → ${sAfter.commissionPercent}`);
+  step('4.14', 'a commissionPercent sent by a client is not stored', !('commissionPercent' in sAfter),
+    `status ${r.status}, keys ${Object.keys(sAfter).join(', ')}`);
 
-  // Place + deliver an order and confirm the NEW rate was applied.
+  // Place + deliver an order and confirm the vendor got all of it.
   await api.delete('/shopping/cart', auth(tU));
   const list = await api.get(`/shopping/products?brandId=${cougar._id}&inStock=true&limit=30`);
   let picked = null;
@@ -201,16 +201,9 @@ const short = (d) => JSON.stringify(d).slice(0, 100);
     await api.patch(`/shopping/vendor/orders/${newOrder._id}/status`, { status: s }, auth(tV));
   }
   const delivered = await Order.findById(newOrder._id);
-  const expected25 = Math.round((delivered.total * 25) / 100);
-  step('4.15', 'commissionPercent CHANGES LIVE BEHAVIOUR — the next order uses the new rate',
-    delivered.vendorPayout?.commission === expected25,
-    `order total ${delivered.total}, commission ${delivered.vendorPayout?.commission} (25% = ${expected25})`);
-
-  // restore
-  await api.patch('/shopping/admin/settings', { commissionPercent: origCommission }, auth(tA));
-  const sRestored = (await api.get('/shopping/admin/settings', auth(tA))).data?.data || {};
-  step('4.16', 'commissionPercent restored', sRestored.commissionPercent === origCommission,
-    `back to ${sRestored.commissionPercent}`);
+  step('4.15', 'the vendor is paid the full order total (no commission)',
+    delivered.vendorPayout?.amount === delivered.total && !delivered.vendorPayout?.commission,
+    `order total ${delivered.total}, vendor paid ${delivered.vendorPayout?.amount}`);
 
   // shippingFeePerBrand — must change the next cart's shipping.
   const origShip = sBefore.shippingFeePerBrand;
@@ -218,7 +211,7 @@ const short = (d) => JSON.stringify(d).slice(0, 100);
   await api.patch('/shopping/admin/settings',
     { shippingFeePerBrand: 777, freeShippingThreshold: 9999999 }, auth(tA));
   await api.delete('/shopping/cart', auth(tU));
-  // Re-pick: the earlier commission test consumed stock from `picked`, so it
+  // Re-pick: the earlier full-payout test consumed stock from `picked`, so it
   // may no longer be orderable. An empty cart has shippingFee 0, which would
   // have failed this check for entirely the wrong reason.
   let shipPick = null;
@@ -275,10 +268,9 @@ const short = (d) => JSON.stringify(d).slice(0, 100);
     Number(returnDaysReaders) > 0, `${returnDaysReaders} reader(s) outside the model/service`);
   const sFinal = (await api.get('/shopping/admin/settings', auth(tA))).data?.data || {};
   step('4.19', 'all settings restored to their original values',
-    sFinal.commissionPercent === origCommission &&
     sFinal.shippingFeePerBrand === origShip &&
     sFinal.freeShippingThreshold === origThreshold,
-    `commission ${sFinal.commissionPercent}, ship ${sFinal.shippingFeePerBrand}, threshold ${sFinal.freeShippingThreshold}`);
+    `ship ${sFinal.shippingFeePerBrand}, threshold ${sFinal.freeShippingThreshold}`);
 
   console.log(`\n=== RESULT: ${pass} passed, ${fail} failed ===\n`);
   await mongoose.disconnect();

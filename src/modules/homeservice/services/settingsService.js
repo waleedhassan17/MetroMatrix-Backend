@@ -1,7 +1,7 @@
 /**
  * Home-services platform settings — ONE source of truth.
  *
- * HS2 (matching weights), HS4 (commission, min payout) and HS5 (admin
+ * HS2 (matching weights), HS4 (min payout) and HS5 (admin
  * settings screen) all read these values from here; the admin PATCH endpoint
  * writes them into the existing AdminSettings singleton under `homeservice`.
  */
@@ -14,8 +14,10 @@ const { k } = require('../../../lib/redis');
 // (cancellationWindowHours used to be listed and editable, but no cancellation
 // path read it; customer cancellation is governed by booking status — see
 // statusMap.js CUSTOMER_CANCELLABLE_FROM. Removed.)
+// No commission: providers keep everything a customer pays. A
+// commissionPercent stored before that decision is dropped on read
+// (stripLegacy) and removed by scripts/migrations/06-remove-commission.js.
 const DEFAULTS = {
-  commissionPercent: 10,
   defaultSearchRadiusKm: 15,
   matchingWeights: {
     distance: 0.4,
@@ -39,9 +41,12 @@ const DEFAULTS = {
 const SETTINGS_CACHE_TTL_SEC = 60;
 const settingsCacheKey = () => k('c', 'hs', 'settings');
 
+// Fields that once existed and must never be read again.
+const stripLegacy = ({ commissionPercent, ...rest }) => rest; // eslint-disable-line no-unused-vars
+
 async function loadSettingsStrict() {
   const doc = await AdminSettings.findOne().lean();
-  const hs = doc && doc.homeservice ? doc.homeservice : {};
+  const hs = stripLegacy(doc && doc.homeservice ? doc.homeservice : {});
   return {
     ...DEFAULTS,
     ...hs,
@@ -53,7 +58,7 @@ async function loadSettingsStrict() {
 /**
  * The current settings.
  *
- * Uncached by default — commission and payout minimums are read from here by
+ * Uncached by default — payout minimums are read from here by
  * paymentService and earningsController, and money must never act on a stale
  * value. Hot read paths that only need ranking knobs (provider search) opt in
  * with `{ cached: true }`: a 60 s shared cache, invalidated on every admin
@@ -73,7 +78,7 @@ async function updateHomeserviceSettings(patch) {
   if (!doc) {
     doc = new AdminSettings({});
   }
-  const current = doc.homeservice || {};
+  const current = stripLegacy(doc.homeservice && doc.homeservice.toObject ? doc.homeservice.toObject() : doc.homeservice || {});
   doc.homeservice = {
     ...DEFAULTS,
     ...current,
@@ -88,7 +93,7 @@ async function updateHomeserviceSettings(patch) {
   doc.markModified('homeservice');
   await doc.save();
   await del(settingsCacheKey());
-  return doc.homeservice;
+  return stripLegacy(doc.homeservice.toObject ? doc.homeservice.toObject() : doc.homeservice);
 }
 
 module.exports = { getHomeserviceSettings, updateHomeserviceSettings, DEFAULTS };

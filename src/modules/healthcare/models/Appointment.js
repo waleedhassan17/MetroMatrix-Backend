@@ -81,7 +81,8 @@ const appointmentSchema = new mongoose.Schema(
       refundedAt: { type: Date, default: null },
       refundAmount: { type: Number, default: 0 },
     },
-    // Doctor payout bookkeeping (credited at completed, minus commission)
+    // Doctor payout bookkeeping (credited at completed). commission is always 0
+    // now; it is non-zero only on appointments settled before Oct 2026.
     payout: {
       amount: { type: Number, default: 0 },
       commission: { type: Number, default: 0 },

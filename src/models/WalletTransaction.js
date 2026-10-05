@@ -126,7 +126,7 @@ const walletTransactionSchema = new mongoose.Schema(
      * Counterparty for transfer-related transactions
      * Points to the other party involved (sender or receiver)
      *
-     * 'Platform' is the commission ledger (WalletService.PLATFORM_OWNER_ID, a
+     * 'Platform' is the platform wallet (WalletService.PLATFORM_OWNER_ID, a
      * sentinel id with no document behind it — never populate it). It was
      * missing here while WalletService.settle() already accepted Platform as
      * a payee, so every settle() paying the platform directly failed

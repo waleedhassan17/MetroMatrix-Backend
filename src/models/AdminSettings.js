@@ -94,13 +94,8 @@ const adminSettingsSchema = new mongoose.Schema(
 
     // Shopping Settings — the SAME values shopping checkout/inventory/analytics read.
     // Managed via GET/PATCH /api/shopping/admin/settings.
+    // (No commission: the platform takes no cut of orders — removed Oct 2026.)
     shopping: {
-      commissionPercent: {
-        type: Number,
-        default: 10,
-        min: 0,
-        max: 100,
-      },
       shippingFeePerBrand: {
         type: Number,
         default: 150,
@@ -159,12 +154,6 @@ const adminSettingsSchema = new mongoose.Schema(
     // code reads (healthcare settingsService). Managed via
     // GET/PATCH /api/v1/admin/healthcare/settings.
     healthcare: {
-      commissionPercent: {
-        type: Number,
-        default: 10,
-        min: 0,
-        max: 100,
-      },
       // Full refund when cancelling ≥ this many hours before the slot
       cancellationWindowHours: {
         type: Number,
@@ -184,12 +173,6 @@ const adminSettingsSchema = new mongoose.Schema(
     // provider matching (HS2) code reads via the homeservice settingsService.
     // Managed via GET/PATCH /api/admin/homeservice/settings.
     homeservice: {
-      commissionPercent: {
-        type: Number,
-        default: 10,
-        min: 0,
-        max: 100,
-      },
       defaultSearchRadiusKm: {
         type: Number,
         default: 15,

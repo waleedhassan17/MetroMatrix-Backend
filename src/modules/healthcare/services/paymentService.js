@@ -26,11 +26,6 @@ const computeRefundAmount = (
   return Math.round((amountPaid * lateCancelRefundPercent) / 100);
 };
 
-/** Commission split for a completed appointment. Whole rupees. */
-const computePayout = (amount, commissionPercent) => {
-  const commission = Math.round((amount * commissionPercent) / 100);
-  return { commission, payout: amount - commission };
-};
 
 const slotStartDate = (slot) => {
   // Slot stores date (YYYY-MM-DD or Date) + startTime "HH:mm"
@@ -168,7 +163,7 @@ const refundAppointment = async (appointment, { cancelledBy, reason, ratioOverri
 
 /**
  * Doctor payout at completion (not at payment time): credit the doctor's
- * Provider wallet with fee minus platform commission. Also captures
+ * Provider wallet with the full fee (there is no platform commission). Also captures
  * cash_at_clinic payments as paid. Idempotent.
  */
 const settleCompletedAppointment = async (appointment) => {
@@ -187,7 +182,6 @@ const settleCompletedAppointment = async (appointment) => {
   }
   if (appointment.payment.status !== 'paid') return;
 
-  const settings = await getHealthcareSettings();
   const amount = appointment.payment.amount || 0;
   if (amount <= 0) return;
 
@@ -198,8 +192,6 @@ const settleCompletedAppointment = async (appointment) => {
   // cancellation never has to claw back money the doctor already received —
   // see WalletService.settlePayout()'s doc comment for why this is a
   // separate leg from payAppointment's debit rather than one settle() call.
-  // Commission now lands in the Platform ledger instead of being computed
-  // and discarded (the pre-existing bug WALLET_DESIGN.md documents).
   const result = await WalletService.settlePayout({
     payeeType: 'Provider',
     payeeId: doctor.providerId,
@@ -207,12 +199,11 @@ const settleCompletedAppointment = async (appointment) => {
     source: 'healthcare_earning',
     relatedTo: { kind: 'Appointment', id: appointment._id },
     description: `Consultation earnings for appointment ${appointment._id}`,
-    commissionRate: settings.commissionPercent,
   });
 
   appointment.payout = {
     amount: result.payeeTransaction.amount,
-    commission: result.commission,
+    commission: 0,
     paidAt: new Date(),
     walletTransactionId: result.payeeTransaction._id,
   };
@@ -222,7 +213,6 @@ const settleCompletedAppointment = async (appointment) => {
 module.exports = {
   PaymentError,
   computeRefundAmount,
-  computePayout,
   slotStartDate,
   payAppointment,
   refundAppointment,

@@ -23,8 +23,9 @@ const walletSchema = new mongoose.Schema(
 
     /**
      * Owner type - determines which model the owner references.
-     * 'Platform' is the singleton commission ledger (Part C.4) — it has no
-     * backing User/Provider document.
+     * 'Platform' is the singleton platform wallet (Part C.4) — it has no
+     * backing User/Provider document. It held commission until commission was
+     * removed in Oct 2026; nothing new is credited to it.
      */
     ownerType: {
       type: String,

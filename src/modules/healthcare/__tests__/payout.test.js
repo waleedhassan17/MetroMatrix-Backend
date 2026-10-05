@@ -1,7 +1,7 @@
 /**
  * settleCompletedAppointment — proves the doctor-payout leg is wired to
- * WalletService.settlePayout() (Part C.3) with the right commissionRate and
- * relatedTo, and that the commission is no longer computed-then-discarded.
+ * WalletService.settlePayout() (Part C.3) with the full fee to the doctor (there
+ * is no platform commission) and relatedTo the appointment.
  */
 jest.mock('../../../services/walletService', () => ({
   getOrCreateWallet: jest.fn(),
@@ -9,9 +9,6 @@ jest.mock('../../../services/walletService', () => ({
   settlePayout: jest.fn(),
 }));
 jest.mock('../models/Doctor', () => ({ findById: jest.fn() }));
-jest.mock('./../services/settingsService', () => ({
-  getHealthcareSettings: jest.fn().mockResolvedValue({ commissionPercent: 15 }),
-}));
 
 const WalletService = require('../../../services/walletService');
 const Doctor = require('../models/Doctor');
@@ -31,11 +28,11 @@ function makeAppointment(over = {}) {
 }
 
 describe('settleCompletedAppointment', () => {
-  it('calls settlePayout with the doctor as payee, commissionRate from settings, and relatedTo the appointment', async () => {
+  it('pays the doctor the full fee through settlePayout, relatedTo the appointment', async () => {
     Doctor.findById.mockResolvedValue({ providerId: 'prov-doc-1' });
     WalletService.settlePayout.mockResolvedValue({
-      payeeTransaction: { _id: 'tx-1', amount: 1700 },
-      commission: 300,
+      payeeTransaction: { _id: 'tx-1', amount: 2000 },
+      commission: 0,
     });
 
     const apt = makeAppointment();
@@ -47,13 +44,13 @@ describe('settleCompletedAppointment', () => {
         payeeId: 'prov-doc-1',
         amount: 2000,
         source: 'healthcare_earning',
-        commissionRate: 15,
         relatedTo: { kind: 'Appointment', id: 'apt-1' },
       })
     );
+    expect(WalletService.settlePayout.mock.calls[0][0].commissionRate).toBeUndefined();
     expect(apt.payout).toEqual({
-      amount: 1700,
-      commission: 300,
+      amount: 2000,
+      commission: 0,
       paidAt: expect.any(Date),
       walletTransactionId: 'tx-1',
     });

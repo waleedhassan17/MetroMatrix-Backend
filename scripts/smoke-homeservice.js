@@ -4,7 +4,7 @@
  * Path: customer login → search providers by location + category → view
  * provider → create booking → provider accepts → provider goes en route →
  * location update received (socket, with REST fallback check) → provider
- * arrives → starts job → completes → customer pays from wallet → commission
+ * arrives → starts job → completes → customer pays from wallet → provider paid in full
  * deducted correctly → customer reviews → provider rating updates →
  * provider requests payout → admin approves it → admin sees the booking in
  * the admin list.
@@ -169,7 +169,7 @@ const auth = (t) => ({ headers: { Authorization: `Bearer ${t}` } });
   );
   step('provider completes → COMPLETED (TC-10)', res.status === 200);
 
-  // 12. Customer pays from wallet (TC-11 payment, TC-12 commission)
+  // 12. Customer pays from wallet (TC-11 payment; the provider gets the full amount)
   res = await api.get(`/payments/${bookingId}/init`, auth(customerToken));
   const amount = res.data?.data?.details?.amount;
   step('payment init (TC-11)', res.status === 200 && !!amount, `amount=${amount}`);
