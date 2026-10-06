@@ -17,7 +17,7 @@ const { softDeleteAccount, restoreAccount } = require('../../services/admin/acco
  * Customer account management — /api/admin/users*.
  */
 
-const SUMMARY_FIELDS = 'fullName email phoneNumber profilePhoto isActive isEmailVerified emailVerified createdAt lastLoginDate';
+const SUMMARY_FIELDS = 'fullName email phoneNumber profilePhoto isActive isEmailVerified emailVerified createdAt lastLoginDate deletedAt +deletedEmail deleteReason';
 
 const summary = (u) => ({
   id: String(u._id),
@@ -29,12 +29,20 @@ const summary = (u) => ({
   emailVerified: u.isEmailVerified === true || u.emailVerified === true || u.emailVerified === 'active',
   createdAt: u.createdAt,
   lastLoginAt: u.lastLoginDate || null,
+  // A deleted account (listed only to super admins, for restoring): its real
+  // email is kept aside while the address is released.
+  ...(u.deletedAt ? { email: u.deletedEmail || u.email, deletedAt: u.deletedAt, deleteReason: u.deleteReason || null } : {}),
 });
 
-// @route GET /api/admin/users?status=active|inactive&search=&sort=&page=&limit=&cursor=
+// @route GET /api/admin/users?status=active|inactive|deleted&search=&sort=&page=&limit=&cursor=
+// `deleted` lists soft-deleted accounts so a super admin can restore one.
 const listUsers = asyncHandler(async (req, res) => {
   const q = req.query;
-  const filter = {};
+  const deleted = q.status === 'deleted';
+  if (deleted && !req.user.isSuperAdmin) {
+    throw new AppError(ERROR_CODES.SUPER_ADMIN_REQUIRED, 'Only a super admin can see deleted accounts');
+  }
+  const filter = deleted ? { deletedAt: { $ne: null } } : {};
   if (q.status === 'active') filter.isActive = { $ne: false };
   else if (q.status === 'inactive') filter.isActive = false;
   if (q.search) {
@@ -42,12 +50,13 @@ const listUsers = asyncHandler(async (req, res) => {
     filter.$or = [{ fullName: re }, { email: re }, { phoneNumber: re }];
   }
   const list = parseListQuery(q, { sortable: ['createdAt', 'fullName', 'lastLoginDate'], defaultSort: '-createdAt' });
-  const [{ items, meta }, active, inactive] = await Promise.all([
+  const [{ items, meta }, active, inactive, deletedCount] = await Promise.all([
     findPage(User, filter, list, { select: SUMMARY_FIELDS }),
     User.countDocuments({ isActive: { $ne: false } }),
     User.countDocuments({ isActive: false }),
+    req.user.isSuperAdmin ? User.countDocuments({ deletedAt: { $ne: null } }) : null,
   ]);
-  ok(res, items.map(summary), { ...meta, counts: { active, inactive } });
+  ok(res, items.map(summary), { ...meta, counts: { active, inactive, ...(deletedCount === null ? {} : { deleted: deletedCount }) } });
 });
 
 async function loadUser(req) {

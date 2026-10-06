@@ -144,3 +144,51 @@ describe('deleting a provider', () => {
     expect(rows[0].n).toBe(1);
   });
 });
+
+describe('listing deleted accounts, to restore one', () => {
+  const list = (s, path) => api().get(path).set('Authorization', s.bearer());
+
+  it('only a super admin sees them, with the real email and the reason', async () => {
+    const manager = await signIn(await createAdmin({ permissions: { canManageUsers: true } }));
+    const kept = await createUser();
+    const gone = await createUser();
+    await del(manager, `/api/admin/users/${gone._id}`, 'asked to close');
+
+    expect((await list(manager, '/api/admin/users?status=deleted')).status).toBe(403);
+
+    const boss = await signIn(await createAdmin({ role: 'super_admin' }));
+    const res = await list(boss, '/api/admin/users?status=deleted');
+    expect(res.status).toBe(200);
+    expect(res.body.data).toEqual([expect.objectContaining({ id: String(gone._id), email: gone.email, deleteReason: 'asked to close', deletedAt: expect.any(String) })]);
+    expect(res.body.meta.counts.deleted).toBe(1);
+
+    // The usual list neither shows it nor carries deleted fields.
+    const usual = await list(boss, '/api/admin/users');
+    expect(usual.body.data.map((u) => u.id)).toEqual([String(kept._id)]);
+    expect(usual.body.data[0]).not.toHaveProperty('deletedAt');
+  });
+
+  it('pages past the first page (a cursor must not hide them again)', async () => {
+    const boss = await signIn(await createAdmin({ role: 'super_admin' }));
+    const users = await Promise.all([1, 2, 3].map(() => createUser()));
+    for (const u of users) await del(boss, `/api/admin/users/${u._id}`, 'tidy');
+    const first = await list(boss, '/api/admin/users?status=deleted&limit=2');
+    expect(first.body.data).toHaveLength(2);
+    expect(first.body.meta.nextCursor).toEqual(expect.any(String));
+    const second = await list(boss, `/api/admin/users?status=deleted&limit=2&cursor=${encodeURIComponent(first.body.meta.nextCursor)}`);
+    expect(second.body.data).toHaveLength(1);
+    expect([...first.body.data, ...second.body.data].map((u) => u.id).sort()).toEqual(users.map((u) => String(u._id)).sort());
+  });
+
+  it('deleted providers too, for a super admin only', async () => {
+    const approver = await signIn(await createAdmin({ permissions: { canApproveProviders: true } }));
+    const provider = await createProvider();
+    await del(approver, `/api/admin/providers/${provider._id}`, 'duplicate account');
+    expect((await list(approver, '/api/admin/providers?state=deleted')).status).toBe(403);
+    const boss = await signIn(await createAdmin({ role: 'super_admin' }));
+    const res = await list(boss, '/api/admin/providers?state=deleted');
+    expect(res.status).toBe(200);
+    expect(res.body.data).toEqual([expect.objectContaining({ id: String(provider._id), email: provider.email, deleteReason: 'duplicate account' })]);
+    expect(res.body.meta.counts.deleted).toBe(1);
+  });
+});

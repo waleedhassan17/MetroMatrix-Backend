@@ -403,6 +403,13 @@ components:
               type: integer
         isOnline:
           type: boolean
+        deletedAt:
+          type: string
+          format: date-time
+          description: Only on a deleted account (state=deleted, super admins), which can be restored.
+        deleteReason:
+          type: string
+          nullable: true
     ProviderDetail:
       allOf:
         - $ref: '#/components/schemas/ProviderSummary'
@@ -664,6 +671,13 @@ components:
         lastLoginAt:
           type: string
           format: date-time
+          nullable: true
+        deletedAt:
+          type: string
+          format: date-time
+          description: Only on a deleted account (status=deleted, super admins), which can be restored.
+        deleteReason:
+          type: string
           nullable: true
     UserDetail:
       allOf:

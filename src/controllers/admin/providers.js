@@ -25,7 +25,7 @@ const Brand = require('../../modules/shopping/models/Brand');
  */
 
 const SUMMARY_FIELDS =
-  'fullName email phoneNumber providerType providerSubType city profilePhoto verificationStatus isSuspended submittedAt createdAt approvedAt rejectionReason ratings isOnline';
+  'fullName email phoneNumber providerType providerSubType city profilePhoto verificationStatus isSuspended submittedAt createdAt approvedAt rejectionReason ratings isOnline deletedAt +deletedEmail deleteReason';
 
 const summary = (p) => ({
   id: String(p._id),
@@ -43,6 +43,8 @@ const summary = (p) => ({
   rejectionReason: p.rejectionReason || null,
   rating: p.ratings ? { average: p.ratings.average ?? null, count: p.ratings.count ?? 0 } : null,
   isOnline: !!p.isOnline,
+  // A deleted account (listed only to super admins, for restoring).
+  ...(p.deletedAt ? { email: p.deletedEmail || p.email, deletedAt: p.deletedAt, deleteReason: p.deleteReason || null } : {}),
 });
 
 const detail = (p) => ({
@@ -97,8 +99,13 @@ const present = async (p) => ({
 // @route GET /api/admin/providers?state=&type=&subType=&city=&search=&sort=&page=&limit=&cursor=
 const listProviders = asyncHandler(async (req, res) => {
   const q = req.query;
-  const filter = {};
-  if (q.state && q.state !== 'all') {
+  // `deleted` lists soft-deleted providers so a super admin can restore one.
+  const deleted = q.state === 'deleted';
+  if (deleted && !req.user.isSuperAdmin) {
+    throw new AppError(ERROR_CODES.SUPER_ADMIN_REQUIRED, 'Only a super admin can see deleted accounts');
+  }
+  const filter = deleted ? { deletedAt: { $ne: null } } : {};
+  if (!deleted && q.state && q.state !== 'all') {
     const f = status.stateFilter(q.state);
     if (!f) {
       throw new AppError(ERROR_CODES.VALIDATION_FAILED, `state must be one of ${status.PROVIDER_STATES.join(', ')}`, {
@@ -120,11 +127,12 @@ const listProviders = asyncHandler(async (req, res) => {
     sortable: ['createdAt', 'submittedAt', 'fullName', 'approvedAt'],
     defaultSort: q.state === 'pending' ? 'submittedAt' : '-createdAt',
   });
-  const [{ items, meta }, counts] = await Promise.all([
+  const [{ items, meta }, counts, deletedCount] = await Promise.all([
     findPage(Provider, filter, list, { select: SUMMARY_FIELDS }),
     stateCounts(),
+    req.user.isSuperAdmin ? Provider.countDocuments({ deletedAt: { $ne: null } }) : null,
   ]);
-  ok(res, items.map(summary), { ...meta, counts });
+  ok(res, items.map(summary), { ...meta, counts: { ...counts, ...(deletedCount === null ? {} : { deleted: deletedCount }) } });
 });
 
 // Number of providers in each state (for the filter chips).

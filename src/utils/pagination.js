@@ -74,7 +74,12 @@ function parseListQuery(query = {}, { sortable = ['createdAt'], defaultSort = '-
  * @returns {Promise<{ items: any[], meta: object }>}
  */
 async function findPage(Model, filter, list, { select, populate, lean = false } = {}) {
-  const pageFilter = list.cursorFilter ? { $and: [filter, list.cursorFilter] } : filter;
+  // An explicit deletedAt stays at the top level: the soft-delete plugin only
+  // sees top-level keys, so inside $and it would hide deleted documents again
+  // and a list of deleted accounts would come back empty from page 2 on.
+  const pageFilter = list.cursorFilter
+    ? { ...(Object.prototype.hasOwnProperty.call(filter, 'deletedAt') ? { deletedAt: filter.deletedAt } : {}), $and: [filter, list.cursorFilter] }
+    : filter;
   let q = Model.find(pageFilter).sort(list.sort).skip(list.skip).limit(list.limit);
   if (select) q = q.select(select);
   if (populate) q = q.populate(populate);
