@@ -2,6 +2,7 @@ const crypto = require('crypto');
 const User = require('../models/User');
 const Provider = require('../models/Provider');
 const { sendEmail } = require('./emailService');
+const { endAllRefreshSessions } = require('./refreshSessions');
 
 class PasswordResetService {
   /**
@@ -117,11 +118,11 @@ class PasswordResetService {
     user.password = newPassword;
     user.resetPasswordToken = undefined;
     user.resetPasswordExpire = undefined;
-    
-    // Clear refresh token to force re-login
-    user.refreshToken = undefined;
-    
+
     await user.save();
+
+    // End every session to force re-login on all devices
+    await endAllRefreshSessions(user);
 
     // Send confirmation email
     try {

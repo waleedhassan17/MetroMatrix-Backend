@@ -2,6 +2,7 @@ const User = require('../models/User');
 const Provider = require('../models/Provider');
 const crypto = require('crypto');
 const { generateTokens } = require('../utils/generateToken');
+const { startRefreshSession } = require('./refreshSessions');
 const { sendEmail, emailTemplates } = require('./emailService');
 
 class AuthService {
@@ -70,12 +71,12 @@ class AuthService {
       userType: 'user',
       email: user.email
     });
-    user.refreshToken = tokens.refreshToken;
     user.lastLoginDate = Date.now();
 
     // Generate verification token
     const verifyToken = user.getEmailVerificationToken();
     await user.save();
+    await startRefreshSession(user, tokens.refreshToken);
 
     // Send welcome email
     try {
@@ -130,9 +131,9 @@ class AuthService {
       userType: 'provider',
       email: provider.email
     });
-    provider.refreshToken = tokens.refreshToken;
     provider.lastLoginDate = Date.now();
     await provider.save();
+    await startRefreshSession(provider, tokens.refreshToken);
 
     return {
       provider: provider.toJSON(),

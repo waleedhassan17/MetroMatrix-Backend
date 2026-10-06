@@ -12,6 +12,7 @@ const mongoose = require('mongoose');
 require('../src/config/validateEnv')();
 
 const app = require('../src/app');
+const { corsMiddleware } = require('../src/gateway/security');
 
 let connPromise = null;
 
@@ -35,13 +36,28 @@ const ensureDb = () => {
 };
 
 module.exports = async (req, res) => {
+  // A browser preflight needs no database. Answering it here keeps it off the
+  // cold-start connect, which every web call would otherwise wait on twice.
+  // The callback only runs for an origin CORS refused: no CORS headers, so
+  // the browser blocks the call that follows.
+  if (req.method === 'OPTIONS') {
+    return corsMiddleware(req, res, () => {
+      res.statusCode = 204;
+      res.end();
+    });
+  }
+
   try {
     await ensureDb();
   } catch (err) {
     console.error('DB connection failed:', err.message);
-    res.statusCode = 500;
-    res.setHeader('Content-Type', 'application/json');
-    return res.end(JSON.stringify({ success: false, error: 'Database connection failed' }));
+    // Sent before Express runs, so it needs its own CORS headers; without
+    // them a browser shows this as an opaque network error.
+    return corsMiddleware(req, res, () => {
+      res.statusCode = 500;
+      res.setHeader('Content-Type', 'application/json');
+      res.end(JSON.stringify({ success: false, error: 'Database connection failed' }));
+    });
   }
   return app(req, res);
 };

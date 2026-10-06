@@ -8,6 +8,7 @@ const PendingSignup = require('../models/PendingSignup');
 const PasswordResetOTP = require('../models/PasswordResetOTP');
 const EmailVerification = require('../models/EmailVerification');
 const { generateTokens } = require('../utils/generateToken');
+const { startRefreshSession, rotateRefreshSession, endRefreshSession, endAllRefreshSessions } = require('../services/refreshSessions');
 const { sendEmail, emailTemplates } = require('../services/emailService');
 const EmailVerificationService = require('../services/emailVerificationService');
 const { verifyGoogleIdToken } = require('../config/firebase');
@@ -123,9 +124,9 @@ const loginUser = asyncHandler(async (req, res) => {
     });
     
     // Update user login info
-    user.refreshToken = tokens.refreshToken;
     user.lastLoginDate = Date.now();
     await user.save();
+    await startRefreshSession(user, tokens.refreshToken);
     
     res.json({
       success: true,
@@ -384,9 +385,9 @@ const loginProvider = asyncHandler(async (req, res) => {
     onboardingStatus: provider.onboardingStatus
   });
   
-  provider.refreshToken = tokens.refreshToken;
   provider.lastLoginDate = Date.now();
   await provider.save();
+  await startRefreshSession(provider, tokens.refreshToken);
   
   res.json({
     success: true,
@@ -427,9 +428,9 @@ const googleAuth = asyncHandler(async (req, res) => {
     });
     
     // Update refresh token
-    user.refreshToken = tokens.refreshToken;
     user.lastLoginDate = Date.now();
     await user.save();
+    await startRefreshSession(user, tokens.refreshToken);
     
     // Redirect to mobile app with tokens
     const params = new URLSearchParams({
@@ -461,9 +462,9 @@ const facebookAuth = asyncHandler(async (req, res) => {
       email: user.email
     });
     
-    user.refreshToken = tokens.refreshToken;
     user.lastLoginDate = Date.now();
     await user.save();
+    await startRefreshSession(user, tokens.refreshToken);
     
     const params = new URLSearchParams({
       token: tokens.accessToken,
@@ -641,8 +642,8 @@ const googleLogin = asyncHandler(async (req, res) => {
     });
 
     // Update refresh token
-    user.refreshToken = tokens.refreshToken;
     await user.save();
+    await startRefreshSession(user, tokens.refreshToken);
 
     // Build response based on userType
     const userResponse = {
@@ -808,8 +809,8 @@ const googleSignup = asyncHandler(async (req, res) => {
     });
 
     // Update refresh token
-    user.refreshToken = tokens.refreshToken;
     await user.save();
+    await startRefreshSession(user, tokens.refreshToken);
 
     // Build response based on userType
     const userResponse = {
@@ -1022,8 +1023,8 @@ const facebookLogin = asyncHandler(async (req, res) => {
     });
 
     // Update refresh token
-    user.refreshToken = tokens.refreshToken;
     await user.save();
+    await startRefreshSession(user, tokens.refreshToken);
 
     // Build response based on userType
     const userResponse = {
@@ -1215,8 +1216,8 @@ const facebookSignup = asyncHandler(async (req, res) => {
     });
 
     // Update refresh token
-    user.refreshToken = tokens.refreshToken;
     await user.save();
+    await startRefreshSession(user, tokens.refreshToken);
 
     // Build response based on userType
     const userResponse = {
@@ -1293,49 +1294,57 @@ const refreshToken = asyncHandler(async (req, res) => {
     throw new Error('Refresh token not provided');
   }
   
+  let decoded;
   try {
-    const decoded = jwt.verify(token, process.env.REFRESH_TOKEN_SECRET);
-    // Only refresh tokens refresh (tokens issued before `typ` existed have none).
-    if (decoded.typ && decoded.typ !== 'refresh') {
-      res.status(401);
-      throw new Error('Invalid refresh token');
-    }
-
-    // Find user or provider
-    let user = await User.findById(decoded.id);
-    let isProvider = false;
-    
-    if (!user) {
-      user = await Provider.findById(decoded.id);
-      isProvider = true;
-    }
-    
-    if (!user || user.refreshToken !== token) {
-      res.status(401);
-      throw new Error('Invalid refresh token');
-    }
-    
-    if (!user.isActive) {
-      res.status(403);
-      throw new Error('Account is deactivated');
-    }
-    
-    const tokens = generateTokens(user._id, {
-      userType: isProvider ? 'provider' : 'user',
-      email: user.email
-    });
-    user.refreshToken = tokens.refreshToken;
-    await user.save();
-    
-    res.json({
-      success: true,
-      ...tokens,
-      userType: isProvider ? 'provider' : 'user',
-    });
+    decoded = jwt.verify(token, process.env.REFRESH_TOKEN_SECRET);
   } catch (error) {
     res.status(401);
     throw new Error('Invalid or expired refresh token');
   }
+  // Only refresh tokens refresh (tokens issued before `typ` existed have none).
+  if (decoded.typ && decoded.typ !== 'refresh') {
+    res.status(401);
+    throw new Error('Invalid refresh token');
+  }
+
+  // Find user or provider. A database failure from here on is a 500, not a
+  // 401: the app treats 5xx as transient and keeps the session, where a 401
+  // used to sign the user out over a momentary outage.
+  let user = await User.findById(decoded.id);
+  let isProvider = false;
+
+  if (!user) {
+    user = await Provider.findById(decoded.id);
+    isProvider = true;
+  }
+
+  if (!user) {
+    res.status(401);
+    throw new Error('Invalid refresh token');
+  }
+
+  if (!user.isActive) {
+    res.status(403);
+    throw new Error('Account is deactivated');
+  }
+
+  const tokens = generateTokens(user._id, {
+    userType: isProvider ? 'provider' : 'user',
+    email: user.email
+  });
+
+  // Rotates only this client's session; the account's other devices and
+  // browser tabs keep theirs (src/services/refreshSessions.js).
+  if (!(await rotateRefreshSession(user, token, tokens.refreshToken))) {
+    res.status(401);
+    throw new Error('Invalid or expired refresh token');
+  }
+
+  res.json({
+    success: true,
+    ...tokens,
+    userType: isProvider ? 'provider' : 'user',
+  });
 });
 
 // @desc    Forgot password
@@ -1706,13 +1715,6 @@ const resetPassword = asyncHandler(async (req, res) => {
   // Update password
   user.password = password;
 
-  // Kill every existing session. Resetting a password is the standard
-  // response to "someone else may be in my account", so leaving the old
-  // refreshToken valid would let the attacker keep renewing access
-  // indefinitely. Clearing it means the next /auth/refresh from any old
-  // session fails and the app forces a fresh login.
-  user.refreshToken = undefined;
-
   // Clear any existing reset tokens if using old model fields
   if (user.resetPasswordToken) {
     user.resetPasswordToken = undefined;
@@ -1720,6 +1722,13 @@ const resetPassword = asyncHandler(async (req, res) => {
   }
 
   await user.save();
+
+  // Kill every existing session. Resetting a password is the standard
+  // response to "someone else may be in my account", so leaving an old
+  // refresh token valid would let the attacker keep renewing access
+  // indefinitely. Ending them means the next /auth/refresh from any old
+  // session fails and the app forces a fresh login.
+  await endAllRefreshSessions(user);
 
   // Delete OTP record
   await PasswordResetOTP.deleteOne({ _id: otpRecord._id });
@@ -1962,9 +1971,9 @@ const verifyEmailToken = asyncHandler(async (req, res) => {
         email: user.email
       });
       
-      user.refreshToken = tokens.refreshToken;
       user.lastLoginDate = Date.now();
       await user.save();
+      await startRefreshSession(user, tokens.refreshToken);
 
       // Delete pending signup record
       await PendingSignup.deleteOne({ _id: pending._id });
@@ -2031,9 +2040,9 @@ const verifyUserEmail = asyncHandler(async (req, res) => {
       userType: 'user',
       email: user.email
     });
-    user.refreshToken = tokens.refreshToken;
     user.lastLoginDate = Date.now();
     await user.save();
+    await startRefreshSession(user, tokens.refreshToken);
 
     // Delete pending signup record
     await PendingSignup.deleteOne({ _id: pending._id });
@@ -2335,10 +2344,17 @@ const resendProviderVerification = asyncHandler(async (req, res) => {
 // @access  Private
 const logout = asyncHandler(async (req, res) => {
   const user = req.user;
-  
-  user.refreshToken = undefined;
-  await user.save();
-  
+  const { refreshToken: token } = req.body || {};
+
+  // Signing out of the browser must not sign the phone out. A client that
+  // names its refresh token ends only that session; a bare call (apps built
+  // before sessions existed) ends every session, as logout always did.
+  if (token) {
+    await endRefreshSession(user, token);
+  } else {
+    await endAllRefreshSessions(user);
+  }
+
   res.json({
     success: true,
     message: 'Logged out successfully',

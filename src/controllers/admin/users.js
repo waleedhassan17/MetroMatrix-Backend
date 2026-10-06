@@ -12,6 +12,7 @@ const { parseListQuery, findPage, searchRegex } = require('../../utils/paginatio
 const { audit } = require('../../services/auditService');
 const { historyOf } = require('../../services/admin/history');
 const { softDeleteAccount, restoreAccount } = require('../../services/admin/accountDeletion');
+const { endAllRefreshSessions } = require('../../services/refreshSessions');
 
 /*
  * Customer account management — /api/admin/users*.
@@ -95,10 +96,10 @@ async function setActive(req, res, isActive) {
     throw new AppError(ERROR_CODES.CONFLICT, `This user is already ${isActive ? 'active' : 'deactivated'}`);
   }
   user.isActive = isActive;
+  await user.save();
   // Deactivation also ends their ability to renew a session (protect
   // refuses inactive accounts on every request already).
-  if (!isActive) user.refreshToken = undefined;
-  await user.save();
+  if (!isActive) await endAllRefreshSessions(user);
   await audit(req, {
     action: isActive ? 'user.activate' : 'user.deactivate',
     targetType: 'User',
