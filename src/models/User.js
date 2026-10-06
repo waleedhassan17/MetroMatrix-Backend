@@ -116,6 +116,22 @@ emailVerificationAttempts: {
     // Authentication
     lastLoginDate: Date,
     refreshToken: String,
+    // One entry per signed-in client, by hash only (src/services/refreshSessions.js).
+    // `refreshToken` above is the old single slot, read once to migrate.
+    refreshSessions: {
+      type: [
+        {
+          _id: false,
+          hash: String,
+          prevHash: String,
+          rotatedAt: Date,
+          createdAt: Date,
+          lastUsedAt: Date,
+        },
+      ],
+      select: false,
+      default: undefined,
+    },
     resetPasswordToken: String,
     resetPasswordExpire: Date,
 
@@ -262,6 +278,7 @@ userSchema.methods.toJSON = function () {
   const obj = this.toObject();
   delete obj.password;
   delete obj.refreshToken;
+  delete obj.refreshSessions;
   delete obj.resetPasswordToken;
   delete obj.resetPasswordExpire;
   delete obj.emailVerificationToken;

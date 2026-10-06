@@ -1,3 +1,4 @@
+const crypto = require('crypto');
 const jwt = require('jsonwebtoken');
 
 // A stolen access token is usable until it expires and cannot be revoked, so
@@ -59,8 +60,11 @@ const generateAccessToken = (id, payload = {}, { expiresIn } = {}) => {
 
 // Generate refresh token (long-lived)
 // payload can include: { id, userType, email, tokenType, onboardingStatus, etc. }
+// `jti` makes every refresh token unique: without it, two issued for the same
+// account in the same second are byte-identical, and a refresh session
+// (services/refreshSessions.js) is identified by its token's hash.
 const generateRefreshToken = (id, payload = {}, { expiresIn } = {}) => {
-  const tokenPayload = { id, ...payload, typ: 'refresh' };
+  const tokenPayload = { id, jti: crypto.randomUUID(), ...payload, typ: 'refresh' };
   return jwt.sign(tokenPayload, process.env.REFRESH_TOKEN_SECRET, {
     expiresIn: expiresIn || refreshTokenExpire(),
   });

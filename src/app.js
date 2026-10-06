@@ -11,7 +11,7 @@ const { errorHandler } = require('./middleware/errorMiddleware');
 // headers, shared rate limits and the module route table (src/gateway/).
 const { requestContext } = require('./gateway/requestContext');
 const { accessLog } = require('./gateway/accessLog');
-const { applySecurity } = require('./gateway/security');
+const { applyCors, applySecurity } = require('./gateway/security');
 const { buildLimiters, rateLimitDisabled } = require('./gateway/rateLimit');
 const { mountRoutes } = require('./gateway/registry');
 const { redisHealth } = require('./lib/redis');
@@ -22,6 +22,7 @@ const Provider = require('./models/Provider');
 const PendingSignup = require('./models/PendingSignup');
 const EmailVerification = require('./models/EmailVerification');
 const { generateTokens } = require('./utils/generateToken');
+const { startRefreshSession } = require('./services/refreshSessions');
 const { getPublicBaseUrl } = require('./utils/publicUrl');
 const named = require('./utils/named');
 const { verifiedEmailFlag } = require('./utils/verificationFlags');
@@ -55,12 +56,18 @@ app.post(
   require('./controllers/walletController').stripeWebhook
 );
 
+// CORS ahead of the body parsers: a body they reject (malformed JSON, over the
+// limit) must still carry CORS headers, or a browser reports the 400/413 as an
+// opaque network error (src/gateway/security.js).
+applyCors(app);
+
 // Body parser middleware
 app.use(express.json({ limit: '10mb' }));
 app.use(express.urlencoded({ extended: true, limit: '10mb' }));
 
 
-// CORS, helmet, NoSQL-injection sanitising, compression (src/gateway/security.js).
+// Helmet, NoSQL-injection sanitising, compression (src/gateway/security.js).
+// After the body parsers: the sanitiser cleans req.body.
 applySecurity(app);
 
 // Development logging
@@ -174,8 +181,8 @@ app.get('/api/verify-email', async (req, res) => {
           email: provider.email,
           onboardingStatus: 'pending_documents'
         });
-        provider.refreshToken = tokens.refreshToken;
         await provider.save();
+        await startRefreshSession(provider, tokens.refreshToken);
 
         console.log(`✅ Provider email verified via API: ${provider.email}`);
 
@@ -229,9 +236,9 @@ app.get('/api/verify-email', async (req, res) => {
           userType: 'user',
           email: user.email
         });
-        user.refreshToken = tokens.refreshToken;
         user.lastLoginDate = Date.now();
         await user.save();
+        await startRefreshSession(user, tokens.refreshToken);
 
         return res.json({
           success: true,
@@ -309,8 +316,8 @@ app.get('/verify-email', async (req, res) => {
           email: provider.email,
           onboardingStatus: 'pending_documents'
         });
-        provider.refreshToken = tokens.refreshToken;
         await provider.save();
+        await startRefreshSession(provider, tokens.refreshToken);
 
         console.log(`✅ Provider email verified: ${provider.email}`);
 
@@ -363,9 +370,9 @@ app.get('/verify-email', async (req, res) => {
           userType: 'user',
           email: user.email
         });
-        user.refreshToken = tokens.refreshToken;
         user.lastLoginDate = Date.now();
         await user.save();
+        await startRefreshSession(user, tokens.refreshToken);
 
         successMessage = 'Your email has been verified successfully! Welcome to MetroMatrix.';
 
@@ -455,9 +462,9 @@ app.get('/verify-email', async (req, res) => {
       email: user.email,
       tokenType: type === 'provider' ? 'LIMITED' : 'FULL'
     });
-    user.refreshToken = tokens.refreshToken;
     user.lastLoginDate = Date.now();
     await user.save();
+    await startRefreshSession(user, tokens.refreshToken);
 
     const deepLinkParams = new URLSearchParams({
       verified: 'true',

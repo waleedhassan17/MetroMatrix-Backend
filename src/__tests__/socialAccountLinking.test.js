@@ -28,6 +28,15 @@ jest.mock('../config/facebook', () => ({
 jest.mock('axios');
 jest.mock('../models/User', () => ({ findOne: jest.fn(), create: jest.fn() }));
 jest.mock('../models/Provider', () => ({ findOne: jest.fn(), create: jest.fn() }));
+// The models above are plain fakes, so the refresh-session writes (an atomic
+// update on the real model) are stubbed too. src/services/__tests__/
+// refreshSessions.test.js covers them against a real database.
+jest.mock('../services/refreshSessions', () => ({
+  startRefreshSession: jest.fn(),
+  rotateRefreshSession: jest.fn(),
+  endRefreshSession: jest.fn(),
+  endAllRefreshSessions: jest.fn(),
+}));
 jest.mock('../utils/generateToken', () => ({
   generateTokens: jest.fn(() => ({
     accessToken: 'mock-access-token',

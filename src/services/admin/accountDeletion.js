@@ -106,7 +106,7 @@ async function softDeleteAccount(kind, account, { admin, reason }) {
         email: placeholderEmail(account._id),
         isActive: false,
       },
-      $unset: { refreshToken: 1 },
+      $unset: { refreshToken: 1, refreshSessions: 1 },
     }
   );
   return { deletedAt };
