@@ -54,7 +54,7 @@ const VERTICALS = {
     load: healthcareDashboard,
     headline: (d) => [
       metric('appointments_today', 'Appointments booked today', d.appointmentsToday, 'count', 'today'),
-      metric('revenue_today', 'Completed consultations today', d.revenueToday, WALLET_CURRENCY, 'today'),
+      metric('revenue_today', 'Consultation payments today', d.revenueToday, WALLET_CURRENCY, 'today'),
       metric('cancellation_rate', 'Cancellation rate', d.cancellationRate, 'percent', 'all_time'),
       metric('pending_doctors', 'Doctors awaiting verification', d.pendingDoctorApprovals, 'count', 'now'),
     ],
