@@ -237,8 +237,10 @@ const refundAppointment = asyncHandler(async (req, res) => {
     reason: `Manual refund by admin: ${req.body.reason}`,
     ratioOverride: 1,
   });
+  // A completed appointment already paid the doctor: take that back too.
+  const reversal = refunded > 0 ? await paymentService.reverseDoctorPayout(appointment) : null;
   await audit(req, 'manual_refund', 'Appointment', appointment._id, {
-    after: { refunded },
+    after: { refunded, doctorPayoutReversed: reversal ? reversal.amount : 0 },
     reason: req.body.reason,
   });
   return res.json({ success: true, data: { refunded, appointment } });

@@ -210,6 +210,25 @@ const settleCompletedAppointment = async (appointment) => {
   await appointment.save();
 };
 
+/**
+ * Take back what a completed appointment paid the doctor — for an admin
+ * refund AFTER the payout (shopping does the same for vendors with
+ * reverseVendorPayout). Without it the patient got the fee back while the
+ * doctor kept it: money from nowhere, and the ledger check off by the fee.
+ * WalletService.reversePayout is idempotent and records a shortfall rather
+ * than hiding it when the doctor has already withdrawn the money.
+ */
+const reverseDoctorPayout = async (appointment) => {
+  if (!appointment.payout || !appointment.payout.paidAt) return null;
+  const doctor = await Doctor.findById(appointment.doctorId);
+  if (!doctor) return null;
+  return WalletService.reversePayout({
+    payeeType: 'Provider',
+    payeeId: doctor.providerId,
+    relatedTo: { kind: 'Appointment', id: appointment._id },
+  });
+};
+
 module.exports = {
   PaymentError,
   computeRefundAmount,
@@ -217,4 +236,5 @@ module.exports = {
   payAppointment,
   refundAppointment,
   settleCompletedAppointment,
+  reverseDoctorPayout,
 };

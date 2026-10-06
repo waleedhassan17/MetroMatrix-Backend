@@ -7,12 +7,13 @@ jest.mock('../../../services/walletService', () => ({
   getOrCreateWallet: jest.fn(),
   recordTransaction: jest.fn(),
   settlePayout: jest.fn(),
+  reversePayout: jest.fn(),
 }));
 jest.mock('../models/Doctor', () => ({ findById: jest.fn() }));
 
 const WalletService = require('../../../services/walletService');
 const Doctor = require('../models/Doctor');
-const { settleCompletedAppointment } = require('../services/paymentService');
+const { settleCompletedAppointment, reverseDoctorPayout } = require('../services/paymentService');
 
 beforeEach(() => jest.clearAllMocks());
 
@@ -67,5 +68,24 @@ describe('settleCompletedAppointment', () => {
     const apt = makeAppointment({ payment: { status: 'paid', amount: 0 } });
     await settleCompletedAppointment(apt);
     expect(WalletService.settlePayout).not.toHaveBeenCalled();
+  });
+});
+
+describe('reverseDoctorPayout (admin refund after the payout)', () => {
+  it('takes back what the appointment paid the doctor, relatedTo the appointment', async () => {
+    Doctor.findById.mockResolvedValue({ providerId: 'prov-doc-1' });
+    WalletService.reversePayout.mockResolvedValue({ amount: 2000 });
+    const apt = makeAppointment({ payout: { amount: 2000, paidAt: new Date() } });
+    await expect(reverseDoctorPayout(apt)).resolves.toEqual({ amount: 2000 });
+    expect(WalletService.reversePayout).toHaveBeenCalledWith({
+      payeeType: 'Provider',
+      payeeId: 'prov-doc-1',
+      relatedTo: { kind: 'Appointment', id: 'apt-1' },
+    });
+  });
+
+  it('does nothing before the doctor was paid', async () => {
+    await expect(reverseDoctorPayout(makeAppointment())).resolves.toBeNull();
+    expect(WalletService.reversePayout).not.toHaveBeenCalled();
   });
 });
