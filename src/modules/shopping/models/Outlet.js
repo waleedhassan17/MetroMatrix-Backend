@@ -26,8 +26,13 @@ const outletSchema = new mongoose.Schema(
       country: { type: String, default: 'Pakistan' },
       postalCode: { type: String, default: '' },
     },
+    // Set only together with coordinates (adminBrandController.applyOutletPayload).
+    // A default 'Point' made every outlet saved without coordinates a GeoJSON
+    // point with none, which the 2dsphere index cannot read: creating such an
+    // outlet failed with "Can't extract geo keys", and so would building the
+    // index over documents already stored that way (see migration 07).
     geo: {
-      type: { type: String, enum: ['Point'], default: 'Point' },
+      type: { type: String, enum: ['Point'] },
       // [lng, lat]
       coordinates: { type: [Number], default: undefined },
     },

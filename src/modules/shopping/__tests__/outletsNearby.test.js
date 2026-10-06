@@ -42,4 +42,35 @@ d('outlets near a customer (MongoDB)', () => {
     expect(outlets[0].outletId).toBeDefined();
     expect(outlets[0].location.latitude).toBeCloseTo(31.529, 2);
   });
+
+  it('saves an outlet without coordinates: no empty GeoJSON point for the index to reject', async () => {
+    // An admin adds an outlet from its address alone; this used to fail with
+    // "Can't extract geo keys" once the 2dsphere index existed.
+    const o = await Outlet.create({ name: 'No Map Store', location: { address: '1 Mall Road', city: 'Lahore' } });
+    const raw = await Outlet.collection.findOne({ _id: o._id });
+    expect(raw.geo).toBeUndefined();
+    o.geo = { type: 'Point', coordinates: [74.3, 31.5] };
+    await expect(o.save()).resolves.toBeTruthy();
+  });
+
+  it('migration 07 removes empty points already stored, and nothing else', async () => {
+    const { up } = require('../../../../scripts/migrations/07-outlet-geo-cleanup');
+    await Outlet.collection.dropIndex('geo_2dsphere');
+    const { insertedId: empty } = await Outlet.collection.insertOne({ name: 'Old Store', slug: 'old-store', geo: { type: 'Point' } });
+    const { insertedId: real } = await Outlet.collection.insertOne({
+      name: 'Mapped Store',
+      slug: 'mapped-store',
+      geo: { type: 'Point', coordinates: [74.3, 31.5] },
+    });
+
+    await expect(up({ dry: true })).resolves.toEqual({ emptyPoints: 1 });
+    expect((await Outlet.collection.findOne({ _id: empty })).geo).toEqual({ type: 'Point' });
+
+    await expect(up({ dry: false })).resolves.toEqual({ emptyPoints: 1 });
+    expect((await Outlet.collection.findOne({ _id: empty })).geo).toBeUndefined();
+    expect((await Outlet.collection.findOne({ _id: real })).geo.coordinates).toEqual([74.3, 31.5]);
+    await expect(up({ dry: false })).resolves.toEqual({ emptyPoints: 0 });
+    // With the empty point gone the index builds again.
+    await expect(Outlet.syncIndexes()).resolves.toBeTruthy();
+  });
 });
