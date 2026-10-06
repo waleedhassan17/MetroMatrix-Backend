@@ -2,9 +2,15 @@
  * The admin data migrations, run as real child processes against this test
  * file's database: they refuse without --confirm-db, do nothing with --dry,
  * fix what they are meant to fix, and are idempotent.
+ *
+ * The child runs ASYNCHRONOUSLY. Under --runInBand (npm test, CI) the test
+ * runs in the same process that started the in-memory MongoDB and drains its
+ * output; execFileSync blocked that process, mongod's output pipe filled, it
+ * stopped answering, and the migration waited on it forever — npm test hung
+ * here with nothing failing.
  */
 const path = require('path');
-const { execFileSync } = require('child_process');
+const { execFile } = require('child_process');
 const mongoose = require('mongoose');
 const { connect, clear, disconnect } = require('../../test/helpers/db');
 
@@ -12,16 +18,17 @@ const ROOT = path.join(__dirname, '..', '..');
 const dbName = () => new URL(process.env.MONGODB_URI).pathname.slice(1);
 
 function run(script, ...args) {
-  try {
-    const out = execFileSync(process.execPath, [path.join(ROOT, 'scripts', 'migrations', script), ...args], {
-      env: process.env,
-      encoding: 'utf8',
-      stdio: ['ignore', 'pipe', 'pipe'],
-    });
-    return { code: 0, out };
-  } catch (err) {
-    return { code: err.status, out: `${err.stdout || ''}${err.stderr || ''}` };
-  }
+  return new Promise((resolve) => {
+    execFile(
+      process.execPath,
+      [path.join(ROOT, 'scripts', 'migrations', script), ...args],
+      { env: process.env, encoding: 'utf8', timeout: 60_000 },
+      (err, stdout, stderr) => {
+        if (!err) return resolve({ code: 0, out: stdout });
+        resolve({ code: typeof err.code === 'number' ? err.code : 1, out: `${stdout || ''}${stderr || ''}` });
+      }
+    );
+  });
 }
 const confirm = () => `--confirm-db=${dbName()}`;
 const db = () => mongoose.connection.db;
@@ -30,8 +37,8 @@ beforeAll(connect);
 afterEach(clear);
 afterAll(disconnect);
 
-it('refuses without naming the database', () => {
-  const res = run('01-admin-auth-cleanup.js');
+it('refuses without naming the database', async () => {
+  const res = await run('01-admin-auth-cleanup.js');
   expect(res.code).toBe(1);
   expect(res.out).toMatch(/--confirm-db=/);
 });
@@ -49,12 +56,12 @@ describe('01-admin-auth-cleanup', () => {
   });
 
   it('--dry changes nothing', async () => {
-    expect(run('01-admin-auth-cleanup.js', confirm(), '--dry').code).toBe(0);
+    expect((await run('01-admin-auth-cleanup.js', confirm(), '--dry')).code).toBe(0);
     expect((await db().collection('admins').findOne()).refreshToken).toBe('plain-token');
   });
 
   it('removes the plaintext refresh token and the unused settings, keeps the used ones, builds indexes', async () => {
-    expect(run('01-admin-auth-cleanup.js', confirm()).code).toBe(0);
+    expect((await run('01-admin-auth-cleanup.js', confirm())).code).toBe(0);
     expect((await db().collection('admins').findOne()).refreshToken).toBeUndefined();
     const s = await db().collection('adminsettings').findOne();
     expect(s.general).toEqual({ platformName: 'MM' });
@@ -64,7 +71,7 @@ describe('01-admin-auth-cleanup', () => {
     expect(s.homeservice).toEqual({ commissionPercent: 10 });
     const ttl = (await db().collection('adminsessions').indexes()).find((i) => i.expireAfterSeconds !== undefined);
     expect(ttl).toBeDefined();
-    expect(run('01-admin-auth-cleanup.js', confirm()).code).toBe(0); // idempotent
+    expect((await run('01-admin-auth-cleanup.js', confirm())).code).toBe(0); // idempotent
   });
 });
 
@@ -76,7 +83,7 @@ describe('02-admin-permissions', () => {
       { email: 'ops@example.com', role: 'admin', permissions: { canManageShopping: true } },
       { email: 'mod@example.com', role: 'moderator', permissions: { canManageShopping: true } },
     ]);
-    expect(run('02-admin-permissions.js', confirm()).code).toBe(0);
+    expect((await run('02-admin-permissions.js', confirm())).code).toBe(0);
     const by = async (email) => db().collection('admins').findOne({ email });
     for (const email of ['flag-only@example.com', 'role-only@example.com']) {
       const a = await by(email);
@@ -105,8 +112,8 @@ describe('03-audit-backfill', () => {
       stats: { totalProvidersApproved: 1 },
     });
 
-    expect(run('03-audit-backfill.js', confirm()).code).toBe(0);
-    expect(run('03-audit-backfill.js', confirm()).code).toBe(0); // idempotent
+    expect((await run('03-audit-backfill.js', confirm())).code).toBe(0);
+    expect((await run('03-audit-backfill.js', confirm())).code).toBe(0); // idempotent
 
     const rows = await db().collection('adminauditlogs').find({}).sort({ createdAt: 1 }).toArray();
     expect(rows.map((r) => r.action)).toEqual([
@@ -133,7 +140,7 @@ describe('04-provider-status', () => {
       { email: 'approved-then-off@x.co', adminVerified: 'inactive', approvedAt: new Date('2026-01-01') },
       { email: 'waiting@x.co', adminVerified: 'pending' },
     ]);
-    expect(run('04-provider-status.js', confirm()).code).toBe(0);
+    expect((await run('04-provider-status.js', confirm())).code).toBe(0);
     const by = async (email) => db().collection('providers').findOne({ email });
     expect(await by('live@x.co')).toMatchObject({ verificationStatus: 'approved', isSuspended: false });
     expect(await by('switched-off@x.co')).toMatchObject({ verificationStatus: 'approved', isSuspended: true });
@@ -142,7 +149,7 @@ describe('04-provider-status', () => {
     expect(await by('waiting@x.co')).toMatchObject({ verificationStatus: 'pending', isSuspended: false });
     // Login flags untouched.
     expect((await by('switched-off@x.co')).adminVerified).toBe('active');
-    expect(run('04-provider-status.js', confirm()).out).toMatch(/"changed":0/);
+    expect((await run('04-provider-status.js', confirm())).out).toMatch(/"changed":0/);
   });
 });
 
@@ -155,7 +162,7 @@ describe('05-notification-read-state', () => {
       { type: 'provider_registration', title: 't', message: 'm', isRead: true, readAt: new Date(), data: { providerId, severity: 'warning' } },
       { type: 'system_alert', title: 't', message: 'm', isRead: false },
     ]);
-    expect(run('05-notification-read-state.js', confirm()).code).toBe(0);
+    expect((await run('05-notification-read-state.js', confirm())).code).toBe(0);
     const [read, unread] = await db().collection('notifications').find({}).sort({ type: 1 }).toArray();
     expect(read.readBy.map(String).sort()).toEqual([a1, a2].map(String).sort());
     expect(read.isRead).toBeUndefined();
@@ -166,13 +173,14 @@ describe('05-notification-read-state', () => {
 });
 
 describe('audit-prod-hygiene', () => {
-  const hygiene = (...args) => {
-    try {
-      return { code: 0, out: execFileSync(process.execPath, [path.join(ROOT, 'scripts', 'audit-prod-hygiene.js'), ...args], { env: process.env, encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] }) };
-    } catch (err) {
-      return { code: err.status, out: `${err.stdout || ''}${err.stderr || ''}` };
-    }
-  };
+  // Asynchronous for the same reason as run() above.
+  const hygiene = (...args) =>
+    new Promise((resolve) => {
+      execFile(process.execPath, [path.join(ROOT, 'scripts', 'audit-prod-hygiene.js'), ...args], { env: process.env, encoding: 'utf8', timeout: 60_000 }, (err, stdout, stderr) => {
+        if (!err) return resolve({ code: 0, out: stdout });
+        resolve({ code: typeof err.code === 'number' ? err.code : 1, out: `${stdout || ''}${stderr || ''}` });
+      });
+    });
 
   it('finds seeded accounts and known passwords read-only, and cleans up with --apply', async () => {
     const User = require('../models/User');
@@ -182,14 +190,14 @@ describe('audit-prod-hygiene', () => {
     await Admin.create({ email: 'old-admin@gmail.com', fullName: 'Old', role: 'admin', password: 'Moderator@123456' });
     await Admin.create({ email: 'boss@gmail.com', fullName: 'Boss', role: 'super_admin', password: 'Strong-Unique-Pass-1' });
 
-    const look = hygiene(confirm());
+    const look = await hygiene(confirm());
     expect(look.code).toBe(0);
     expect(look.out).toMatch(/user1@metromatrix\.pk/);
     expect(look.out).toMatch(/old-admin@gmail\.com/);
     expect(look.out).not.toMatch(/real@gmail\.com|boss@gmail\.com/);
     expect(await User.countDocuments({})).toBe(2); // read-only
 
-    expect(hygiene(confirm(), '--apply').code).toBe(0);
+    expect((await hygiene(confirm(), '--apply')).code).toBe(0);
     expect(await User.findOne({ email: 'real@gmail.com' })).not.toBeNull();
     expect(await User.countDocuments({})).toBe(1); // demo account soft-deleted
     expect((await Admin.findOne({ email: 'old-admin@gmail.com' })).isActive).toBe(false);
@@ -213,7 +221,7 @@ describe('06-remove-commission', () => {
   });
 
   it('--dry changes nothing', async () => {
-    const res = run('06-remove-commission.js', confirm(), '--dry');
+    const res = await run('06-remove-commission.js', confirm(), '--dry');
     expect(res.code).toBe(0);
     expect(res.out).toMatch(/waived: 1 \(total 120\)/);
     expect((await db().collection('adminsettings').findOne()).shopping.commissionPercent).toBe(10);
@@ -221,7 +229,7 @@ describe('06-remove-commission', () => {
   });
 
   it('unsets the settings, waives only pending commission debits with an audit row, and is idempotent', async () => {
-    expect(run('06-remove-commission.js', confirm()).code).toBe(0);
+    expect((await run('06-remove-commission.js', confirm())).code).toBe(0);
     const s = await db().collection('adminsettings').findOne();
     expect(s.shopping).toEqual({ shippingFeePerBrand: 150 });
     expect(s.healthcare).toEqual({ cancellationWindowHours: 2 });
@@ -238,7 +246,7 @@ describe('06-remove-commission', () => {
     expect(audits).toHaveLength(1);
     expect(String(audits[0].targetId)).toBe(String(waived._id));
 
-    expect(run('06-remove-commission.js', confirm()).code).toBe(0);
+    expect((await run('06-remove-commission.js', confirm())).code).toBe(0);
     expect(await db().collection('adminauditlogs').countDocuments({ action: 'wallet.commission.waive' })).toBe(1);
   });
 });
