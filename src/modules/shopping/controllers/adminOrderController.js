@@ -10,6 +10,7 @@ const { getShoppingSettings, updateShoppingSettings } = require('../services/set
 const { escapeRegex } = require('../services/catalogService');
 const { shoppingDashboard } = require('../services/adminDashboardService');
 const { ok, paginated, fail, parsePagination } = require('../utils/respond');
+const { toDateKey } = require('../../../utils/time');
 
 /**
  * ── Order oversight ────────────────────────────────────────────────
@@ -151,10 +152,11 @@ const platformAnalytics = asyncHandler(async (req, res) => {
 
   const gmv = delivered.reduce((s, o) => s + o.total, 0);
 
-  // GMV time series by day
+  // Order value by Pakistan calendar day (as home services). A UTC date put
+  // an order placed between midnight and 05:00 in Pakistan on the day before.
   const buckets = new Map();
   delivered.forEach((o) => {
-    const key = o.createdAt.toISOString().slice(0, 10);
+    const key = toDateKey(o.createdAt);
     const b = buckets.get(key) || { gmv: 0, orders: 0 };
     b.gmv += o.total;
     b.orders += 1;
@@ -242,7 +244,8 @@ const getSettings = asyncHandler(async (req, res) => ok(res, await getShoppingSe
 const patchSettings = asyncHandler(async (req, res) => {
   const before = await getShoppingSettings();
   const after = await updateShoppingSettings(req.body, req.user._id);
-  await audit(req, 'update_settings', 'ShoppingSettings', null, { before, after });
+  // The console asks for a reason, as for every other module's settings.
+  await audit(req, 'update_settings', 'ShoppingSettings', null, { before, after, reason: req.body.reason });
   return ok(res, after);
 });
 

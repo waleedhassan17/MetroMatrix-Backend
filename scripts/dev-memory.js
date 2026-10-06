@@ -15,9 +15,10 @@
  * The admin password comes from the environment and is never printed.
  *
  * Seeds: one super admin (must change the password at first sign-in unless
- * DEV_ADMIN_READY=1), a customer, a provider waiting for review, a paid
- * home-service booking (for refunds), and an approved doctor and vendor with a
- * completed consultation and a delivered order (for provider analytics).
+ * DEV_ADMIN_READY=1), a customer with a topped-up wallet, a provider waiting
+ * for review, a paid home-service booking (for refunds), and an approved
+ * doctor and vendor with a completed consultation and a delivered order (for
+ * provider analytics).
  */
 const crypto = require('crypto');
 
@@ -214,6 +215,26 @@ async function seed({ email, password, ready }) {
     vendorPayout: { amount: 3750, commission: 0, paidAt: new Date(Date.now() - day) },
     createdAt: new Date(Date.now() - 5 * day),
     deliveredAt: new Date(Date.now() - day),
+  });
+
+  // The customer's wallet, topped up — so the console's wallets, adjustments
+  // and ledger check have a real wallet to work with. The top-up is in the
+  // ledger, so the books balance.
+  const Wallet = require('../src/models/Wallet');
+  const WalletTransaction = require('../src/models/WalletTransaction');
+  // (Signing up already opened the wallet; top it up.)
+  const wallet = await Wallet.findOneAndUpdate(
+    { owner: customer._id, ownerType: 'User' },
+    { $set: { balance: 5000 } },
+    { upsert: true, new: true, setDefaultsOnInsert: true }
+  );
+  await WalletTransaction.create({
+    wallet: wallet._id,
+    type: 'credit',
+    amount: 5000,
+    description: 'Top-up',
+    source: 'stripe_topup',
+    status: 'completed',
   });
 }
 
