@@ -12,7 +12,7 @@ const { getAdminSettings } = require('../services/settingsCache');
 const { audit } = require('../services/auditService');
 const { computeReconciliation } = require('../services/walletReconciliation');
 const notifications = require('../services/notificationService');
-const { clampInt, MAX_PAGE_SIZE } = require('../utils/pagination');
+const { clampInt, MAX_PAGE_SIZE, searchRegex } = require('../utils/pagination');
 
 
 // GET /api/admin/wallets — all wallets: owner type, balance, last activity; searchable, paginated
@@ -26,19 +26,12 @@ const listWallets = asyncHandler(async (req, res) => {
 
   let ownerIds = null;
   if (search) {
+    // Matched literally: a raw $regex let "(" answer 500 and a crafted pattern
+    // run as long as it liked.
+    const re = searchRegex(search);
     const [users, providers] = await Promise.all([
-      User.find({
-        $or: [
-          { fullName: { $regex: search, $options: 'i' } },
-          { email: { $regex: search, $options: 'i' } },
-        ],
-      }).select('_id'),
-      Provider.find({
-        $or: [
-          { fullName: { $regex: search, $options: 'i' } },
-          { email: { $regex: search, $options: 'i' } },
-        ],
-      }).select('_id'),
+      User.find({ $or: [{ fullName: re }, { email: re }] }).select('_id'),
+      Provider.find({ $or: [{ fullName: re }, { email: re }] }).select('_id'),
     ]);
     ownerIds = [...users.map((u) => u._id), ...providers.map((p) => p._id)];
     query.owner = { $in: ownerIds };

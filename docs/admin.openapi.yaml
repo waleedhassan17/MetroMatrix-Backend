@@ -776,6 +776,9 @@ components:
             providerId:
               type: string
               description: The provider the record belongs to (doctor, brand, payout), when there is one.
+            orderId:
+              type: string
+              description: A return request's order (vendors decide returns; the console opens the order).
         read:
           type: boolean
         createdAt:

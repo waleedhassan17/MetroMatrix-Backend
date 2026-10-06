@@ -20,13 +20,19 @@ async function notifyAdmins({ type, title, message, severity = 'info', target, r
       const settings = await getAdminSettings();
       if (settings.notifications?.[settingKey] === false) return null;
     }
+    // At most one per dedupeKey even before the unique index exists (production
+    // runs with autoIndex off until scripts/sync-indexes.js): the ledger-drift
+    // alert used to be created again on every Overview load.
+    if (dedupeKey && (await Notification.exists({ dedupeKey }))) return null;
     return await Notification.create({
       adminId,
       type,
       title,
       message,
       severity,
-      target: target ? { type: target.type, id: target.id, providerId: target.providerId || undefined } : undefined,
+      target: target
+        ? { type: target.type, id: target.id, providerId: target.providerId || undefined, orderId: target.orderId || undefined }
+        : undefined,
       requiredPermission,
       dedupeKey,
     });
@@ -120,7 +126,8 @@ const NotificationService = {
       type: 'return_requested',
       title: 'Return requested',
       message: `A customer asked to return an order: ${ret.reason}`,
-      target: { type: 'ReturnRequest', id: ret._id },
+      // The order, so the console can open it (vendors decide returns).
+      target: { type: 'ReturnRequest', id: ret._id, orderId: ret.order || undefined },
       requiredPermission: 'canManageShopping',
     }),
 

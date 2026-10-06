@@ -11,6 +11,8 @@ const { escapeRegex } = require('../services/catalogService');
 const { shoppingDashboard } = require('../services/adminDashboardService');
 const { ok, paginated, fail, parsePagination } = require('../utils/respond');
 const { toDateKey } = require('../../../utils/time');
+const AppError = require('../../../utils/AppError');
+const { ERROR_CODES } = require('../../../utils/errorCodes');
 
 /**
  * ── Order oversight ────────────────────────────────────────────────
@@ -241,7 +243,36 @@ const adminDashboard = asyncHandler(async (req, res) => {
 const getSettings = asyncHandler(async (req, res) => ok(res, await getShoppingSettings()));
 
 // @desc  PATCH /api/shopping/admin/settings
+// Whole numbers an admin may set, with their upper bound. The service copied
+// whatever it was sent, so a negative shipping fee or a fractional return
+// window reached checkout.
+const SETTINGS_LIMITS = {
+  shippingFeePerBrand: 100000,
+  freeShippingThreshold: 10000000,
+  lowStockThreshold: 100000,
+  defaultReturnDays: 365,
+};
+
+const settingsProblems = (body) => {
+  const problems = [];
+  for (const [field, max] of Object.entries(SETTINGS_LIMITS)) {
+    if (body[field] === undefined) continue;
+    const n = body[field];
+    if (typeof n !== 'number' || !Number.isInteger(n) || n < 0 || n > max) {
+      problems.push({ field, message: `${field} must be a whole number from 0 to ${max}` });
+    }
+  }
+  for (const field of ['autoApproveBrands', 'autoApproveProducts']) {
+    if (body[field] !== undefined && typeof body[field] !== 'boolean') problems.push({ field, message: `${field} must be true or false` });
+  }
+  return problems;
+};
+
 const patchSettings = asyncHandler(async (req, res) => {
+  const problems = settingsProblems(req.body || {});
+  if (problems.length) {
+    throw new AppError(ERROR_CODES.VALIDATION_FAILED, problems.map((p) => p.message).join('; '), { details: { fields: problems } });
+  }
   const before = await getShoppingSettings();
   const after = await updateShoppingSettings(req.body, req.user._id);
   // The console asks for a reason, as for every other module's settings.

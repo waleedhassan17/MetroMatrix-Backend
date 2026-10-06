@@ -11,7 +11,7 @@ owner can make.
 | 2 | Confirm on Vercel that `JWT_SECRET` ≠ `REFRESH_TOKEN_SECRET`, and record the production `JWT_EXPIRE`. Startup now refuses to boot if the two secrets are equal. | Repo owner | Needs Vercel env access. | High |
 | 3 | Decide on a `git filter-repo` history rewrite (after rotation). | Repo owner | Rewrites every commit hash; affects all clones/forks. | Medium |
 | 4 | Create a staging environment (own Vercel project, own Atlas DB, Stripe test keys) and point the app's preview profile at it. | Repo owner | Needs Vercel/Atlas accounts. Until then the app is verified against a locally run backend. | High |
-| 5 | Push the `admin-hardening` branches and open PRs; CI (`.github/workflows/ci.yml`) only runs once pushed. | Repo owner | Pushing publishes; not done without explicit approval. | — |
+| 5 | ~~Push the `admin-hardening` branches and open PRs.~~ Done: the work is on `main` and live (Vercel). The Oct 2026 QA pass is on `qa/admin-flow-hardening` (local, not pushed). | Repo owner | Pushing `main` deploys. | — |
 | 6 | Restrict the Firebase client API keys (Android package + SHA-1, iOS bundle id, allowed APIs). | Repo owner | Google Cloud console. | Medium |
 | 7 | Add `TOTP_ENC_KEY` (32 random bytes, base64) to Vercel **before** deploying B1 — production refuses to start without it. | Repo owner | Vercel env access. | High |
 | 8 | MetroMatrix-Realtime verifies access tokens with the shared `JWT_SECRET`; make it reject tokens with `typ` other than `access` (refresh tokens now carry `typ: 'refresh'`). | Realtime repo owner | Separate repository, not in scope. | Medium |

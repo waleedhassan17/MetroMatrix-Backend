@@ -47,6 +47,8 @@ const notificationSchema = new mongoose.Schema(
       id: { type: mongoose.Schema.Types.ObjectId, default: null },
       // The provider the record belongs to (doctor, brand, payout), if any.
       providerId: { type: mongoose.Schema.Types.ObjectId, default: undefined },
+      /** A return request's order. */
+      orderId: { type: mongoose.Schema.Types.ObjectId, default: undefined },
     },
     requiredPermission: { type: String, default: null },
     dedupeKey: { type: String, default: undefined },

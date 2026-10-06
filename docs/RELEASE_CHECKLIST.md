@@ -32,7 +32,9 @@ All migrations: `node scripts/migrations/<name>.js --confirm-db=<db name> [--dry
 | 5 | `05-notification-read-state` | Global `isRead` → per-admin `readBy`; adds `target`/`severity`; builds the dedupe index. | Previous release treats a missing `isRead` as unread. |
 | 6 | `06-remove-commission` | Unsets the three `commissionPercent` settings (there is no platform commission from Oct 2026) and waives cash-job commissions still pending on provider wallets (status `failed`, `metadata.waived`, one `AdminAuditLog` row each). Commission already taken stays as history. | Previous release defaults a missing `commissionPercent` to 10%; set waived debits (`metadata.waived: true`) back to `pending` if needed. |
 
-- [ ] Then `node scripts/sync-indexes.js --dry` and `node scripts/sync-indexes.js` (removes nothing; adds the new provider/notification indexes).
+| 7 | `07-outlet-geo-cleanup` | Unsets `geo` on outlets whose GeoJSON point has no coordinates (the schema used to default `geo.type`). Without it the 2dsphere index cannot be built, and creating an outlet without coordinates failed with "Can't extract geo keys". | None needed — the removed field held no data. |
+
+- [ ] Then `node scripts/sync-indexes.js --dry` and `node scripts/sync-indexes.js` (removes nothing; adds the new provider/notification indexes). **Run migration 07 first**: the outlet 2dsphere index will not build over empty points.
 
 ## 3. Clean production data
 
@@ -41,7 +43,7 @@ All migrations: `node scripts/migrations/<name>.js --confirm-db=<db name> [--dry
 
 ## 4. Admins
 
-- [ ] Every admin signs in again (old sessions are refused). Expect a forced password change where the password is older than `security.passwordExpiry` (default 90 days).
+- [ ] Every admin signs in again (old sessions are refused). A forced password change follows only where a recorded password change is older than `security.passwordExpiry` (default 90 days); an account with no recorded change date gets one recorded at sign-in instead (a5f94b1). Admins sign in from the app's regular sign-in screen (there is no separate staff sign-in).
 - [ ] Create a second super admin (needed to approve wallet adjustments above the threshold).
 - [ ] Review each admin's role and permissions in admin management.
 - [ ] Decide on `security.twoFactorEnabled` (require 2FA for super admins).

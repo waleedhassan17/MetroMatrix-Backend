@@ -368,7 +368,8 @@ const getSettings = asyncHandler(async (req, res) =>
 const patchSettings = asyncHandler(async (req, res) => {
   const before = await getHealthcareSettings();
   const after = await updateHealthcareSettings(req.body, req.user._id);
-  await audit(req, 'update_settings', 'HealthcareSettings', null, { before, after });
+  // The console asks for a reason, as for every other module's settings.
+  await audit(req, 'update_settings', 'HealthcareSettings', null, { before, after, reason: req.body.reason });
   return res.json({ success: true, data: after });
 });
 
