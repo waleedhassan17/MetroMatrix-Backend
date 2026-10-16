@@ -2,6 +2,7 @@ const express = require('express');
 const router = express.Router();
 const { protect, adminOnly, requirePermission } = require('../middleware/authMiddleware');
 const ctrl = require('../controllers/adminHealthcareController');
+const banners = require('../controllers/adminHealthcareBannerController');
 
 // Healthcare admin oversight (H3) — mounted under /api/v1/admin in app.js,
 // same pattern as adminDoctorRoutes/adminAnalyticsRoutes.
@@ -34,6 +35,12 @@ router.patch('/clinics/:id/status', ctrl.setClinicStatus);
 // Review moderation
 router.get('/healthcare/reviews', ctrl.listReviews);
 router.delete('/healthcare/reviews/:id', ctrl.deleteReview);
+
+// Health home banners (staff promotions on the patient's Health home)
+router.get('/healthcare/banners', banners.listBanners);
+router.post('/healthcare/banners', banners.createBanner);
+router.patch('/healthcare/banners/:id', banners.updateBanner);
+router.delete('/healthcare/banners/:id', banners.deleteBanner);
 
 // Dashboard + settings
 router.get('/healthcare/dashboard', ctrl.dashboard);

@@ -6258,6 +6258,124 @@ paths:
         - bearerAuth: []
       x-guards:
         - requirePermission(canManageHealthcare)
+  /api/v1/admin/healthcare/banners:
+    get:
+      tags:
+        - Healthcare
+      operationId: getV1AdminHealthcareBanners
+      description: Health home banners (staff promotions), live or not.
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/GenericEnvelope'
+        '400':
+          $ref: '#/components/responses/ValidationFailed'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+      security:
+        - bearerAuth: []
+      x-guards:
+        - requirePermission(canManageHealthcare)
+    post:
+      tags:
+        - Healthcare
+      operationId: postV1AdminHealthcareBanners
+      description: Create a Health home banner. targetType specialty|doctor|screen|none, with specialtyId, doctorId or targetScreen to match.
+      responses:
+        '201':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/GenericEnvelope'
+        '400':
+          $ref: '#/components/responses/ValidationFailed'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+      security:
+        - bearerAuth: []
+      x-guards:
+        - requirePermission(canManageHealthcare)
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: true
+  /api/v1/admin/healthcare/banners/{id}:
+    patch:
+      tags:
+        - Healthcare
+      operationId: patchV1AdminHealthcareBannersId
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/GenericEnvelope'
+        '400':
+          $ref: '#/components/responses/ValidationFailed'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      security:
+        - bearerAuth: []
+      x-guards:
+        - requirePermission(canManageHealthcare)
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: true
+    delete:
+      tags:
+        - Healthcare
+      operationId: deleteV1AdminHealthcareBannersId
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/GenericEnvelope'
+        '400':
+          $ref: '#/components/responses/ValidationFailed'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      security:
+        - bearerAuth: []
+      x-guards:
+        - requirePermission(canManageHealthcare)
   /api/v1/admin/healthcare/settings:
     get:
       tags:

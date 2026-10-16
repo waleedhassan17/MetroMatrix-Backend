@@ -2,6 +2,8 @@ const express = require('express');
 const router = express.Router();
 
 // Mount all healthcare sub-routes
+// The patient's Health home in one payload (doctors, banners, next visit).
+router.use('/home', require('./homeRoutes'));
 router.use('/specialties', require('./specialtyRoutes'));
 router.use('/doctors', require('./doctorRoutes'));
 router.use('/slots', require('./slotRoutes'));

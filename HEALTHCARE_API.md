@@ -16,6 +16,7 @@ Envelope: `{ success, data, message? }` (+ `count`/`pagination` on lists); error
 
 | Method | Path | Role | Notes |
 |---|---|---|---|
+| GET | `/home?city=` | public (`optionalAuth`) | The patient's Health home in one payload: `{ city, cities[], specialties[] (as /specialties), commonConcerns[{name, specialtyId, specialtyName, icon}] (≤12, specialties take turns), featuredDoctors[≤10] (the city's listed doctors, best rated first; as /doctors), availableToday[≤10] (a bookable time left today on Pakistan's calendar), banners[≤10] {id, title, subtitle, image, targetType specialty\|doctor\|screen\|none, targetScreen, target{id,name}\|null} (live: active, inside validFrom–validUntil, this city or every city, target still exists), upcoming (a patient's token only: the soonest pending/confirmed visit not over 30 min ago; as /appointments) \| null, emergencyNumbers[] }`. City: `city`, else the patient's `address.city`, else Lahore. |
 | GET | `/specialties`, `/specialties/:id` | public | |
 | POST/PUT/DELETE | `/specialties[/:id]` | **admin** (H1 fix — was any user) | |
 | GET | `/doctors`, `/doctors/search?specialtyId&q…`, `/doctors/featured` | public | suspended doctors excluded (isActive). `/doctors` also takes `search`, `lat&lng&radiusKm` (each doctor's nearest clinic by `$geoNear` on the `clinics` 2dsphere index; clinics never placed are excluded) → `distanceKm` + `nearestClinic` per doctor, `sortBy=distance`, `minRating`, `minFee/maxFee`, `availability=today\|this-week` |
@@ -69,12 +70,15 @@ New (H3, all audited to `HealthcareAuditLog`):
 | GET | `/healthcare/reviews?rating&maxRating&doctorId` | moderation list |
 | DELETE | `/healthcare/reviews/:id` | `{ reason }`; recomputes doctor rating atomically |
 | GET | `/healthcare/dashboard` | pending approvals, appointments/revenue today, cancellation rate, refund candidates, top specialties |
+| GET/POST | `/healthcare/banners` | Health home banners (`HealthcareBanner`). POST `{ title, subtitle?, image (https), targetType, specialtyId \| doctorId \| targetScreen (video_consultation, available_today, symptom_checker, emergency, records), city?, sortOrder?, isActive?, validFrom?, validUntil? }`; the target must exist |
+| PATCH/DELETE | `/healthcare/banners/:id` | partial update (merged, then validated as POST) / delete; audited |
 | GET/PATCH | `/healthcare/settings` | commissionPercent, cancellationWindowHours, lateCancelRefundPercent, defaultSlotDurationMinutes, maxAdvanceBookingDays, autoApproveDoctors — **same values H2 payment code reads** (`AdminSettings.healthcare`) |
 
 ## Scripts & demo logins
 
 ```
 npm run seed:healthcare    # idempotent demo dataset
+npm run seed:healthcare-home -- --confirm-db=<db>  # additive: home banners (insert-only) + concerns where a specialty has none
 npm run smoke:healthcare   # 22-step TC-16/TC-17 path — 22/22 vs production
 ```
 

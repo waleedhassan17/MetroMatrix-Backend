@@ -113,6 +113,7 @@ const getDoctors = async (filters = {}, options = {}) => {
     lat,
     lng,
     radiusKm,
+    doctorIds,
   } = filters;
   const { sortBy = 'rating', page = 1, limit = 10 } = options;
   const skip = (page - 1) * Number(limit);
@@ -169,6 +170,9 @@ const getDoctors = async (filters = {}, options = {}) => {
     });
     restrictIds(query, clinicDoctorIds);
   }
+
+  // Internal only (the Health home's "free today" rail); never read from a query.
+  if (Array.isArray(doctorIds)) restrictIds(query, doctorIds);
 
   if (minRating && Number(minRating) > 0) {
     query.rating = { $gte: Number(minRating) };
