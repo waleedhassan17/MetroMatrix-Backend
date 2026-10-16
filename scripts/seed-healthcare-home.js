@@ -35,7 +35,7 @@ const CONCERNS = [
   [['orthopedics', 'orthopaedics', 'orthopedic surgeon'], ['Back pain', 'Knee pain', 'Joint pain']],
   [['pediatrics', 'paediatrics', 'pediatrician'], ['Child fever', 'Vaccination', 'Child cough']],
   [['gynecology', 'gynaecology', 'gynecologist'], ['Pregnancy care', 'Irregular periods', 'PCOS']],
-  [['general physician', 'general practice', 'family medicine'], ['Fever', 'Cough and flu', 'Diabetes']],
+  [['general physician', 'general medicine', 'general practice', 'family medicine'], ['Fever', 'Cough and flu', 'Diabetes']],
 ];
 
 const BANNERS = [
@@ -95,14 +95,17 @@ async function main() {
   const specialties = await Specialty.find({});
   const byName = (names) => specialties.find((s) => names.includes(s.name.trim().toLowerCase())) || null;
 
-  // 1. Concerns — only where a specialty has none.
+  // 1. Concerns — on every matching specialty that has none ("General
+  //    Medicine" and "General Physician" can both exist; the home shows a
+  //    shared name once).
   let filled = 0;
   for (const [names, concerns] of CONCERNS) {
-    const spec = byName(names);
-    if (!spec || (spec.commonConditions && spec.commonConditions.length)) continue;
-    spec.commonConditions = concerns;
-    await spec.save();
-    filled += 1;
+    for (const spec of specialties.filter((s) => names.includes(s.name.trim().toLowerCase()))) {
+      if (spec.commonConditions && spec.commonConditions.length) continue;
+      spec.commonConditions = concerns;
+      await spec.save();
+      filled += 1;
+    }
   }
   log(`concerns filled on ${filled} specialt${filled === 1 ? 'y' : 'ies'} (others already had their own)`);
 
