@@ -3,36 +3,39 @@ const Doctor = require('../models/Doctor');
 const Clinic = require('../models/Clinic');
 const ClinicTiming = require('../models/ClinicTiming');
 const Slot = require('../models/Slot');
+const { DateTime } = require('luxon');
+const { DEFAULT_TIMEZONE } = require('../../../utils/time');
 
 /**
- * Build a date range object for availability queries.
+ * The open-slot filter for "available today / tomorrow / this week", on the
+ * clinic's calendar (Pakistan time), by each slot's real start instant.
+ *
+ * It used to compare `date` against the SERVER's midnight. On a UTC host
+ * (Vercel) that is five hours off Pakistan, and a generated slot's `date` is
+ * clinic midnight (19:00Z the evening before), so "today" listed tomorrow's
+ * doctors and missed today's — the patient home's "Available today" opened an
+ * empty list. A time that has already started is not available.
  */
-const getAvailabilityDateRange = (availability) => {
-  const now = new Date();
-  const startOfToday = new Date(now.getFullYear(), now.getMonth(), now.getDate());
-
+const availabilitySlotFilter = (availability, now = new Date()) => {
+  const local = DateTime.fromJSDate(now).setZone(DEFAULT_TIMEZONE);
+  let startUtc;
   switch (availability) {
-    case 'today': {
-      const endOfToday = new Date(startOfToday);
-      endOfToday.setHours(23, 59, 59, 999);
-      return { $gte: startOfToday, $lte: endOfToday };
-    }
+    case 'today':
+      startUtc = { $gt: now, $lte: local.endOf('day').toJSDate() };
+      break;
     case 'tomorrow': {
-      const startOfTomorrow = new Date(startOfToday);
-      startOfTomorrow.setDate(startOfTomorrow.getDate() + 1);
-      const endOfTomorrow = new Date(startOfTomorrow);
-      endOfTomorrow.setHours(23, 59, 59, 999);
-      return { $gte: startOfTomorrow, $lte: endOfTomorrow };
+      const day = local.plus({ days: 1 });
+      startUtc = { $gte: day.startOf('day').toJSDate(), $lte: day.endOf('day').toJSDate() };
+      break;
     }
-    case 'this-week': {
-      const endOfWeek = new Date(startOfToday);
-      endOfWeek.setDate(endOfWeek.getDate() + (7 - endOfWeek.getDay()));
-      endOfWeek.setHours(23, 59, 59, 999);
-      return { $gte: startOfToday, $lte: endOfWeek };
-    }
+    case 'this-week':
+      // Through Sunday (luxon: Monday 1 … Sunday 7).
+      startUtc = { $gt: now, $lte: local.plus({ days: 7 - local.weekday }).endOf('day').toJSDate() };
+      break;
     default:
       return null;
   }
+  return { status: 'available', startUtc };
 };
 
 /**
@@ -113,7 +116,6 @@ const getDoctors = async (filters = {}, options = {}) => {
     lat,
     lng,
     radiusKm,
-    doctorIds,
   } = filters;
   const { sortBy = 'rating', page = 1, limit = 10 } = options;
   const skip = (page - 1) * Number(limit);
@@ -135,9 +137,8 @@ const getDoctors = async (filters = {}, options = {}) => {
   // --- Availability filter: find doctorIds with open slots ---
   let availableDoctorIds = null;
   if (availability) {
-    const dateRange = getAvailabilityDateRange(availability);
-    if (dateRange) {
-      const slotFilter = { status: 'available', date: dateRange };
+    const slotFilter = availabilitySlotFilter(availability);
+    if (slotFilter) {
       if (consultationType) slotFilter.type = consultationType;
 
       const doctorIdsWithSlots = await Slot.distinct('doctorId', slotFilter);
@@ -170,9 +171,6 @@ const getDoctors = async (filters = {}, options = {}) => {
     });
     restrictIds(query, clinicDoctorIds);
   }
-
-  // Internal only (the Health home's "free today" rail); never read from a query.
-  if (Array.isArray(doctorIds)) restrictIds(query, doctorIds);
 
   if (minRating && Number(minRating) > 0) {
     query.rating = { $gte: Number(minRating) };
@@ -250,17 +248,11 @@ const getDoctors = async (filters = {}, options = {}) => {
     });
   }
 
-  // --- Attach availableToday flag ---
+  // --- Attach availableToday flag (the same rule as availability=today) ---
   if (doctors.length > 0) {
-    const startOfToday = new Date();
-    startOfToday.setHours(0, 0, 0, 0);
-    const endOfToday = new Date();
-    endOfToday.setHours(23, 59, 59, 999);
-
     const todaySlotDoctorIds = await Slot.distinct('doctorId', {
+      ...availabilitySlotFilter('today'),
       doctorId: { $in: doctors.map((d) => d._id) },
-      date: { $gte: startOfToday, $lte: endOfToday },
-      status: 'available',
     });
     const todaySet = new Set(todaySlotDoctorIds.map((id) => id.toString()));
 
@@ -528,6 +520,7 @@ const updateDoctor = async (id, data) => {
 
 module.exports = {
   getDoctors,
+  availabilitySlotFilter,
   restrictIds,
   nearestClinics,
   parsePatientPoint,

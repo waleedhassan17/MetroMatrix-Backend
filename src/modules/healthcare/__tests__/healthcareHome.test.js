@@ -1,6 +1,7 @@
 const mongoose = require('mongoose');
 const { resolveCity, isLiveBanner, bannerView, pickConcerns, visitWindow } = require('../services/homeService');
 const { normaliseBanner } = require('../../../controllers/adminHealthcareBannerController');
+const { availabilitySlotFilter } = require('../services/doctorService');
 
 const id = () => new mongoose.Types.ObjectId();
 const HOUR = 3600 * 1000;
@@ -53,6 +54,21 @@ describe('Health home helpers', () => {
     const legacy = visitWindow({ slotId: { date: new Date('2026-10-20T00:00:00Z'), startTime: '10:00', endTime: '10:30' }, timezone: 'Asia/Karachi' });
     expect(legacy.start.toISOString()).toBe('2026-10-20T05:00:00.000Z');
     expect(visitWindow({ slotId: null })).toBeNull();
+  });
+
+  it("availabilitySlotFilter: Pakistan's calendar day, never the server's, and nothing already started", () => {
+    // 20:30Z on the 17th is 01:30 on the 18th in Karachi.
+    const now = new Date('2026-10-17T20:30:00Z');
+    const today = availabilitySlotFilter('today', now);
+    expect(today.status).toBe('available');
+    expect(today.startUtc.$gt).toBe(now);
+    expect(today.startUtc.$lte.toISOString()).toBe('2026-10-18T18:59:59.999Z');
+    const tomorrow = availabilitySlotFilter('tomorrow', now).startUtc;
+    expect(tomorrow.$gte.toISOString()).toBe('2026-10-18T19:00:00.000Z');
+    expect(tomorrow.$lte.toISOString()).toBe('2026-10-19T18:59:59.999Z');
+    // The 18th is a Sunday: "this week" ends with it.
+    expect(availabilitySlotFilter('this-week', now).startUtc.$lte.toISOString()).toBe('2026-10-18T18:59:59.999Z');
+    expect(availabilitySlotFilter('someday', now)).toBeNull();
   });
 
   it('normaliseBanner: an https image and a target that matches its type', () => {
@@ -196,6 +212,16 @@ d('GET /api/v1/healthcare/home and the banner admin API', () => {
     expect(h.specialties.length).toBe(2);
     expect(h.upcoming).toBeNull();
     expect(h.emergencyNumbers[0].number).toBe('1122');
+  });
+
+  it("the list's Available today filter and flag agree with the home", async () => {
+    const res = await api().get('/api/v1/healthcare/doctors?availability=today&city=Lahore');
+    expect(res.status).toBe(200);
+    expect(res.body.data.doctors.map((x) => String(x._id))).toEqual(ids.freeToday ? [String(ids.lhrFree)] : []);
+    const all = (await api().get('/api/v1/healthcare/doctors?city=Lahore')).body.data.doctors;
+    const flag = Object.fromEntries(all.map((x) => [String(x._id), x.availableToday]));
+    expect(flag[String(ids.lhrTop)]).toBe(false);
+    if (ids.freeToday) expect(flag[String(ids.lhrFree)]).toBe(true);
   });
 
   it('another city: its own doctors and banners', async () => {

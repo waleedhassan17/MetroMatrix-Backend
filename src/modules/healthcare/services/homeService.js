@@ -1,6 +1,5 @@
 const Doctor = require('../models/Doctor');
 const Clinic = require('../models/Clinic');
-const Slot = require('../models/Slot');
 const Specialty = require('../models/Specialty');
 const Appointment = require('../models/Appointment');
 const HealthcareBanner = require('../models/HealthcareBanner');
@@ -8,7 +7,6 @@ const doctorService = require('./doctorService');
 const specialtyService = require('./specialtyService');
 const { PATIENT_POPULATE, computeModifyFlags } = require('./appointmentService');
 const { inferSlotInstants } = require('./appointmentTime');
-const { DEFAULT_TIMEZONE, toDateKey } = require('../../../utils/time');
 
 // ============================================================================
 // The patient's Health home in one payload: the city's top doctors, who is
@@ -163,29 +161,16 @@ const activeCities = async () => {
 };
 
 /**
- * Doctors with a bookable time left today, on the clinic's calendar day
- * (Pakistan time). The list filter's `availability=today` counts the server's
- * own day, which on a UTC host is a different day from 00:00 to 05:00 PKT.
- */
-const availableTodayIds = async (now) =>
-  Slot.distinct('doctorId', {
-    status: 'available',
-    dateKey: toDateKey(now, DEFAULT_TIMEZONE),
-    startUtc: { $gt: now },
-  });
-
-/**
  * @param {{ city?: string, patientId?: string|null, patientCity?: string|null, now?: Date }} args
  */
 const getHome = async ({ city: requested, patientId = null, patientCity = null, now = new Date() } = {}) => {
   const city = resolveCity(requested, patientCity);
-  const freeIds = await availableTodayIds(now);
   const [specialtyResult, featured, today, banners, cities, upcoming] = await Promise.all([
     specialtyService.getSpecialties({}, { page: 1, limit: 50 }),
     doctorService.getDoctors({ city }, { sortBy: 'rating', limit: RAIL_SIZE }),
-    freeIds.length
-      ? doctorService.getDoctors({ city, doctorIds: freeIds }, { sortBy: 'rating', limit: RAIL_SIZE })
-      : { doctors: [] },
+    // A bookable time left today on Pakistan's calendar — the same list the
+    // doctor list's "Available today" filter opens.
+    doctorService.getDoctors({ city, availability: 'today' }, { sortBy: 'rating', limit: RAIL_SIZE }),
     liveBanners(city, now),
     activeCities(),
     patientId ? nextVisit(patientId, now) : null,
