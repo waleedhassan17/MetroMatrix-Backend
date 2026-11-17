@@ -26,7 +26,7 @@ Canonical booking status: `PENDING → ACCEPTED|REJECTED|CANCELLED → EN_ROUTE 
 | PATCH | `/bookings/:id/status` | `{ status, reason? }` | `{ bookingId, status }` | 400 illegal transition |
 | POST | `/bookings/:id/cancel` | `{ reason? }` | `{ success, bookingId }` | 400 not cancellable |
 | POST | `/bookings/:id/dispute` | `{ reason, description?, evidence? }` (`evidence` = URLs from `POST /api/uploads/sign`, purpose `dispute_evidence`) | `{ disputeId, status }` | 400 open dispute exists / not your upload |
-| POST | `/bookings/:id/verify-identity` | `{ token, method: 'nfc'\|'qr' }` or `{ code }` — the provider's doorstep ID read from their NFC badge, QR code or 6-digit code (`userOnly`) | `{ verified, method, verifiedAt, status }`; an `EN_ROUTE` booking becomes `ARRIVED` (no "arrived" push to the customer); provider gets push + room event `identity_verified` | 400 malformed, 409 wrong status / already used, 422 not genuine / expired / replaced / wrong code (*N tries left*), 429 fifth wrong code |
+| POST | `/bookings/:id/verify-identity` | `{ code }` — the 6-digit doorstep ID code the provider reads out (`userOnly`) | `{ verified, method, verifiedAt, status }`; an `EN_ROUTE` booking becomes `ARRIVED` (no "arrived" push to the customer); provider gets push + room event `identity_verified` | 400 malformed, 409 wrong status / already used, 422 expired / replaced / wrong code (*N tries left*), 429 fifth wrong code |
 | GET | `/user/bookings?status` | query | `UserBooking[]` | 401 |
 | POST | `/user/bookings/:bookingId/cancel` | — | `{ bookingId }` | 400/403 |
 | PATCH | `/user/bookings/:bookingId/status` | `{ status }` | `{ bookingId, status }` | 400 illegal |
@@ -75,7 +75,7 @@ Canonical booking status: `PENDING → ACCEPTED|REJECTED|CANCELLED → EN_ROUTE 
 | PATCH | `/provider/status` / `/provider/online-status` | `{ isOnline, base?: { lat, lng } }` — going online with a position samples the service base, unless the provider pinned one on purpose (and did not opt into `autoUpdateBaseOnOnline`) | `{ isOnline, serviceBase? }` | 401 |
 | PUT | `/provider/location/base` | `{ lat, lng }` (inside Pakistan) — the coarse service base (~500 m grid) search measures distance from; the live track is never stored | `{ serviceBase: { latitude, longitude, source, updatedAt } }` | 400 bad / out-of-country coords |
 | POST | `/provider/heartbeat` | — (every ~2 min while the app is open) | `{ recorded, nextInSeconds }` — keeps `availableNow` honest | 401 |
-| POST | `/provider/jobs/:jobId/identity-token` | — (status `EN_ROUTE`/`ARRIVED`) | `{ token, code, nfcUri, qrPayload, expiresAt, ttlSeconds: 600 }` — HMAC-signed, booking-bound, single use; or `{ alreadyVerified, verifiedAt, method }` | 403 not assigned, 409 wrong status |
+| POST | `/provider/jobs/:jobId/identity-token` | — (status `EN_ROUTE`/`ARRIVED`) | `{ code, expiresAt, ttlSeconds: 600 }` — 6 digits, booking-bound, single use, 5 wrong guesses retire it; or `{ alreadyVerified, verifiedAt, method }` | 403 not assigned, 409 wrong status |
 | GET | `/provider/earnings?period` | query | `EarningsData` (+ availableBalance, commissionPercent) | 401 |
 | POST | `/provider/earnings/payout` / `/provider/payout-request` | `{ amount, method, accountDetails? }` | `{ payoutId, status }` | 400 below minimum / exceeds available balance |
 | POST | `/provider/location` | `{ latitude, longitude, jobId? }` | `{ distance, duration }` | 400 bad coords |

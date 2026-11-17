@@ -81,7 +81,7 @@ the configured urban speed) the realtime service calls the main API
 | `payment_received` | server → room | the customer paid (wallet) |
 | `payment_status_changed` | server → room | `{ bookingId, status: 'cash_selected' }` — the customer chose cash |
 | `provider_nearby` | server → room | `{ bookingId, etaMinutes, distanceMeters }` — once per trip |
-| `identity_verified` | server → room | `{ bookingId, method: 'nfc'\|'qr'\|'code', verifiedAt }` — the customer checked the provider's ID at the door |
+| `identity_verified` | server → room | `{ bookingId, method: 'code', verifiedAt }` — the customer checked the provider's ID at the door |
 
 Emitted from `bookingService.transition()` and the payment controller, so both
 apps update live without polling. (No-ops when the socket layer isn't attached

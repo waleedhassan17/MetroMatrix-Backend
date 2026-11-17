@@ -4,9 +4,9 @@ const now = Date.parse('2026-10-02T10:00:00Z');
 const at = '2026-10-02T09:58:00Z';
 
 describe('vital-sign validation', () => {
-  it('keeps a heart-rate reading from a Bluetooth monitor', () => {
+  it('stores every reading as typed in, whatever device a client claims', () => {
     expect(normaliseReading({ type: 'heart_rate', bpm: 72.4, measuredAt: at, source: { kind: 'ble', deviceName: 'Polar H10' }, clientId: 'a1' }, { now })).toEqual({
-      doc: { type: 'heart_rate', heartRate: { bpm: 72 }, measuredAt: new Date(at), source: { kind: 'ble', deviceName: 'Polar H10' }, clientId: 'a1' },
+      doc: { type: 'heart_rate', heartRate: { bpm: 72 }, measuredAt: new Date(at), source: { kind: 'manual', deviceName: '' }, clientId: 'a1' },
     });
   });
 
@@ -83,7 +83,7 @@ d('vitals endpoints (MongoDB)', () => {
     actAs = { _id: patient };
     const batch = {
       readings: [
-        { type: 'heart_rate', bpm: 71, measuredAt: recent(3), source: { kind: 'ble', deviceName: 'HR strap' }, clientId: 'r1' },
+        { type: 'heart_rate', bpm: 71, measuredAt: recent(3), clientId: 'r1' },
         { type: 'blood_pressure', systolic: 118, diastolic: 76, pulse: 66, measuredAt: recent(2), clientId: 'r2' },
         { type: 'heart_rate', bpm: 400, measuredAt: recent(1), clientId: 'r3' },
       ],

@@ -31,11 +31,6 @@ describe('assertOwnedAsset', () => {
     expect(() => assertOwnedAsset(url, opts)).toThrow(msg);
   });
 
-  it('3D models live under raw/', () => {
-    const url = `https://res.cloudinary.com/${CLOUD}/raw/upload/v1/metromatrix/models3d/${OWNER}/chair.glb`;
-    expect(assertOwnedAsset(url, { purpose: 'product_model3d', ownerId: OWNER, cloudName: CLOUD })).toBe(url);
-  });
-
   it('folders are per purpose and owner', () => {
     expect(folderFor('dispute_evidence', OWNER)).toBe(`metromatrix/disputes/${OWNER}`);
     expect(() => folderFor('nope', OWNER)).toThrow(/Unknown upload purpose/);

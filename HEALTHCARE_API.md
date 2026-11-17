@@ -33,7 +33,7 @@ Envelope: `{ success, data, message? }` (+ `count`/`pagination` on lists); error
 | GET | `/prescriptions/:prescriptionId/pdf` | patient **or prescribing doctor** (H1 fix) | application/pdf |
 | GET/POST | `/health-records` | patient | owner-scoped; PUT `/:id`, DELETE `/:recordId` check ownership. Categories include `medications`; large files go phone → Cloudinary (`POST /api/uploads/sign`, purpose `health_record`) |
 | GET | `/vitals?type=heart_rate\|blood_pressure&limit` | patient | own readings + `latest{heartRate, bloodPressure}` |
-| POST | `/vitals` | patient | `{ readings: [...] }` (≤50): `{type:'heart_rate', bpm}` or `{type:'blood_pressure', systolic, diastolic, meanArterial?, pulse?}` + `measuredAt`, `source{kind:'ble'\|'manual', deviceName}`, `clientId` (idempotency). Each reading validated on its own → `{ saved, duplicates, rejected[{index,error}] }`; 400 if none valid |
+| POST | `/vitals` | patient | `{ readings: [...] }` (≤50): `{type:'heart_rate', bpm}` or `{type:'blood_pressure', systolic, diastolic, meanArterial?, pulse?}` + `measuredAt`, `clientId` (idempotency). Each reading validated on its own → `{ saved, duplicates, rejected[{index,error}] }`; 400 if none valid |
 | DELETE | `/vitals/:id` | patient | own only |
 | GET | `/notifications` (+`/read-all`, `/:id/read`, DELETE) | patient/doctor | |
 | POST | `/reviews` | patient | `{ appointmentId, doctorId, rating, comment }`; unique per appointment; updates doctor aggregate |

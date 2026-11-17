@@ -135,7 +135,7 @@ router.delete('/doctors/me/notes/:noteId', ...doctorMe, deleteNote);
 // Patient history (this doctor's visits with a patient)
 router.get('/doctors/me/patients/:patientId/history', ...doctorMe, requireTreatingDoctor, getPatientHistory);
 
-// The patient's vital signs (Bluetooth monitors / typed in)
+// The patient's vital signs
 router.get(
   '/doctors/me/patients/:patientId/vitals',
   ...doctorMe,

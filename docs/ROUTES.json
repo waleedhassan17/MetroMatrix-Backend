@@ -3272,28 +3272,6 @@
     ]
   },
   {
-    "method": "PATCH",
-    "path": "/api/shopping/vendor/products/:productId/model3d",
-    "middleware": [
-      "apiRateLimit",
-      "protect",
-      "requireVendor",
-      "asyncHandler",
-      "asyncHandler"
-    ]
-  },
-  {
-    "method": "DELETE",
-    "path": "/api/shopping/vendor/products/:productId/model3d",
-    "middleware": [
-      "apiRateLimit",
-      "protect",
-      "requireVendor",
-      "asyncHandler",
-      "asyncHandler"
-    ]
-  },
-  {
     "method": "GET",
     "path": "/api/shopping/vendor/returns",
     "middleware": [

@@ -63,10 +63,10 @@ const bookingSchema = new mongoose.Schema(
       nearbyAt: { type: Date, default: null }, // "about 5 minutes away"
       reminderAt: { type: Date, default: null }, // "your job starts within the hour"
     },
-    // Doorstep identity check (services/identityService.js): the live token's
-    // nonce and the 6-digit code, both hashed; cleared once used.
+    // Doorstep identity check (services/identityService.js): the live 6-digit
+    // code, hashed; cleared once used. `nfc` / `qr` in `method` only appear on
+    // checks made before those methods were removed.
     identityCheck: {
-      nonceHash: { type: String, default: null },
       codeHash: { type: String, default: null },
       expiresAt: { type: Date, default: null },
       attempts: { type: Number, default: 0 },

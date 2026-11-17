@@ -11,7 +11,7 @@ router.use('/appointments', require('./appointmentRoutes'));
 router.use('/reviews', require('./reviewRoutes'));
 router.use('/prescriptions', require('./prescriptionRoutes'));
 router.use('/health-records', require('./healthRecordRoutes'));
-// Vital signs from Bluetooth monitors (heart rate, blood pressure) or typed in.
+// Vital signs the patient types in (heart rate, blood pressure).
 router.use('/vitals', require('./vitalsRoutes'));
 // Telemedicine (H6 BUILD decision): Jitsi-in-WebView transport, participant-guarded.
 router.use('/video-calls', require('./videoCallRoutes'));

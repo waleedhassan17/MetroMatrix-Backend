@@ -17,7 +17,6 @@ const PURPOSES = {
   dispute_evidence: { folder: 'disputes', resourceType: 'image', formats: ['jpg', 'jpeg', 'png', 'webp', 'heic'], maxBytes: 10e6 },
   health_record: { folder: 'health-records', resourceType: 'auto', formats: ['jpg', 'jpeg', 'png', 'webp', 'heic', 'pdf'], maxBytes: 10e6 },
   product_image: { folder: 'products', resourceType: 'image', formats: ['jpg', 'jpeg', 'png', 'webp'], maxBytes: 8e6 },
-  product_model3d: { folder: 'models3d', resourceType: 'raw', formats: ['glb', 'usdz'], maxBytes: 10e6 },
 };
 
 function folderFor(purpose, ownerId) {

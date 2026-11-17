@@ -1,8 +1,7 @@
 const mongoose = require('mongoose');
 
 /**
- * One vital-sign reading a patient took — from a Bluetooth monitor (standard
- * GATT Heart Rate 0x180D / Blood Pressure 0x1810 services) or typed in.
+ * One vital-sign reading a patient typed in.
  * Visible to the patient and to doctors they have an appointment with.
  */
 const healthVitalSchema = new mongoose.Schema(
@@ -19,6 +18,7 @@ const healthVitalSchema = new mongoose.Schema(
       pulse: { type: Number, min: 25, max: 250 },
     },
     source: {
+      // 'ble' only on readings saved before the Bluetooth monitor path was removed.
       kind: { type: String, enum: ['ble', 'manual'], required: true },
       deviceName: { type: String, default: '', maxlength: 60 },
     },

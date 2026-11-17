@@ -54,15 +54,6 @@ const productSchema = new mongoose.Schema(
       by: { type: mongoose.Schema.Types.ObjectId, default: null },
       at: { type: Date, default: null },
     },
-    // "View in your room": a binary glTF (.glb) for Android's Scene Viewer,
-    // optionally a USDZ for iPhone's AR Quick Look. Set only through
-    // PATCH /vendor/products/:id/model3d, which checks the files.
-    model3d: {
-      glbUrl: { type: String, default: null },
-      usdzUrl: { type: String, default: null },
-      sizeBytes: { type: Number, default: null },
-      attachedAt: { type: Date, default: null },
-    },
   },
   { timestamps: true }
 );

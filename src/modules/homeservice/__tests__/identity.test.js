@@ -3,52 +3,27 @@ jest.mock('../../../sockets', () => ({
   emitToBooking: jest.fn().mockResolvedValue(true),
 }));
 
-process.env.JWT_SECRET = process.env.JWT_SECRET || 'test-jwt-secret';
 const identity = require('../services/identityService');
 
 const BOOKING = '64b7f0c2a1b2c3d4e5f60718';
 
-describe('identity tokens', () => {
-  it('are short enough for the cheapest NFC sticker and carry no secrets in clear', () => {
-    const t = identity.issue(BOOKING);
-    expect(t.token).toMatch(/^mmid1\.[a-f0-9]{24}\.[A-Za-z0-9_-]{12}\.\d{10}\.[A-Za-z0-9_-]{22}$/);
-    // NTAG213: 144 bytes of NDEF. URI record header + TLV ≈ 8 bytes.
-    expect(t.nfcUri.length + 8).toBeLessThanOrEqual(137);
-    expect(t.nfcUri).toBe(`metromatrix://verify?t=${t.token}&via=nfc`);
-    expect(t.qrPayload).toBe(`metromatrix://verify?t=${t.token}&via=qr`);
+describe('identity codes', () => {
+  it('are 6 digits, expire in 10 minutes, and are stored only as a hash', () => {
+    const now = Date.parse('2026-10-02T10:00:00Z');
+    const t = identity.issue(BOOKING, { now });
     expect(t.code).toMatch(/^\d{6}$/);
+    expect(t.expiresAt.getTime()).toBe(now + identity.TOKEN_TTL_MS);
+    expect(t.stored.codeHash).toHaveLength(64);
     expect(t.stored.codeHash).not.toContain(t.code);
-    expect(t.stored.nonceHash).toHaveLength(64);
+    expect(t.stored).toMatchObject({ attempts: 0, verifiedAt: null, method: null });
+    expect(t).not.toHaveProperty('token');
   });
 
-  it('read back from the raw token, a QR payload or the NFC URI', () => {
+  it('are bound to the booking', () => {
     const t = identity.issue(BOOKING);
-    expect(identity.readToken(t.token).bookingId).toBe(BOOKING);
-    expect(identity.readToken(t.nfcUri).nonceHash).toBe(t.stored.nonceHash);
-    expect(identity.readToken(t.qrPayload).bookingId).toBe(BOOKING);
-    expect(() => identity.readToken('metromatrix://verify?via=qr')).toThrow(/isn't a MetroMatrix ID/);
-    expect(identity.readToken(` ${encodeURI(t.nfcUri)} `).bookingId).toBe(BOOKING);
-  });
-
-  it('refuse a forged, altered or expired token', () => {
-    const t = identity.issue(BOOKING);
-    const otherBooking = t.token.replace(BOOKING, '64b7f0c2a1b2c3d4e5f60719');
-    expect(() => identity.readToken(otherBooking)).toThrow(/genuine/);
-    const sig = t.token.slice(-22);
-    const flipped = t.token.slice(0, -22) + (sig[0] === 'A' ? 'B' : 'A') + sig.slice(1);
-    expect(() => identity.readToken(flipped)).toThrow(/genuine/);
-    expect(() => identity.readToken(t.token, { now: Date.now() + 11 * 60 * 1000 })).toThrow(/expired/);
-    expect(() => identity.readToken('hello')).toThrow(/isn't a MetroMatrix ID/);
-  });
-
-  it('are bound to the signing secret', () => {
-    const t = identity.issue(BOOKING);
-    process.env.NFC_TOKEN_SECRET = 'a-different-secret';
-    try {
-      expect(() => identity.readToken(t.token)).toThrow(/genuine/);
-    } finally {
-      delete process.env.NFC_TOKEN_SECRET;
-    }
+    expect(identity.codeHashFor(BOOKING, t.code)).toBe(t.stored.codeHash);
+    expect(identity.codeHashFor(BOOKING, ` ${t.code} `)).toBe(t.stored.codeHash);
+    expect(identity.codeHashFor('64b7f0c2a1b2c3d4e5f60719', t.code)).not.toBe(t.stored.codeHash);
   });
 });
 
@@ -112,31 +87,32 @@ d('doorstep identity check (MongoDB)', () => {
     return request(app).post(`/bookings/${id}/verify-identity`).send(body);
   };
 
-  it('a scanned token verifies once, moves EN_ROUTE to ARRIVED quietly, and tells the provider', async () => {
+  it('the code verifies once, moves EN_ROUTE to ARRIVED quietly, and tells the provider', async () => {
     const id = await booking('EN_ROUTE');
     const { body } = await issue(id);
     expect(body.data).toMatchObject({ ttlSeconds: 600 });
+    expect(body.data).not.toHaveProperty('token');
 
-    const res = await verify(id, { token: body.data.nfcUri, method: 'nfc' });
+    const res = await verify(id, { code: body.data.code });
     expect(res.status).toBe(200);
-    expect(res.body.data).toMatchObject({ verified: true, method: 'nfc', status: 'ARRIVED' });
+    expect(res.body.data).toMatchObject({ verified: true, method: 'code', status: 'ARRIVED' });
 
     const row = await Booking.findById(id).lean();
     expect(row.status).toBe('ARRIVED');
-    expect(row.identityCheck).toMatchObject({ method: 'nfc', nonceHash: null, codeHash: null });
+    expect(row.identityCheck).toMatchObject({ method: 'code', codeHash: null });
     expect(row.statusHistory.at(-1).note).toMatch(/identity check/);
     // The provider hears about it; the customer is NOT pushed "your provider has arrived".
     expect(pushToUser.mock.calls.map((call) => call[2].type)).toEqual(['identity_verified']);
-    expect(emitToBooking).toHaveBeenCalledWith(expect.anything(), 'identity_verified', expect.objectContaining({ method: 'nfc' }));
+    expect(emitToBooking).toHaveBeenCalledWith(expect.anything(), 'identity_verified', expect.objectContaining({ method: 'code' }));
     expect(emitToBooking).toHaveBeenCalledWith(expect.anything(), 'booking_status_changed', expect.objectContaining({ status: 'ARRIVED' }));
 
     // Single use, and later requests just report the result.
-    const again = await verify(id, { token: body.data.token });
-    expect(again.body.data).toMatchObject({ verified: true, already: true, method: 'nfc' });
-    expect((await issue(id)).body.data).toMatchObject({ alreadyVerified: true, method: 'nfc' });
+    const again = await verify(id, { code: body.data.code });
+    expect(again.body.data).toMatchObject({ verified: true, already: true, method: 'code' });
+    expect((await issue(id)).body.data).toMatchObject({ alreadyVerified: true, method: 'code' });
   });
 
-  it('the 6-digit code works too, and five wrong guesses retire it', async () => {
+  it('five wrong guesses retire the code', async () => {
     const id = await booking('ARRIVED');
     const { body } = await issue(id);
     const wrong = body.data.code === '000000' ? '111111' : '000000';
@@ -154,15 +130,33 @@ d('doorstep identity check (MongoDB)', () => {
     expect(ok.body.data).toMatchObject({ verified: true, method: 'code', status: 'ARRIVED' });
   });
 
-  it('only the newest token counts, and never for another job', async () => {
+  it('only the newest code counts', async () => {
     const id = await booking('ARRIVED');
-    const first = (await issue(id)).body.data.token;
-    const second = (await issue(id)).body.data.token;
-    expect((await verify(id, { token: first })).body.error).toMatch(/replaced/);
+    const first = (await issue(id)).body.data.code;
+    const second = (await issue(id)).body.data.code;
+    // One in a million the two codes are equal; only then is there nothing to refuse.
+    if (first !== second) expect((await verify(id, { code: first })).status).toBe(422);
+    expect((await verify(id, { code: second })).status).toBe(200);
+  });
 
-    const other = await booking('ARRIVED');
-    expect((await verify(other, { token: second })).body.error).toMatch(/different job/);
-    expect((await verify(id, { token: second })).status).toBe(200);
+  it('a code issued for another job is refused', async () => {
+    const mine = await booking('ARRIVED');
+    const theirs = await booking('ARRIVED');
+    await issue(mine);
+    const theirCode = (await issue(theirs)).body.data.code;
+    const row = await Booking.findById(mine).lean();
+    // The hash binds the booking id, so their code fails here unless both jobs drew the same digits.
+    if (identity.codeHashFor(mine, theirCode) !== row.identityCheck.codeHash) {
+      expect((await verify(mine, { code: theirCode })).status).toBe(422);
+    }
+  });
+
+  it('asks for a code when none is sent', async () => {
+    const id = await booking('ARRIVED');
+    await issue(id);
+    const r = await verify(id, {});
+    expect(r.status).toBe(400);
+    expect(r.body.error).toMatch(/6-digit code/);
   });
 
   it('is refused before the provider is on the way, and to anyone but the two parties', async () => {

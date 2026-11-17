@@ -9,8 +9,6 @@ const { getShoppingSettings } = require('../services/settingsService');
 const { slugify } = require('../utils/ids');
 const { escapeRegex } = require('../services/catalogService');
 const { ok, paginated, fail, parsePagination } = require('../utils/respond');
-const { assertOwnedAsset } = require('../../../utils/assetUrl');
-const { inspectGlb, inspectUsdz, ModelFileError } = require('../services/model3dService');
 
 const PRODUCT_EDITABLE = [
   'sku',
@@ -173,53 +171,6 @@ const addProductImages = asyncHandler(async (req, res) => {
   return ok(res, product);
 });
 
-// @desc  PATCH /api/shopping/vendor/products/:productId/model3d { glbUrl, usdzUrl? }
-// The files are uploaded first (POST /api/uploads/sign, purpose product_model3d);
-// here they are checked — ours, this vendor's, and really a glTF 2.0 / USDZ.
-const attachModel3d = asyncHandler(async (req, res) => {
-  const product = await Product.findOne({ _id: req.params.productId, brandId: req.brand._id });
-  if (!product) return fail(res, 404, 'Product not found');
-  if (product.moderation && product.moderation.status === 'removed') {
-    return fail(res, 403, 'This product was removed by MetroMatrix');
-  }
-  const { glbUrl: rawGlb, usdzUrl: rawUsdz } = req.body || {};
-  let glbUrl;
-  let usdzUrl = null;
-  try {
-    glbUrl = assertOwnedAsset(rawGlb, { purpose: 'product_model3d', ownerId: req.user._id });
-    if (rawUsdz) usdzUrl = assertOwnedAsset(rawUsdz, { purpose: 'product_model3d', ownerId: req.user._id });
-  } catch (e) {
-    return fail(res, 400, e.message);
-  }
-  if (!/\.glb$/i.test(new URL(glbUrl).pathname)) return fail(res, 400, 'The 3D model must be a .glb file');
-  if (usdzUrl && !/\.usdz$/i.test(new URL(usdzUrl).pathname)) return fail(res, 400, 'The iPhone model must be a .usdz file');
-  let sizeBytes;
-  try {
-    ({ sizeBytes } = await inspectGlb(glbUrl));
-    if (usdzUrl) await inspectUsdz(usdzUrl);
-  } catch (e) {
-    if (e instanceof ModelFileError) return fail(res, 422, e.message);
-    throw e;
-  }
-  product.model3d = { glbUrl, usdzUrl, sizeBytes, attachedAt: new Date() };
-  // Customers see the model: same review rule as any content edit.
-  const settings = await getShoppingSettings();
-  if (!settings.autoApproveProducts) {
-    product.moderation = { status: 'pending', note: '', at: new Date() };
-  }
-  await product.save();
-  return ok(res, product);
-});
-
-// @desc  DELETE /api/shopping/vendor/products/:productId/model3d
-const removeModel3d = asyncHandler(async (req, res) => {
-  const product = await Product.findOne({ _id: req.params.productId, brandId: req.brand._id });
-  if (!product) return fail(res, 404, 'Product not found');
-  product.model3d = { glbUrl: null, usdzUrl: null, sizeBytes: null, attachedAt: null };
-  await product.save();
-  return ok(res, product);
-});
-
 /**
  * ── Categories (scoped to my brand) ────────────────────────────────
  */
@@ -372,8 +323,6 @@ const bulkUpdateStock = asyncHandler(async (req, res) => {
 });
 
 module.exports = {
-  attachModel3d,
-  removeModel3d,
   getMyProducts,
   createProduct,
   updateProduct,

@@ -1,7 +1,7 @@
 /**
- * Validates readings before they are stored. A Bluetooth monitor can send a
- * garbage frame and a person can mistype; either way a reading outside what a
- * living adult produces is refused with a reason, never silently clamped.
+ * Validates readings before they are stored. A person can mistype; a reading
+ * outside what a living adult produces is refused with a reason, never
+ * silently clamped.
  */
 const MAX_BATCH = 50;
 const FUTURE_SLACK_MS = 5 * 60 * 1000;
@@ -19,10 +19,10 @@ function normaliseReading(raw, { now = Date.now() } = {}) {
   if (measuredAt.getTime() > now + FUTURE_SLACK_MS) return { error: 'measuredAt is in the future' };
   if (measuredAt.getTime() < now - MAX_AGE_MS) return { error: 'measuredAt is more than a year ago' };
 
-  const kind = raw.source && raw.source.kind === 'ble' ? 'ble' : 'manual';
-  const deviceName = kind === 'ble' ? String((raw.source && raw.source.deviceName) || '').slice(0, 60) : '';
+  // Readings are typed in. The Bluetooth monitor path was removed, so anything
+  // a client claims about a device is ignored and the reading is stored as manual.
   const clientId = typeof raw.clientId === 'string' && raw.clientId.length <= 64 ? raw.clientId : undefined;
-  const base = { measuredAt, source: { kind, deviceName }, ...(clientId ? { clientId } : {}) };
+  const base = { measuredAt, source: { kind: 'manual', deviceName: '' }, ...(clientId ? { clientId } : {}) };
 
   if (raw.type === 'heart_rate') {
     const bpm = num(raw.bpm ?? (raw.heartRate && raw.heartRate.bpm));
@@ -41,7 +41,7 @@ function normaliseReading(raw, { now = Date.now() } = {}) {
     const out = {
       systolic: round1(systolic),
       diastolic: round1(diastolic),
-      // Monitors report MAP; when one does not, the standard estimate.
+      // A supplied MAP is kept; otherwise the standard estimate.
       meanArterial: round1(inRange(mapRaw, diastolic, systolic) ? mapRaw : (systolic + 2 * diastolic) / 3),
     };
     if (bp.pulse !== undefined && bp.pulse !== null) {
