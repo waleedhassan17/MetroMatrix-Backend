@@ -22,6 +22,7 @@
     "seed:healthcare-home": "node scripts/seed-healthcare-home.js",
     "smoke:healthcare": "node scripts/smoke-healthcare.js",
     "seed:homeservice": "node scripts/seed-homeservice.js",
+    "seed:history": "node scripts/seed-history.js",
     "smoke:homeservice": "node scripts/smoke-homeservice.js",
     "validate:homeservice": "node scripts/validate-homeservice.js",
     "smoke:wallet-stripe": "node scripts/wallet-smoke.js",
