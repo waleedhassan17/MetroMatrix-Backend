@@ -3,7 +3,26 @@ const mongoose = require('mongoose');
 const Wallet = require('../models/Wallet');
 const WalletTransaction = require('../models/WalletTransaction');
 const WalletAdjustment = require('../models/WalletAdjustment');
-const { WALLET_CURRENCY, PKR_PER_USD, usdCentsToPkr } = require('../config/currency');
+const { WALLET_CURRENCY, PKR_PER_USD, usdCentsToPkr, pkrToUsdCents } = require('../config/currency');
+
+/**
+ * The PKR a completed top-up session is worth.
+ *
+ * Checkout stamps the amount the customer asked for on the session
+ * (metadata.amount). Stripe's USD cents cannot be converted back to it: one
+ * cent is PKR 2.80, so PKR 5,000 is charged as 1,786 cents, and 1,786 cents
+ * converts back to PKR 5,001. Crediting the converted figure left a wallet a
+ * rupee off its own history (+5,000 in the list, +5,001 in the balance).
+ *
+ * So the stamped amount wins whenever the charge is exactly what that amount
+ * prices to. A session without a usable stamp, or whose charge does not match
+ * it, falls back to converting the cents.
+ */
+function topUpAmountPkr({ metadata, amount_total: amountTotal }) {
+  const asked = Number(metadata && metadata.amount);
+  if (Number.isFinite(asked) && asked > 0 && pkrToUsdCents(asked) === amountTotal) return asked;
+  return usdCentsToPkr(amountTotal);
+}
 
 // Fixed sentinel owner id for the singleton Platform commission ledger
 // (Part C.4). There is no User/Provider document behind it — it exists so
@@ -13,6 +32,8 @@ const PLATFORM_OWNER_ID = new mongoose.Types.ObjectId('000000000000000000000001'
 
 class WalletService {
   static PLATFORM_OWNER_ID = PLATFORM_OWNER_ID;
+
+  static topUpAmountPkr = topUpAmountPkr;
 
   /**
    * Get or create a wallet for a given owner
@@ -144,10 +165,10 @@ class WalletService {
 
     const { ownerId, ownerType } = metadata;
     // Stripe charges in USD test mode (PKR is not chargeable — see
-    // config/currency.js); convert back to whole PKR for the ledger and
-    // stamp the rate used so this record stays accurate if the constant
-    // ever changes.
-    const amount = usdCentsToPkr(amount_total);
+    // config/currency.js). Credit the PKR the customer asked for, not the
+    // cents converted back (see topUpAmountPkr), and stamp the rate used so
+    // this record stays accurate if the constant ever changes.
+    const amount = topUpAmountPkr(stripeSession);
 
     // Get or create wallet
     const wallet = await this.getOrCreateWallet(ownerId, ownerType);
@@ -183,9 +204,14 @@ class WalletService {
     // The conditional update is also the concurrency guard: two deliveries of
     // the same session can both reach here, but only one can match
     // `status: { $ne: 'completed' }`, so the credit happens exactly once.
+    //
+    // The row usually already exists — checkout creates it as 'pending' so the
+    // top-up shows in the history straight away — and it carries the amount
+    // checkout priced. The claim writes the amount actually credited onto it,
+    // so the history can never disagree with the balance.
     const claimed = await WalletTransaction.findOneAndUpdate(
       { _id: transaction._id, status: { $ne: 'completed' } },
-      { $set: { status: 'completed' } },
+      { $set: { status: 'completed', amount } },
       { new: true }
     );
 

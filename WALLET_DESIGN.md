@@ -112,8 +112,11 @@ unavoidable conversion boundary sits.
 `src/config/currency.js`: `WALLET_CURRENCY = 'PKR'`, `PKR_PER_USD = 280` (fixed for the demo, explicitly
 NOT a live FX rate), with `pkrToUsdCents()`/`usdCentsToPkr()` helpers. `Wallet.currency` and
 `WalletTransaction.currency` both default to `'PKR'`. `createCheckoutSession` converts the requested PKR
-amount to USD cents at the boundary; `applyTopUp` converts back and stamps `metadata.fxRate` on the
-transaction so historical records stay accurate if the constant ever changes. `requestPayout` (Stripe
+amount to USD cents at the boundary and stamps the PKR amount on the session (`metadata.amount`);
+`applyTopUp` credits that stamped amount — it does not convert the cents back, because one cent is
+PKR 2.80 and the round trip misses by up to a rupee (PKR 5,000 → 1,786 cents → PKR 5,001; fixed Nov 2026,
+migration 08 repairs wallets credited before) — and stamps `metadata.fxRate` on the transaction so
+historical records stay accurate if the constant ever changes. `requestPayout` (Stripe
 Connect) applies the same conversion for the same reason.
 
 **Why not (b), USD everywhere for the demo:** every screen in the app already shows PKR — search filters,
